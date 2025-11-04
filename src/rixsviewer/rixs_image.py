@@ -58,7 +58,7 @@ class RixsBinningModel:
             {
                 "name": "Acrystalsize",
                 "type": "float",
-                "value": 1.0,
+                "value": 1.3,
                 "suffix": " mm",
                 "tip": "Dice size of analyzer",
                 "pv": "none",
@@ -74,7 +74,7 @@ class RixsBinningModel:
             {
                 "name": "Ra",
                 "type": "float",
-                "value": 3.0,
+                "value": 1900.0,
                 "suffix": " mm",
                 "tip": "Radius of Rowland circle",
                 "pv": "27idmot1:Merix_RA",
@@ -94,14 +94,6 @@ class RixsBinningModel:
                 "suffix": " keV",
                 "tip": "Current energy of analyzer",
                 "pv": "27idmot1:Merix_E.VAL",
-            },
-            {
-                "name": "ThetaB",
-                "type": "float",
-                "value": 30.0,
-                "suffix": " μrad",
-                "tip": "Bragg angle of analyzer",
-                "pv": "27idmot1:Merix_Theta.VAL",
             },
         ]
         return params

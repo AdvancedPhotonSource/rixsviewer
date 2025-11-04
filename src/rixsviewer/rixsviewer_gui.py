@@ -5,6 +5,7 @@ import argparse
 from .specfile_reader import RixsScanListTable, RixsScanImageDataset
 from .rixs_image import RixsBinningModel
 from .rixsviewer_ui import Ui_MainWindow
+import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
 
@@ -65,15 +66,18 @@ class RixsViewerGUI(QMainWindow):
 
     def init_plot_hdl(self):
         self.plot_hdl = self.ui.widget_binhdl.addPlot()
+        cmap = pg.colormap.get("plasma")
+        self.ui.widget_imgview.setColorMap(cmap)
 
     def process_binning(self):
         if self.current_rixs_dset is None:
             return
 
-        lines = self.current_rixs_dset.bin_data()
+        lines = self.current_rixs_dset.bin_data(self.binning_model)
         self.plot_hdl.clear()
-        pen = pg.mkPen(color="blue", width=1)
         for x, y in lines:
+            color = tuple(np.random.randint(100, 256, size=3))  # avoid dark colors
+            pen = pg.mkPen(color=color, width=1)
             self.plot_hdl.plot(x, y, pen=pen)
         self.plot_hdl.setLabel("left", "Intensity")
         self.plot_hdl.setLabel("bottom", "Energy (keV)")
@@ -122,18 +126,19 @@ class RixsViewerGUI(QMainWindow):
         row_number = index.row()
         scan_index = self.scan_model.tablerow_to_scanindex[row_number]
         threshold = self.binning_model.get_parameter("threshold")
-        scan_data = self.scan_model.get_scan(row_number)
+        scan_info = self.scan_model.get_scan_information(row_number)
         self.current_rixs_dset = RixsScanImageDataset(
             scan_index,
             folder=self.tiff_folder,
-            scan_data=scan_data,
+            scan_info=scan_info,
             threshold=threshold,
         )
         self.ui.tableView_image.setModel(self.current_rixs_dset.model)
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
+        data, levels = self.current_rixs_dset.get_data_for_display()
         self.ui.widget_imgview.setImage(
-            self.current_rixs_dset.data, axes={"t": 0, "y": 1, "x": 2}
+            data, axes={"t": 0, "y": 1, "x": 2}, levels=levels
         )
         self.ui.tableView_image.clicked.connect(self.on_image_table_clicked)
 
