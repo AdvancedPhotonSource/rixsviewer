@@ -1,8 +1,11 @@
 import os
 import sys
+import numpy as np
 import glob
 from PySide6.QtCore import Qt, QAbstractTableModel
 from silx.io.specfile import SpecFile
+import tifffile
+
 
 fname = "/scratch/MQICHU/Datasets/rixs/rixsviewer_dataset/21Mar2025.spm3"
 
@@ -20,6 +23,10 @@ class RixsScanListTable(QAbstractTableModel):
 
     def columnCount(self, parent=None):
         return len(self._headers)
+
+    def get_scan(self, row):
+        scan = self.specfile[row]
+        return scan.data.T
 
     def parse_scan(self, scan, row):
         scan_number = scan.number
@@ -58,16 +65,50 @@ class RixsScanListTable(QAbstractTableModel):
             return str(section + 1)
 
 
+class RixsScanImageDataset:
+    def __init__(self, scan_index, folder, scan_data, threshold=4095):
+        self.fnames = glob.glob(os.path.join(folder, f"*_scan{scan_index:d}_*.tif"))
+        self.fnames.sort()
+        self.threshod = threshold
+        self.scan_data = scan_data
+        self.data = self.read_data()
+        self.model = self.get_table_model()
+
+    def bin_data(self, de=0.0001):
+        lines = []
+        data_1d = np.sum(self.data, axis=1)
+        shape = self.data.shape
+        for n in range(shape[0]):
+            energy_cen = self.scan_data[n][0]
+            x = energy_cen - np.linspace(-1, 1, shape[2]) * de
+            y = data_1d[n]
+            lines.append([x, y])
+        return lines
+
+    def __len__(self):
+        return len(self.fnames)
+
+    def get_table_model(self):
+        return RixsScanImageTable(self.fnames)
+
+    def read_data(self):
+        data = []
+        for fname in self.fnames:
+            data.append(tifffile.imread(fname))
+        data = np.array(data)
+        data[data >= self.threshod] = 0
+        return data
+
+
 class RixsScanImageTable(QAbstractTableModel):
     def __init__(
         self,
-        scan_index,
-        folder="/scratch/MQICHU/Datasets/rixs/rixsviewer_dataset/slot8/cray_clean/",
+        fnames,
         parent=None,
     ):
         super().__init__(parent)
-        self.fnames = glob.glob(os.path.join(folder, f"*_scan{scan_index:d}_*.tif"))
-        self.fnames.sort()
+        # self.fnames = glob.glob(os.path.join(folder, f"*_scan{scan_index:d}_*.tif"))
+        self.fnames = fnames
         self._headers = ["TIF filename"]
 
     def rowCount(self, parent=None):

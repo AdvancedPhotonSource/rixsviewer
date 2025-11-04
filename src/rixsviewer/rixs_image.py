@@ -5,10 +5,32 @@ import numpy
 class RixsBinningModel:
     def __init__(self):
         self.params = self.get_parameters()
+        self.params_map = {}
+        for index, param in enumerate(self.params):
+            self.params_map[param["name"]] = index
+
+    def get_parameter(self, name):
+        return self.params[self.params_map[name]]["value"]
+
+    def update_from_parameter(self, param, changes):
+        """Update model attributes when parameter tree values change"""
+        for param, change, data in changes:
+            if change == "value":
+                param_name = param.name()
+                if param_name in self.params_map:
+                    self.params[self.params_map[param_name]]["value"] = data
 
     def get_parameters(self):
         # Parameters formatted for pyqtgraph ParameterTree
         params = [
+            {
+                "name": "threshold",
+                "type": "int",
+                "value": 192,
+                "suffix": " cts",
+                "tip": "The threshold for the intensity; pixels above this value are ignored",
+                "pv": "none",
+            },
             {
                 "name": "Ylow",
                 "type": "int",
@@ -20,7 +42,7 @@ class RixsBinningModel:
             {
                 "name": "Yhigh",
                 "type": "int",
-                "value": 0,
+                "value": 256,
                 "suffix": " pixel",
                 "tip": "The maximum Y pixel to include in the spectra",
                 "pv": "none",
@@ -28,7 +50,7 @@ class RixsBinningModel:
             {
                 "name": "RefL",
                 "type": "float",
-                "value": 0,
+                "value": 128,
                 "suffix": " pixel",
                 "tip": "Pixel number in the center of the energy dispersion on the lambda detector",
                 "pv": "none",
@@ -36,7 +58,7 @@ class RixsBinningModel:
             {
                 "name": "Acrystalsize",
                 "type": "float",
-                "value": 0,
+                "value": 1.0,
                 "suffix": " mm",
                 "tip": "Dice size of analyzer",
                 "pv": "none",
@@ -44,7 +66,7 @@ class RixsBinningModel:
             {
                 "name": "Eb",
                 "type": "float",
-                "value": 0,
+                "value": 10,
                 "suffix": " keV",
                 "tip": "Backscattering energy of analyzer",
                 "pv": "27idmot1:Merix_E0",
@@ -52,7 +74,7 @@ class RixsBinningModel:
             {
                 "name": "Ra",
                 "type": "float",
-                "value": 0,
+                "value": 3.0,
                 "suffix": " mm",
                 "tip": "Radius of Rowland circle",
                 "pv": "27idmot1:Merix_RA",
@@ -60,7 +82,7 @@ class RixsBinningModel:
             {
                 "name": "DeltaD",
                 "type": "float",
-                "value": 0,
+                "value": 55e-3,
                 "suffix": " mm",
                 "tip": "Detector pixel width in the energy dispersion direction",
                 "pv": "none",
@@ -68,7 +90,7 @@ class RixsBinningModel:
             {
                 "name": "E",
                 "type": "float",
-                "value": 0,
+                "value": 10.0,
                 "suffix": " keV",
                 "tip": "Current energy of analyzer",
                 "pv": "27idmot1:Merix_E.VAL",
@@ -76,22 +98,10 @@ class RixsBinningModel:
             {
                 "name": "ThetaB",
                 "type": "float",
-                "value": 0,
+                "value": 30.0,
                 "suffix": " μrad",
                 "tip": "Bragg angle of analyzer",
                 "pv": "27idmot1:Merix_Theta.VAL",
             },
         ]
         return params
-
-
-class RixsTiffImage:
-    def __init__(self, fname):
-        self.fname = fname
-        self._image = tifffile.imread(fname)
-
-    def get_image(self):
-        return self._image
-
-    def model(self):
-        pass

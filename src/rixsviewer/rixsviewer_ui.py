@@ -16,10 +16,10 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtWidgets import (QApplication, QGridLayout, QGroupBox, QHeaderView,
-    QLabel, QLineEdit, QMainWindow, QMenu,
-    QMenuBar, QPushButton, QSizePolicy, QSpinBox,
-    QSplitter, QStatusBar, QTableView, QToolButton,
+from PySide6.QtWidgets import (QApplication, QGridLayout, QGroupBox, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QMainWindow,
+    QMenu, QMenuBar, QPushButton, QSizePolicy,
+    QSpinBox, QStatusBar, QTableView, QToolButton,
     QWidget)
 
 from pyqtgraph import (GraphicsLayoutWidget, ImageView)
@@ -29,19 +29,16 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(1014, 666)
+        MainWindow.resize(1127, 855)
         self.actionLoad_Spec_file = QAction(MainWindow)
         self.actionLoad_Spec_file.setObjectName(u"actionLoad_Spec_file")
         self.actionSet_Tif_folder = QAction(MainWindow)
         self.actionSet_Tif_folder.setObjectName(u"actionSet_Tif_folder")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
-        self.gridLayout_6 = QGridLayout(self.centralwidget)
-        self.gridLayout_6.setObjectName(u"gridLayout_6")
-        self.splitter = QSplitter(self.centralwidget)
-        self.splitter.setObjectName(u"splitter")
-        self.splitter.setOrientation(Qt.Orientation.Vertical)
-        self.groupBox = QGroupBox(self.splitter)
+        self.gridLayout_7 = QGridLayout(self.centralwidget)
+        self.gridLayout_7.setObjectName(u"gridLayout_7")
+        self.groupBox = QGroupBox(self.centralwidget)
         self.groupBox.setObjectName(u"groupBox")
         sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         sizePolicy.setHorizontalStretch(0)
@@ -49,45 +46,80 @@ class Ui_MainWindow(object):
         sizePolicy.setHeightForWidth(self.groupBox.sizePolicy().hasHeightForWidth())
         self.groupBox.setSizePolicy(sizePolicy)
         self.groupBox.setMaximumSize(QSize(320, 16777215))
-        self.gridLayout = QGridLayout(self.groupBox)
+        self.gridLayout_6 = QGridLayout(self.groupBox)
+        self.gridLayout_6.setObjectName(u"gridLayout_6")
+        self.gridLayout_6.setContentsMargins(0, 0, 0, 0)
+        self.gridLayout = QGridLayout()
         self.gridLayout.setObjectName(u"gridLayout")
-        self.gridLayout.setContentsMargins(0, 0, 0, 0)
         self.label = QLabel(self.groupBox)
         self.label.setObjectName(u"label")
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        sizePolicy1.setHorizontalStretch(0)
+        sizePolicy1.setVerticalStretch(0)
+        sizePolicy1.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
+        self.label.setSizePolicy(sizePolicy1)
 
         self.gridLayout.addWidget(self.label, 0, 0, 1, 1)
 
         self.lineEdit_specfilename = QLineEdit(self.groupBox)
         self.lineEdit_specfilename.setObjectName(u"lineEdit_specfilename")
+        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        sizePolicy2.setHorizontalStretch(0)
+        sizePolicy2.setVerticalStretch(0)
+        sizePolicy2.setHeightForWidth(self.lineEdit_specfilename.sizePolicy().hasHeightForWidth())
+        self.lineEdit_specfilename.setSizePolicy(sizePolicy2)
 
-        self.gridLayout.addWidget(self.lineEdit_specfilename, 0, 3, 1, 1)
-
-        self.tableView_scan = QTableView(self.groupBox)
-        self.tableView_scan.setObjectName(u"tableView_scan")
-
-        self.gridLayout.addWidget(self.tableView_scan, 1, 0, 1, 5)
+        self.gridLayout.addWidget(self.lineEdit_specfilename, 0, 1, 1, 1)
 
         self.toolButton_load_specfile = QToolButton(self.groupBox)
         self.toolButton_load_specfile.setObjectName(u"toolButton_load_specfile")
 
-        self.gridLayout.addWidget(self.toolButton_load_specfile, 0, 4, 1, 1)
+        self.gridLayout.addWidget(self.toolButton_load_specfile, 0, 2, 1, 1)
+
+        self.label_3 = QLabel(self.groupBox)
+        self.label_3.setObjectName(u"label_3")
+        sizePolicy1.setHeightForWidth(self.label_3.sizePolicy().hasHeightForWidth())
+        self.label_3.setSizePolicy(sizePolicy1)
+
+        self.gridLayout.addWidget(self.label_3, 1, 0, 1, 1)
+
+        self.lineEdit = QLineEdit(self.groupBox)
+        self.lineEdit.setObjectName(u"lineEdit")
+        sizePolicy2.setHeightForWidth(self.lineEdit.sizePolicy().hasHeightForWidth())
+        self.lineEdit.setSizePolicy(sizePolicy2)
+
+        self.gridLayout.addWidget(self.lineEdit, 1, 1, 1, 1)
+
+        self.toolButton_set_tifffolder = QToolButton(self.groupBox)
+        self.toolButton_set_tifffolder.setObjectName(u"toolButton_set_tifffolder")
+
+        self.gridLayout.addWidget(self.toolButton_set_tifffolder, 1, 2, 1, 1)
+
+
+        self.gridLayout_6.addLayout(self.gridLayout, 0, 0, 1, 2)
+
+        self.tableView_scan = QTableView(self.groupBox)
+        self.tableView_scan.setObjectName(u"tableView_scan")
+
+        self.gridLayout_6.addWidget(self.tableView_scan, 1, 0, 1, 2)
 
         self.label_2 = QLabel(self.groupBox)
         self.label_2.setObjectName(u"label_2")
 
-        self.gridLayout.addWidget(self.label_2, 2, 0, 1, 1)
+        self.gridLayout_6.addWidget(self.label_2, 2, 0, 1, 1)
 
         self.spinBox = QSpinBox(self.groupBox)
         self.spinBox.setObjectName(u"spinBox")
 
-        self.gridLayout.addWidget(self.spinBox, 2, 2, 1, 3)
+        self.gridLayout_6.addWidget(self.spinBox, 2, 1, 1, 1)
 
-        self.splitter.addWidget(self.groupBox)
-        self.groupBox_2 = QGroupBox(self.splitter)
+
+        self.gridLayout_7.addWidget(self.groupBox, 0, 0, 3, 1)
+
+        self.horizontalLayout = QHBoxLayout()
+        self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.groupBox_2 = QGroupBox(self.centralwidget)
         self.groupBox_2.setObjectName(u"groupBox_2")
-        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        sizePolicy1.setHorizontalStretch(0)
-        sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(self.groupBox_2.sizePolicy().hasHeightForWidth())
         self.groupBox_2.setSizePolicy(sizePolicy1)
         self.groupBox_2.setMaximumSize(QSize(320, 16777215))
@@ -99,14 +131,8 @@ class Ui_MainWindow(object):
 
         self.gridLayout_2.addWidget(self.tableView_image, 0, 0, 1, 1)
 
-        self.pushButton = QPushButton(self.groupBox_2)
-        self.pushButton.setObjectName(u"pushButton")
 
-        self.gridLayout_2.addWidget(self.pushButton, 1, 0, 1, 1)
-
-        self.splitter.addWidget(self.groupBox_2)
-
-        self.gridLayout_6.addWidget(self.splitter, 0, 0, 3, 1)
+        self.horizontalLayout.addWidget(self.groupBox_2)
 
         self.groupBox_3 = QGroupBox(self.centralwidget)
         self.groupBox_3.setObjectName(u"groupBox_3")
@@ -117,16 +143,19 @@ class Ui_MainWindow(object):
         self.gridLayout_3.setContentsMargins(0, 0, 0, 0)
         self.widget_imgview = ImageView(self.groupBox_3)
         self.widget_imgview.setObjectName(u"widget_imgview")
-        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        sizePolicy2.setHorizontalStretch(0)
-        sizePolicy2.setVerticalStretch(3)
-        sizePolicy2.setHeightForWidth(self.widget_imgview.sizePolicy().hasHeightForWidth())
-        self.widget_imgview.setSizePolicy(sizePolicy2)
+        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        sizePolicy3.setHorizontalStretch(0)
+        sizePolicy3.setVerticalStretch(3)
+        sizePolicy3.setHeightForWidth(self.widget_imgview.sizePolicy().hasHeightForWidth())
+        self.widget_imgview.setSizePolicy(sizePolicy3)
 
         self.gridLayout_3.addWidget(self.widget_imgview, 0, 0, 1, 1)
 
 
-        self.gridLayout_6.addWidget(self.groupBox_3, 0, 1, 1, 1)
+        self.horizontalLayout.addWidget(self.groupBox_3)
+
+
+        self.gridLayout_7.addLayout(self.horizontalLayout, 0, 1, 1, 1)
 
         self.groupBox_5 = QGroupBox(self.centralwidget)
         self.groupBox_5.setObjectName(u"groupBox_5")
@@ -137,28 +166,28 @@ class Ui_MainWindow(object):
         self.gridLayout_4.setContentsMargins(0, 0, 0, 0)
         self.widget_binhdl = GraphicsLayoutWidget(self.groupBox_5)
         self.widget_binhdl.setObjectName(u"widget_binhdl")
-        sizePolicy2.setHeightForWidth(self.widget_binhdl.sizePolicy().hasHeightForWidth())
-        self.widget_binhdl.setSizePolicy(sizePolicy2)
+        sizePolicy3.setHeightForWidth(self.widget_binhdl.sizePolicy().hasHeightForWidth())
+        self.widget_binhdl.setSizePolicy(sizePolicy3)
 
         self.gridLayout_4.addWidget(self.widget_binhdl, 0, 0, 1, 1)
 
 
-        self.gridLayout_6.addWidget(self.groupBox_5, 1, 1, 1, 1)
+        self.gridLayout_7.addWidget(self.groupBox_5, 1, 1, 1, 1)
 
         self.groupBox_4 = QGroupBox(self.centralwidget)
         self.groupBox_4.setObjectName(u"groupBox_4")
-        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        sizePolicy3.setHorizontalStretch(0)
-        sizePolicy3.setVerticalStretch(1)
-        sizePolicy3.setHeightForWidth(self.groupBox_4.sizePolicy().hasHeightForWidth())
-        self.groupBox_4.setSizePolicy(sizePolicy3)
+        sizePolicy4 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        sizePolicy4.setHorizontalStretch(0)
+        sizePolicy4.setVerticalStretch(1)
+        sizePolicy4.setHeightForWidth(self.groupBox_4.sizePolicy().hasHeightForWidth())
+        self.groupBox_4.setSizePolicy(sizePolicy4)
         self.groupBox_4.setMinimumSize(QSize(0, 300))
         self.gridLayout_5 = QGridLayout(self.groupBox_4)
         self.gridLayout_5.setObjectName(u"gridLayout_5")
         self.widget_ptree = ParameterTree(self.groupBox_4)
         self.widget_ptree.setObjectName(u"widget_ptree")
-        sizePolicy3.setHeightForWidth(self.widget_ptree.sizePolicy().hasHeightForWidth())
-        self.widget_ptree.setSizePolicy(sizePolicy3)
+        sizePolicy4.setHeightForWidth(self.widget_ptree.sizePolicy().hasHeightForWidth())
+        self.widget_ptree.setSizePolicy(sizePolicy4)
         self.widget_ptree.setMinimumSize(QSize(400, 300))
 
         self.gridLayout_5.addWidget(self.widget_ptree, 0, 0, 4, 1)
@@ -173,18 +202,18 @@ class Ui_MainWindow(object):
 
         self.gridLayout_5.addWidget(self.pushButton_3, 3, 1, 1, 1)
 
-        self.pushButton_2 = QPushButton(self.groupBox_4)
-        self.pushButton_2.setObjectName(u"pushButton_2")
+        self.pushButton_process = QPushButton(self.groupBox_4)
+        self.pushButton_process.setObjectName(u"pushButton_process")
 
-        self.gridLayout_5.addWidget(self.pushButton_2, 1, 1, 1, 1)
+        self.gridLayout_5.addWidget(self.pushButton_process, 1, 1, 1, 1)
 
 
-        self.gridLayout_6.addWidget(self.groupBox_4, 2, 1, 1, 1)
+        self.gridLayout_7.addWidget(self.groupBox_4, 2, 1, 1, 1)
 
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 1014, 23))
+        self.menubar.setGeometry(QRect(0, 0, 1127, 23))
         self.menuFile = QMenu(self.menubar)
         self.menuFile.setObjectName(u"menuFile")
         MainWindow.setMenuBar(self.menubar)
@@ -208,15 +237,16 @@ class Ui_MainWindow(object):
         self.groupBox.setTitle(QCoreApplication.translate("MainWindow", u"Scan", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"SpecFile:", None))
         self.toolButton_load_specfile.setText(QCoreApplication.translate("MainWindow", u"...", None))
+        self.label_3.setText(QCoreApplication.translate("MainWindow", u"TiffFolder:", None))
+        self.toolButton_set_tifffolder.setText(QCoreApplication.translate("MainWindow", u"...", None))
         self.label_2.setText(QCoreApplication.translate("MainWindow", u"Select Scan Index", None))
         self.groupBox_2.setTitle(QCoreApplication.translate("MainWindow", u"Images", None))
-        self.pushButton.setText(QCoreApplication.translate("MainWindow", u"PushButton", None))
         self.groupBox_3.setTitle(QCoreApplication.translate("MainWindow", u"2D", None))
         self.groupBox_5.setTitle(QCoreApplication.translate("MainWindow", u"1D", None))
         self.groupBox_4.setTitle(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.pushButton_4.setText(QCoreApplication.translate("MainWindow", u"PushButton", None))
         self.pushButton_3.setText(QCoreApplication.translate("MainWindow", u"PushButton", None))
-        self.pushButton_2.setText(QCoreApplication.translate("MainWindow", u"PushButton", None))
+        self.pushButton_process.setText(QCoreApplication.translate("MainWindow", u"Process Binning", None))
         self.menuFile.setTitle(QCoreApplication.translate("MainWindow", u"File", None))
     # retranslateUi
 
