@@ -1,16 +1,21 @@
 from PySide6.QtWidgets import QApplication, QMainWindow, QHeaderView, QFileDialog
 import sys
-import os
 import argparse
-from .specfile_reader import RixsScanListTable, RixsScanImageDataset
+from .specfile_reader import RixsScanListTable
 from .rixs_image import RixsBinningModel
 from .rixsviewer_ui import Ui_MainWindow
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
+import logging
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 pg.setConfigOption("background", "w")  # or (255, 255, 255)
 pg.setConfigOption("foreground", "k")
+logger = logging.getLogger(__name__)
 
 
 class RixsViewerGUI(QMainWindow):
@@ -21,8 +26,8 @@ class RixsViewerGUI(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
+        self.tiff_folder = tiff_folder
         if tiff_folder:
-            self.tiff_folder = tiff_folder
             self.ui.lineEdit.setText(self.tiff_folder)
 
         if spec_filename:
@@ -54,6 +59,9 @@ class RixsViewerGUI(QMainWindow):
             children=self.binning_model.params,
         )
 
+        # Connect the parameter tree to the model for bidirectional sync
+        self.binning_model.param_tree = self.params
+
         # Connect parameter changes to update the binning model
         self.params.sigTreeStateChanged.connect(self.on_parameter_changed)
 
@@ -73,14 +81,39 @@ class RixsViewerGUI(QMainWindow):
         if self.current_rixs_dset is None:
             return
 
-        lines = self.current_rixs_dset.bin_data(self.binning_model)
+        fit_pixel_size = self.ui.checkBox_fit_pixel_size.isChecked()
+        show_rawdata = self.ui.checkBox_show_rawdata.isChecked()
+
+        result = self.current_rixs_dset.bin_data(
+            fit_pixel_size=fit_pixel_size, **self.binning_model.get_kwargs()
+        )
+
         self.plot_hdl.clear()
-        for x, y in lines:
-            color = tuple(np.random.randint(100, 256, size=3))  # avoid dark colors
-            pen = pg.mkPen(color=color, width=1)
-            self.plot_hdl.plot(x, y, pen=pen)
+        if show_rawdata:
+            for x, y in result["rawdata_lines"]:
+                color = tuple(np.random.randint(100, 256, size=3))  # avoid dark colors
+                pen = pg.mkPen(color=color, width=1)
+                self.plot_hdl.plot(x, y, pen=pen)
+
+        # plot the binned line with error bars
+        x, y, err = result["binned_line"]
+        pen = pg.mkPen(color=(0, 0, 255), width=1)
+        self.plot_hdl.plot(x, y, pen=pen)
+
+        # --- Error bar item ---
+        err_plot = pg.ErrorBarItem(x=x, y=y, top=err, bottom=err, beam=0.00001)
+        self.plot_hdl.addItem(err_plot)
+
         self.plot_hdl.setLabel("left", "Intensity")
         self.plot_hdl.setLabel("bottom", "Energy (keV)")
+
+        if fit_pixel_size:
+            self.binning_model.put_parameter("DeltaD", result["DeltaD_fit"])
+
+        if result["summed_data"] is not None:
+            self.ui.widget_imgview.setImage(
+                result["summed_data"], axes={"y": 0, "x": 1}
+            )
 
     def on_load_specfile_clicked(self):
         """Handle the load spec file button click"""
@@ -109,7 +142,9 @@ class RixsViewerGUI(QMainWindow):
     def setup_scan_table(self, spec_filename):
         """Set up the scan table with the RixsScanListTable model"""
         # Create the model
-        self.scan_model = RixsScanListTable(spec_filename)
+        if self.tiff_folder is None:
+            return
+        self.scan_model = RixsScanListTable(spec_filename, self.tiff_folder)
 
         # Connect the model to the tableView_scan
         self.ui.tableView_scan.setModel(self.scan_model)
@@ -119,20 +154,24 @@ class RixsViewerGUI(QMainWindow):
         header.setSectionResizeMode(QHeaderView.Stretch)
 
         # Connect click signal to handler
-        self.ui.tableView_scan.clicked.connect(self.on_scan_table_clicked)
-
-    def on_scan_table_clicked(self, index):
-        """Handle clicks on the scan table and print the row number"""
-        row_number = index.row()
-        scan_index = self.scan_model.tablerow_to_scanindex[row_number]
-        threshold = self.binning_model.get_parameter("threshold")
-        scan_info = self.scan_model.get_scan_information(row_number)
-        self.current_rixs_dset = RixsScanImageDataset(
-            scan_index,
-            folder=self.tiff_folder,
-            scan_info=scan_info,
-            threshold=threshold,
+        # self.ui.tableView_scan.clicked.connect(self.on_scan_table_clicked)
+        self.ui.tableView_scan.selectionModel().selectionChanged.connect(
+            self.on_selection_changed
         )
+
+    def on_selection_changed(self, selected, deselected):
+        """
+        Called whenever the table's selection changes.
+        'selected' and 'deselected' are QItemSelection objects.
+        """
+        selected_indexes = self.ui.tableView_scan.selectionModel().selectedIndexes()
+        rows = [index.row() for index in selected_indexes]
+        threshold = self.binning_model.get_parameter("threshold")
+        dset = self.scan_model.get_selected_dataset(rows, threshold)
+        if dset is None:
+            return
+
+        self.current_rixs_dset = dset
         self.ui.tableView_image.setModel(self.current_rixs_dset.model)
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)

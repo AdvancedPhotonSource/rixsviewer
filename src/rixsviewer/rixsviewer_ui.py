@@ -16,11 +16,11 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtWidgets import (QApplication, QComboBox, QGridLayout, QGroupBox,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QMainWindow, QMenu, QMenuBar, QPushButton,
-    QSizePolicy, QSpinBox, QStatusBar, QTableView,
-    QToolButton, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGridLayout,
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QMainWindow, QMenu, QMenuBar,
+    QPushButton, QSizePolicy, QSpinBox, QStatusBar,
+    QTableView, QToolButton, QWidget)
 
 from pyqtgraph import (GraphicsLayoutWidget, ImageView)
 from pyqtgraph.parametertree import ParameterTree
@@ -244,12 +244,23 @@ class Ui_MainWindow(object):
         self.pushButton_process = QPushButton(self.groupBox_6)
         self.pushButton_process.setObjectName(u"pushButton_process")
 
-        self.gridLayout_7.addWidget(self.pushButton_process, 0, 0, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton_process, 0, 2, 1, 1)
+
+        self.checkBox_fit_pixel_size = QCheckBox(self.groupBox_6)
+        self.checkBox_fit_pixel_size.setObjectName(u"checkBox_fit_pixel_size")
+        self.checkBox_fit_pixel_size.setChecked(True)
+
+        self.gridLayout_7.addWidget(self.checkBox_fit_pixel_size, 0, 0, 1, 1)
 
         self.pushButton = QPushButton(self.groupBox_6)
         self.pushButton.setObjectName(u"pushButton")
 
-        self.gridLayout_7.addWidget(self.pushButton, 1, 0, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton, 2, 0, 1, 3)
+
+        self.checkBox_show_rawdata = QCheckBox(self.groupBox_6)
+        self.checkBox_show_rawdata.setObjectName(u"checkBox_show_rawdata")
+
+        self.gridLayout_7.addWidget(self.checkBox_show_rawdata, 0, 1, 1, 1)
 
 
         self.horizontalLayout_2.addWidget(self.groupBox_6)
@@ -304,7 +315,9 @@ class Ui_MainWindow(object):
         self.pushButton_3.setText(QCoreApplication.translate("MainWindow", u"Load", None))
         self.groupBox_6.setTitle(QCoreApplication.translate("MainWindow", u"Process", None))
         self.pushButton_process.setText(QCoreApplication.translate("MainWindow", u"Process Binning", None))
+        self.checkBox_fit_pixel_size.setText(QCoreApplication.translate("MainWindow", u"Fit DeltaD", None))
         self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Export", None))
+        self.checkBox_show_rawdata.setText(QCoreApplication.translate("MainWindow", u"Show RawData", None))
         self.menuFile.setTitle(QCoreApplication.translate("MainWindow", u"File", None))
     # retranslateUi
 

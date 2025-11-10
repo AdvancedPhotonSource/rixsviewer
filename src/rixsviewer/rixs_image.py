@@ -8,9 +8,32 @@ class RixsBinningModel:
         self.params_map = {}
         for index, param in enumerate(self.params):
             self.params_map[param["name"]] = index
+        self.param_tree = None  # Will be set by GUI to enable UI updates
+
+    def get_kwargs(self):
+        """Get current parameter values as a dictionary for processing"""
+        kwargs = {}
+        for param in self.params:
+            kwargs[param["name"]] = self.get_parameter(param["name"])
+        return kwargs
 
     def get_parameter(self, name):
         return self.params[self.params_map[name]]["value"]
+
+    def put_parameter(self, name, value):
+        """Update a parameter value by name and sync with UI if connected
+
+        Args:
+            name: Parameter name to update
+            value: New value for the parameter
+        """
+        if name in self.params_map:
+            self.params[self.params_map[name]]["value"] = value
+            # Update the UI parameter tree if it's connected
+            if self.param_tree is not None:
+                param = self.param_tree.child(name)
+                if param is not None:
+                    param.setValue(value)
 
     def update_from_parameter(self, param, changes):
         """Update model attributes when parameter tree values change"""
@@ -50,7 +73,7 @@ class RixsBinningModel:
             {
                 "name": "RefL",
                 "type": "float",
-                "value": 128,
+                "value": 70,
                 "suffix": " pixel",
                 "tip": "Pixel number in the center of the energy dispersion on the lambda detector",
                 "pv": "none",
@@ -82,7 +105,7 @@ class RixsBinningModel:
             {
                 "name": "DeltaD",
                 "type": "float",
-                "value": 55e-3,
+                "value": 20e-3,
                 "suffix": " mm",
                 "tip": "Detector pixel width in the energy dispersion direction",
                 "pv": "none",
