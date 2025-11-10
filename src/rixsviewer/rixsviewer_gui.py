@@ -112,7 +112,7 @@ class RixsViewerGUI(QMainWindow):
 
         if result["summed_data"] is not None:
             self.ui.widget_imgview.setImage(
-                result["summed_data"], axes={"y": 0, "x": 1}
+                result["summed_data"], axes={"y": 0, "x": 1}, levels=result["levels"]
             )
 
     def on_load_specfile_clicked(self):

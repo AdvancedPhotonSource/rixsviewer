@@ -168,11 +168,13 @@ class RixsScanImageDataset:
         self.data = self.read_data()
         self.model = self.get_table_model()
 
-    def get_data_for_display(self):
-        mask = self.data[0] > 0
+    def get_data_for_display(self, data=None):
+        if data is None:
+            data = self.data
+        mask = data[0] > 0
         vmin = 0
-        vmax = np.percentile(self.data[0][mask], 99)
-        return self.data, (vmin, vmax)
+        vmax = np.percentile(data[0][mask], 99)
+        return data, (vmin, vmax)
 
     def bin_data(self, DeltaD=0.022, xref=70, fit_pixel_size=True, **kwargs):
         shape = self.data.shape
@@ -235,14 +237,17 @@ class RixsScanImageDataset:
 
         if self.scan_type == "SnapshotScan":
             summed_data = np.sum(self.data, axis=0)
+            summed_data, levels = self.get_data_for_display(summed_data)
         else:
             summed_data = None
+            levels = None
 
         return {
             "rawdata_lines": lines,
             "binned_line": (bin_energy_axis, bin_data_mean, bin_data_err),
             "DeltaD_fit": effective_pixel_size,
             "summed_data": summed_data,
+            "levels": levels,
         }
 
     def __len__(self):
