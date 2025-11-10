@@ -8,6 +8,9 @@ from PySide6.QtCore import Qt, QAbstractTableModel
 from silx.io.specfile import SpecFile
 import pandas as pd
 import tifffile
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def parse_scan_info(scan_comment_str) -> dict:
@@ -44,11 +47,12 @@ def parse_scan_info(scan_comment_str) -> dict:
 
 
 class RixsScanListTable(QAbstractTableModel):
-    def __init__(self, fname, parent=None):
+    def __init__(self, fname, tif_folder, parent=None):
         super().__init__(parent)
         self.scanindex_to_tablerow = {}
         self.tablerow_to_scanindex = {}
         self.specfile = SpecFile(fname)
+        self.tif_folder = tif_folder
         self._headers = ["Scan #", "Type", "Points"]
 
     def rowCount(self, parent=None):
@@ -66,7 +70,60 @@ class RixsScanListTable(QAbstractTableModel):
         scan_df["ThetaB"] = np.arcsin(scan_meta["EB"] / scan_df["E"])
         return {"data": scan_df, "meta": scan_meta}
 
-    def parse_scan(self, scan, row):
+    def get_selected_dataset(self, rows, threshold, RefL=70):
+        dset_types = list(set([self.parse_scan(row)[1] for row in rows]))
+        if len(dset_types) > 1:
+            logger.error("Error: mixed type of dataset selected")
+            return None
+
+        if dset_types[0] == "SpectrumScan":
+            _scan_info = self.get_scan_information(rows[0])
+            index = self.tablerow_to_scanindex[rows[0]]
+            fnames = glob.glob(os.path.join(self.tif_folder, f"*_scan{index}_*.tif"))
+            fnames.sort()
+            dset = RixsScanImageDataset(
+                fnames,
+                scan_info=_scan_info,
+                scan_type="SpectrumScan",
+                threshold=threshold,
+            )
+            return dset
+        else:
+            fnames = []
+            scan_data_list = []
+            prev_scan_info = None
+            for row in rows:
+                _scan_info = self.get_scan_information(row)
+                _scan_info.pop("datetime", None)  # allow multi-day measurements
+                index = self.tablerow_to_scanindex[row]
+                _fnames = glob.glob(
+                    os.path.join(self.tif_folder, f"*_scan{index}_*.tif")
+                )
+                if len(_fnames) == 1:
+                    if (
+                        prev_scan_info is None
+                        or prev_scan_info["meta"] == _scan_info["meta"]
+                    ):
+                        scan_data_list.append(_scan_info["data"].iloc[0])
+                        fnames.extend(_fnames)
+                        prev_scan_info = _scan_info
+
+            if len(fnames) == 0:
+                logger.error("Error: no TIFF files found for the selected scans")
+                return None
+            else:
+                # fnames.sort()
+                prev_scan_info["data"] = pd.DataFrame(scan_data_list)
+                dset = RixsScanImageDataset(
+                    fnames,
+                    scan_info=prev_scan_info,
+                    scan_type="SnapshotScan",
+                    threshold=threshold,
+                )
+                return dset
+
+    def parse_scan(self, row):
+        scan = self.specfile[row]
         scan_number = scan.number
         if scan_number not in self.scanindex_to_tablerow:
             self.scanindex_to_tablerow[scan_number] = row
@@ -86,8 +143,7 @@ class RixsScanListTable(QAbstractTableModel):
             return None
         if role == Qt.DisplayRole:
             row, col = index.row(), index.column()
-            scan = self.specfile[row]
-            scan_info = self.parse_scan(scan, row)
+            scan_info = self.parse_scan(row)
             return scan_info[col]
 
         elif role == Qt.TextAlignmentRole:
@@ -104,9 +160,9 @@ class RixsScanListTable(QAbstractTableModel):
 
 
 class RixsScanImageDataset:
-    def __init__(self, scan_index, folder, scan_info, threshold=4095):
-        self.fnames = glob.glob(os.path.join(folder, f"*_scan{scan_index:d}_*.tif"))
-        self.fnames.sort()
+    def __init__(self, fnames, scan_info, scan_type, threshold=4095):
+        self.fnames = fnames
+        self.scan_type = scan_type
         self.threshod = threshold
         self.scan_info = scan_info
         self.data = self.read_data()
@@ -118,23 +174,76 @@ class RixsScanImageDataset:
         vmax = np.percentile(self.data[0][mask], 99)
         return self.data, (vmin, vmax)
 
-    def bin_data(self, model_config):
-        lines = []
-        data_1d = np.sum(self.data, axis=1)
+    def bin_data(self, DeltaD=0.022, xref=70, fit_pixel_size=True, **kwargs):
         shape = self.data.shape
+        data_1d = np.sum(self.data, axis=1)
+        # pad values after xrefl
+        data_1d[:, 2 * xref :] = np.mean(data_1d[:, 2 * xref])
+
+        xaxis = np.arange(shape[2]) - xref
+        # center of mass in pixels for the peak position;
+        com_pixel = np.sum(data_1d * xaxis, axis=1) / np.sum(data_1d, axis=1)
+
         Eb = self.scan_info["meta"]["EB"]
         rowland_radius = self.scan_info["meta"]["Rowland_radius"]
-        delta_d = model_config.get_parameter("DeltaD")
+        theta_b = self.scan_info["data"]["ThetaB"]
+        energy_cen = np.array(self.scan_info["data"]["E"]).reshape(-1, 1)
 
+        scale = np.array(Eb / (2 * rowland_radius) / np.tan(theta_b))
+
+        if fit_pixel_size and self.scan_type == "SnapshotScan":
+            logger.warning("fit_pixel_size is not implemented for SnapshotScan")
+            fit_pixel_size = False
+
+        if fit_pixel_size and self.scan_type == "SpectrumScan":
+            a_mat = np.array(com_pixel * scale).reshape(shape[0], 1)
+            a_mat = np.hstack([a_mat, np.ones_like(a_mat)])  # n_images x 2
+            effective_pixel_size, energy_fit = np.linalg.lstsq(a_mat, energy_cen)[0]
+            logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
+        else:
+            effective_pixel_size = DeltaD
+
+        energy_axis = energy_cen - np.outer(scale, xaxis) * effective_pixel_size
+
+        # sort the data
         for n in range(shape[0]):
-            energy_cen = self.scan_info["data"]["E"].iloc[n]
-            theta_b = self.scan_info["data"]["ThetaB"].iloc[n]
-            # delta_e = energy_cen * delta_d / (2 * rowland_radius) / np.tan(theta_b)
-            delta_e = Eb * delta_d / (2 * rowland_radius) / np.tan(theta_b)
-            x = energy_cen - (np.arange(shape[2]) - shape[2] // 2) * delta_e
-            y = data_1d[n]
-            lines.append([x, y])
-        return lines
+            sort_idx = np.argsort(energy_axis[n])
+            energy_axis[n] = energy_axis[n][sort_idx]
+            data_1d[n] = data_1d[n][sort_idx]
+
+        lines = [[energy_axis[n], data_1d[n]] for n in range(shape[0])]
+        energy_min, energy_max = np.min(energy_axis), np.max(energy_axis)
+        step = int(
+            (energy_max - energy_min) / np.mean(np.abs((np.diff(energy_axis, axis=1))))
+        )
+
+        bin_energy_axis = np.linspace(energy_min, energy_max, step)
+        bin_data = [
+            np.interp(
+                bin_energy_axis, energy_axis[n], data_1d[n], left=np.nan, right=np.nan
+            )
+            for n in range(shape[0])
+        ]
+
+        bin_data = np.array(bin_data)
+        bin_data_sum = np.nansum(bin_data, axis=0)
+        bin_data_norm = np.nansum(~np.isnan(bin_data), axis=0)
+        bin_data_mean = bin_data_sum / np.clip(bin_data_norm, a_min=1, a_max=None)
+
+        eff_data_len = np.sum(~np.isnan(bin_data), axis=0)
+        bin_data_err = np.nanstd(bin_data, axis=0) / np.sqrt(eff_data_len)
+
+        if self.scan_type == "SnapshotScan":
+            summed_data = np.sum(self.data, axis=0)
+        else:
+            summed_data = None
+
+        return {
+            "rawdata_lines": lines,
+            "binned_line": (bin_energy_axis, bin_data_mean, bin_data_err),
+            "DeltaD_fit": effective_pixel_size,
+            "summed_data": summed_data,
+        }
 
     def __len__(self):
         return len(self.fnames)
@@ -191,13 +300,5 @@ class RixsScanImageTable(QAbstractTableModel):
         return self.fnames[row]
 
 
-def test():
-    specfile = SpecFile(fname)
-    scan = specfile[90]
-    print(scan.number)
-    print(scan.scan_header_dict)
-    print(scan.header)
-
-
 if __name__ == "__main__":
-    test()
+    pass
