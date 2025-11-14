@@ -8,11 +8,15 @@ version = "0.1.0"
 description = "A tool for visualization and modeling of RIXS (Resonance Inelastic X-ray Scattering) data"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
-authors = [
-    {name = "MQICHU", email = "your.email@example.com"}
+license = { text = "MIT" }
+authors = [{ name = "MQICHU", email = "your.email@example.com" }]
+keywords = [
+    "RIXS",
+    "X-ray scattering",
+    "spectroscopy",
+    "visualization",
+    "modeling",
 ]
-keywords = ["RIXS", "X-ray scattering", "spectroscopy", "visualization", "modeling"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -31,14 +35,13 @@ dependencies = [
     "PySide6>=6.0.0",
     "silx>=1.0.0",
     "numpy>=1.20.0",
+    "pyqtgraph",
+    "tifffile",
+    "pandas",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "black>=22.0.0",
-    "flake8>=4.0.0",
-]
+dev = ["pytest>=7.0.0", "black>=22.0.0", "flake8>=4.0.0"]
 
 [project.scripts]
 rixsviewer = "rixsviewer.rixsviewer_gui:main"
