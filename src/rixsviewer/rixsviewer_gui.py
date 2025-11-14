@@ -1,4 +1,10 @@
-from PySide6.QtWidgets import QApplication, QMainWindow, QHeaderView, QFileDialog
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QHeaderView,
+    QFileDialog,
+    QMessageBox,
+)
 import sys
 import argparse
 from .specfile_reader import RixsScanListTable
@@ -108,7 +114,18 @@ class RixsViewerGUI(QMainWindow):
         self.plot_hdl.setLabel("bottom", "Energy (keV)")
 
         if fit_pixel_size:
-            self.binning_model.put_parameter("DeltaD", result["DeltaD_fit"])
+            # Show confirmation dialog before updating DeltaD parameter
+            fitted_value = float(result["DeltaD_fit"])
+            reply = QMessageBox.question(
+                self,
+                "Update DeltaD Parameter",
+                f"Update DeltaD parameter with fitted value {fitted_value:.6f} µm?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+
+            if reply == QMessageBox.Yes:
+                self.binning_model.put_parameter("DeltaD", fitted_value)
 
         if result["summed_data"] is not None:
             self.ui.widget_imgview.setImage(
