@@ -32,26 +32,29 @@ class RixsViewerGUI(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
+        self.scan_model = None
+        self.current_rixs_dset = None
+
         self.tiff_folder = tiff_folder
+        self.spec_filename = spec_filename
+
         if tiff_folder:
             self.ui.lineEdit.setText(self.tiff_folder)
-
         if spec_filename:
             self.ui.lineEdit_specfilename.setText(spec_filename)
-            self.setup_scan_table(spec_filename)
 
         # Connect signals
         self.ui.toolButton_load_specfile.clicked.connect(self.on_load_specfile_clicked)
         self.ui.toolButton_set_tifffolder.clicked.connect(
             self.on_set_tifffolder_clicked
         )
-        self.current_rixs_dset = None
-
+        self.ui.pushButton_load_scan.clicked.connect(self.setup_scan_table)
         self.init_plot_hdl()
         self.ui.pushButton_process.clicked.connect(self.process_binning)
 
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
+        self.setup_scan_table()
 
     def setup_parameter_tree(self):
         """Set up the parameter tree with RixsBinningModel parameters"""
@@ -142,7 +145,6 @@ class RixsViewerGUI(QMainWindow):
         # If a file was selected, update the line edit and reload the scan table
         if file_path:
             self.ui.lineEdit_specfilename.setText(file_path)
-            self.setup_scan_table(file_path)
 
     def on_set_tifffolder_clicked(self):
         """Handle the set TIFF folder button click"""
@@ -156,15 +158,26 @@ class RixsViewerGUI(QMainWindow):
             self.tiff_folder = folder_path
             self.ui.lineEdit.setText(folder_path)
 
-    def setup_scan_table(self, spec_filename):
+    def setup_scan_table(self):
         """Set up the scan table with the RixsScanListTable model"""
         # Create the model
-        if self.tiff_folder is None:
-            return
-        self.scan_model = RixsScanListTable(spec_filename, self.tiff_folder)
+
+        if self.tiff_folder is None or self.spec_filename is None:
+            return None
+
+        try:
+            scan_model = RixsScanListTable(self.spec_filename, self.tiff_folder)
+        except Exception as e:
+            logger.error(f"Error loading SPEC file: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to load SPEC file:\n{e}",
+            )
+            return None
 
         # Connect the model to the tableView_scan
-        self.ui.tableView_scan.setModel(self.scan_model)
+        self.ui.tableView_scan.setModel(scan_model)
 
         # Configure column stretching to use all available space
         header = self.ui.tableView_scan.horizontalHeader()
@@ -175,6 +188,8 @@ class RixsViewerGUI(QMainWindow):
         self.ui.tableView_scan.selectionModel().selectionChanged.connect(
             self.on_selection_changed
         )
+        self.scan_model = scan_model
+        return
 
     def on_selection_changed(self, selected, deselected):
         """
@@ -211,12 +226,12 @@ def main():
     parser.add_argument(
         "specfile",
         nargs="?",
-        default="/scratch/MQICHU/Datasets/rixs/rixsviewer_dataset/21Mar2025.spm3",
+        default="/home/beams/RIXS/Data/2025-1/slot8_Zivkovic/21Mar2025.spm3",
         help="Path to the SPEC file to load (default: %(default)s)",
     )
     parser.add_argument(
         "--tiff-folder",
-        default="/scratch/MQICHU/Datasets/rixs/rixsviewer_dataset/slot8/cray_clean/",
+        default="/net/s27data/export/sector27/lambda/2025-1/slot8/cray_clean",
         help="Path to the TIFF folder (default: %(default)s)",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
