@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 import sys
 import argparse
+from pathlib import Path
 from .specfile_reader import RixsScanListTable
 from .rixs_image import RixsBinningModel
 from .rixsviewer_ui import Ui_MainWindow
@@ -144,6 +145,7 @@ class RixsViewerGUI(QMainWindow):
 
         # If a file was selected, update the line edit and reload the scan table
         if file_path:
+            self.spec_filename = file_path
             self.ui.lineEdit_specfilename.setText(file_path)
 
     def on_set_tifffolder_clicked(self):
@@ -160,11 +162,14 @@ class RixsViewerGUI(QMainWindow):
 
     def setup_scan_table(self):
         """Set up the scan table with the RixsScanListTable model"""
-        # Create the model
+        if not Path(self.tiff_folder).is_dir:
+            logger.error(f"Check the tiff folder: {self.tiff_folder}")
+            return
+        if not Path(self.spec_filename).is_file:
+            logger.error(f"Check the spec file: {self.spec_filename}")
+            return
 
-        if self.tiff_folder is None or self.spec_filename is None:
-            return None
-
+        logger.info(f"Loading spec and tiff: {self.spec_filename}, {self.tiff_folder}")
         try:
             scan_model = RixsScanListTable(self.spec_filename, self.tiff_folder)
         except Exception as e:
@@ -174,7 +179,7 @@ class RixsViewerGUI(QMainWindow):
                 "Error",
                 f"Failed to load SPEC file:\n{e}",
             )
-            return None
+            return
 
         # Connect the model to the tableView_scan
         self.ui.tableView_scan.setModel(scan_model)

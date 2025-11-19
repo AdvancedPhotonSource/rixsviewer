@@ -1,8 +1,6 @@
 import os
-import sys
 import numpy as np
 import re
-import ast
 import glob
 from PySide6.QtCore import Qt, QAbstractTableModel
 from silx.io.specfile import SpecFile
