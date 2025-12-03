@@ -140,7 +140,10 @@ class RixsViewerGUI(QMainWindow):
         """Handle the load spec file button click"""
         # Open file dialog to select a spec file
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open SPEC File", "", "SPEC Files (*.spm3);;All Files (*)"
+            self,
+            "Open SPEC File",
+            str(Path(self.spec_filename).parent),
+            "SPEC Files (*.spm3);;All Files (*)",
         )
 
         # If a file was selected, update the line edit and reload the scan table
@@ -152,7 +155,7 @@ class RixsViewerGUI(QMainWindow):
         """Handle the set TIFF folder button click"""
         # Open directory dialog to select a folder
         folder_path = QFileDialog.getExistingDirectory(
-            self, "Select TIFF Folder", self.tiff_folder
+            self, "Select TIFF Folder", self.tiff_folder, QFileDialog.ShowDirsOnly
         )
 
         # If a folder was selected, update the line edit and store the path
