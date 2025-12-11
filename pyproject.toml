@@ -38,6 +38,7 @@ dependencies = [
     "pyqtgraph",
     "tifffile",
     "pandas",
+    "matplotlib",
 ]
 
 [project.optional-dependencies]
