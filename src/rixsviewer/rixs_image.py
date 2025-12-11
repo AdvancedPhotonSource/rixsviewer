@@ -60,7 +60,7 @@ class RixsBinningModel:
                 "value": 0,
                 "suffix": " pixel",
                 "tip": "The minimum Y pixel to include in the spectra",
-                "pv": "none",
+                "pv": "27idmot1:YLowPixel",
             },
             {
                 "name": "Yhigh",
@@ -68,7 +68,7 @@ class RixsBinningModel:
                 "value": 256,
                 "suffix": " pixel",
                 "tip": "The maximum Y pixel to include in the spectra",
-                "pv": "none",
+                "pv": "27idmot1:YHighPixel",
             },
             {
                 "name": "RefL",
@@ -76,7 +76,7 @@ class RixsBinningModel:
                 "value": 70,
                 "suffix": " pixel",
                 "tip": "Pixel number in the center of the energy dispersion on the lambda detector",
-                "pv": "none",
+                "pv": "27idmot1:Merix_refChan",
             },
             {
                 "name": "Acrystalsize",
@@ -84,7 +84,7 @@ class RixsBinningModel:
                 "value": 1.3,
                 "suffix": " mm",
                 "tip": "Dice size of analyzer",
-                "pv": "none",
+                "pv": "27idmot1:Acrystal",
             },
             {
                 "name": "Eb",
@@ -108,7 +108,7 @@ class RixsBinningModel:
                 "value": 20e-3,
                 "suffix": " mm",
                 "tip": "Detector pixel width in the energy dispersion direction",
-                "pv": "none",
+                "pv": "27idmot1:LambdaPixelSize",
             },
             {
                 "name": "E",
@@ -117,6 +117,14 @@ class RixsBinningModel:
                 "suffix": " keV",
                 "tip": "Current energy of analyzer",
                 "pv": "27idmot1:Merix_E.VAL",
+            },
+            {
+                "name": "ThetaB",
+                "type": "float",
+                "value": 0.0,
+                "suffix": " degrees",
+                "tip": "Bragg angle of analyzer",
+                "pv": "27idmot1:Merix_Theta.VAL",
             },
         ]
         return params

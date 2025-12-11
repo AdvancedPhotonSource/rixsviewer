@@ -45,7 +45,14 @@
        <property name="bottomMargin">
         <number>0</number>
        </property>
-       <item row="2" column="3">
+       <item row="1" column="0" colspan="4">
+        <widget class="QTableView" name="tableView_scan">
+         <property name="selectionMode">
+          <enum>QAbstractItemView::SelectionMode::SingleSelection</enum>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="3">
         <widget class="QComboBox" name="comboBox_2">
          <item>
           <property name="text">
@@ -64,17 +71,10 @@
          </item>
         </widget>
        </item>
-       <item row="2" column="0">
-        <widget class="QLabel" name="label_2">
-         <property name="text">
-          <string>Select Index</string>
-         </property>
-        </widget>
+       <item row="3" column="1">
+        <widget class="QSpinBox" name="spinBox"/>
        </item>
-       <item row="1" column="0" colspan="4">
-        <widget class="QTableView" name="tableView_scan"/>
-       </item>
-       <item row="2" column="2">
+       <item row="3" column="2">
         <widget class="QLabel" name="label_5">
          <property name="text">
           <string>TypeFilter</string>
@@ -146,7 +146,7 @@
          <item row="0" column="3" rowspan="2">
           <widget class="QPushButton" name="pushButton_load_scan">
            <property name="sizePolicy">
-            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
              <horstretch>0</horstretch>
              <verstretch>0</verstretch>
             </sizepolicy>
@@ -170,50 +170,54 @@
          </item>
         </layout>
        </item>
-       <item row="2" column="1">
-        <widget class="QSpinBox" name="spinBox"/>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_2">
+         <property name="text">
+          <string>Select Index</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0" colspan="4">
+        <widget class="QGroupBox" name="groupBox_2">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>320</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="title">
+          <string>Image List</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_2">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <item row="0" column="0">
+           <widget class="QTableView" name="tableView_image"/>
+          </item>
+         </layout>
+        </widget>
        </item>
       </layout>
      </widget>
     </item>
     <item row="0" column="1">
      <layout class="QHBoxLayout" name="horizontalLayout">
-      <item>
-       <widget class="QGroupBox" name="groupBox_2">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>320</width>
-          <height>16777215</height>
-         </size>
-        </property>
-        <property name="title">
-         <string>Image List</string>
-        </property>
-        <layout class="QGridLayout" name="gridLayout_2">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <item row="0" column="0">
-          <widget class="QTableView" name="tableView_image"/>
-         </item>
-        </layout>
-       </widget>
-      </item>
       <item>
        <widget class="QGroupBox" name="groupBox_3">
         <property name="sizePolicy">
@@ -238,8 +242,8 @@
          <property name="bottomMargin">
           <number>0</number>
          </property>
-         <item row="0" column="0">
-          <widget class="ImageView" name="widget_imgview" native="true">
+         <item row="1" column="0">
+          <widget class="GraphicsLayoutWidget" name="widget_img" native="true">
            <property name="sizePolicy">
             <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
              <horstretch>0</horstretch>
@@ -310,6 +314,18 @@
          <string>Settings</string>
         </property>
         <layout class="QGridLayout" name="gridLayout_8">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
          <item row="0" column="0" rowspan="2">
           <layout class="QGridLayout" name="gridLayout_5">
            <item row="0" column="0" colspan="4">
@@ -331,7 +347,7 @@
            <item row="1" column="0">
             <widget class="QLabel" name="label_4">
              <property name="text">
-              <string>Destination:</string>
+              <string>Source:</string>
              </property>
             </widget>
            </item>
@@ -339,12 +355,17 @@
             <widget class="QComboBox" name="comboBox">
              <item>
               <property name="text">
-               <string>File</string>
+               <string>SpecFile</string>
               </property>
              </item>
              <item>
               <property name="text">
                <string>PV</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>GUI</string>
               </property>
              </item>
             </widget>
@@ -374,13 +395,18 @@
          <string>Process</string>
         </property>
         <layout class="QGridLayout" name="gridLayout_7">
-         <item row="0" column="2">
-          <widget class="QPushButton" name="pushButton_process">
-           <property name="text">
-            <string>Process Binning</string>
-           </property>
-          </widget>
-         </item>
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
          <item row="0" column="0">
           <widget class="QCheckBox" name="checkBox_fit_pixel_size">
            <property name="text">
@@ -402,6 +428,13 @@
           <widget class="QCheckBox" name="checkBox_show_rawdata">
            <property name="text">
             <string>Show RawData</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0" colspan="3">
+          <widget class="QPushButton" name="pushButton_process">
+           <property name="text">
+            <string>Process Binning</string>
            </property>
           </widget>
          </item>
@@ -443,12 +476,6 @@
   </action>
  </widget>
  <customwidgets>
-  <customwidget>
-   <class>ImageView</class>
-   <extends>QWidget</extends>
-   <header>pyqtgraph</header>
-   <container>1</container>
-  </customwidget>
   <customwidget>
    <class>GraphicsLayoutWidget</class>
    <extends>QWidget</extends>

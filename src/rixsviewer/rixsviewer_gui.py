@@ -8,13 +8,14 @@ from PySide6.QtWidgets import (
 import sys
 import argparse
 from pathlib import Path
-from .specfile_reader import RixsScanListTable
+from .specfile_reader import RixsSpecTable
 from .rixs_image import RixsBinningModel
 from .rixsviewer_ui import Ui_MainWindow
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
 import logging
+import traceback
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -50,12 +51,35 @@ class RixsViewerGUI(QMainWindow):
             self.on_set_tifffolder_clicked
         )
         self.ui.pushButton_load_scan.clicked.connect(self.setup_scan_table)
+        self.setup_image_handler()
         self.init_plot_hdl()
         self.ui.pushButton_process.clicked.connect(self.process_binning)
 
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
         self.setup_scan_table()
+
+    def setup_image_handler(self):
+        plot = self.ui.widget_img.addPlot(row=0, col=0)
+        plot.setLabel("bottom", "Energy bin")
+        plot.setLabel("left", "Position (pixel)")
+        # Optional: grid and aspect ratio
+        # plot.showGrid(x=True, y=True)
+        plot.getViewBox().setAspectLocked(False)
+
+        # --- Add the ImageItem ---
+        self.img2d_hdl = pg.ImageItem(axisOrder="row-major")
+        plot.addItem(self.img2d_hdl)
+        # Example image data
+
+        # Optional: colorbar
+        hist = pg.HistogramLUTItem()
+        hist.setImageItem(self.img2d_hdl)
+        self.ui.widget_img.addItem(hist, row=0, col=1)
+        # Optional: apply a matplotlib colormap
+        cmap = pg.colormap.getFromMatplotlib("viridis")
+        self.img2d_hdl.setLookupTable(cmap.getLookupTable())
+        hist.gradient.setColorMap(cmap)
 
     def setup_parameter_tree(self):
         """Set up the parameter tree with RixsBinningModel parameters"""
@@ -85,7 +109,7 @@ class RixsViewerGUI(QMainWindow):
     def init_plot_hdl(self):
         self.plot_hdl = self.ui.widget_binhdl.addPlot()
         cmap = pg.colormap.get("plasma")
-        self.ui.widget_imgview.setColorMap(cmap)
+        self.img2d_hdl.setColorMap(cmap)
 
     def process_binning(self):
         if self.current_rixs_dset is None:
@@ -132,8 +156,8 @@ class RixsViewerGUI(QMainWindow):
                 self.binning_model.put_parameter("DeltaD", fitted_value)
 
         if result["summed_data"] is not None:
-            self.ui.widget_imgview.setImage(
-                result["summed_data"], axes={"y": 0, "x": 1}, levels=result["levels"]
+            self.img2d_hdl.setImage(
+                np.flipud(result["summed_data"]), levels=result["levels"]
             )
 
     def on_load_specfile_clicked(self):
@@ -174,8 +198,9 @@ class RixsViewerGUI(QMainWindow):
 
         logger.info(f"Loading spec and tiff: {self.spec_filename}, {self.tiff_folder}")
         try:
-            scan_model = RixsScanListTable(self.spec_filename, self.tiff_folder)
+            scan_model = RixsSpecTable(self.spec_filename, self.tiff_folder)
         except Exception as e:
+            traceback.print_exc()
             logger.error(f"Error loading SPEC file: {e}")
             QMessageBox.critical(
                 self,
@@ -205,9 +230,9 @@ class RixsViewerGUI(QMainWindow):
         'selected' and 'deselected' are QItemSelection objects.
         """
         selected_indexes = self.ui.tableView_scan.selectionModel().selectedIndexes()
-        rows = [index.row() for index in selected_indexes]
+        row = [index.row() for index in selected_indexes][0]
         threshold = self.binning_model.get_parameter("threshold")
-        dset = self.scan_model.get_selected_dataset(rows, threshold)
+        dset = self.scan_model.get_selected_dataset(row, threshold)
         if dset is None:
             return
 
@@ -216,13 +241,12 @@ class RixsViewerGUI(QMainWindow):
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         data, levels = self.current_rixs_dset.get_data_for_display()
-        self.ui.widget_imgview.setImage(
-            data, axes={"t": 0, "y": 1, "x": 2}, levels=levels
-        )
+        self.img2d_hdl.setImage(np.flipud(data[-1]), levels=levels)
         self.ui.tableView_image.clicked.connect(self.on_image_table_clicked)
 
     def on_image_table_clicked(self, index):
-        self.ui.widget_imgview.setCurrentIndex(index.row())
+        # self.img2d_hdl.setCurrentIndex(index.row())
+        pass
 
 
 def main():
@@ -234,12 +258,12 @@ def main():
     parser.add_argument(
         "specfile",
         nargs="?",
-        default="/home/beams/RIXS/Data/2025-1/slot8_Zivkovic/21Mar2025.spm3",
+        default="/home/beams/RIXS/Data/2025-3/slot12_jhkim/flat4",
         help="Path to the SPEC file to load (default: %(default)s)",
     )
     parser.add_argument(
         "--tiff-folder",
-        default="/net/s27data/export/sector27/lambda/2025-1/slot8/cray_clean",
+        default="/net/s27data/export/sector27/lambda/2025-3/slot11/cray_clean",
         help="Path to the TIFF folder (default: %(default)s)",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")

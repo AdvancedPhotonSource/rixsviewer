@@ -11,138 +11,145 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def parse_scan_info(scan_comment_str) -> dict:
-    """
-    Parse scan metadata from a dictionary-like string and extract key numerical values.
+def parse_single_scan(scan):
+    scan_number = scan.number
+    scan_type = "Unknown"
+    if "Y" in scan.scan_header_dict:
+        scan_signature = scan.scan_header_dict["Y"]
+        if scan_signature.startswith("EnergyScan"):
+            scan_type = "EnergyScan"
+        elif scan_signature.startswith("SnapshotScan"):
+            scan_type = "SnapshotScan"
 
-    Extracted fields:
-        - scan_start, scan_end
-        - ref_channel
-        - EB
-        - Rowland_radius
-        - binning_range
-        - datetime
-    """
-    text = scan_comment_str
+    if scan_type == "Unknown":
+        return None, None
 
-    # Regular expressions
-    scan_energy = re.search(r"merixE\s+([\d.]+)\s+([\d.]+)", text)
-    ref_channel = re.search(r"Detector ref channel\s*=\s*(\d+)", text)
-    eb = re.search(r"Analyzer EB\s*=\s*([\d.]+)", text)
-    rowland = re.search(r"Rowland radius\s*=\s*(\d+)", text)
-    binning = re.search(r"Detector binning range:\s*(\d+)\s+(\d+)", text)
-    datetime = re.search(r"Datafile:(\w+)", text)
+    scandata = get_scandata_information(scan)
 
-    return {
-        "scan_start": float(scan_energy.group(1)) if scan_energy else None,
-        "scan_end": float(scan_energy.group(2)) if scan_energy else None,
-        "ref_channel": int(ref_channel.group(1)) if ref_channel else None,
-        "EB": float(eb.group(1)) if eb else None,
-        "Rowland_radius": int(rowland.group(1)) if rowland else None,
-        "binning_range": (int(binning.group(1)), int(binning.group(2))),
-        "datetime": datetime.group(1) if datetime else None,
+    info = {
+        "scan_number": scan_number,
+        "scan_type": scan_type,
+        "actual_points": scandata.shape[0],
+        "metadata": get_metadata_from_header(scan.scan_header_dict["B"]),
+        "scandata": scandata,
     }
 
+    return scan_number, info
 
-class RixsScanListTable(QAbstractTableModel):
+
+def get_scandata_information(scan):
+    header = scan.scan_header_dict["L"].split()
+    scandata = scan.data.T
+    scandata = pd.DataFrame(scandata, columns=header)
+    return scandata
+
+
+def get_metadata_from_header(scan_comment_str) -> dict:
+    """
+    Parse metadata from scan header string.
+
+    Expected format: 'Analyzer_EB_keV = 11.184\nRowland_Radius_m = 1998\nCenter_x_pixel = 77\n...'
+
+    Returns dictionary with parameter names matching RixsBinningModel in rixs_image.py:
+    - Eb: Analyzer backscattering energy (keV)
+    - Ra: Rowland circle radius (mm)
+    - RefL: Reference pixel/channel for energy dispersion center
+    - Ylow, Yhigh: Y pixel binning range
+    - Acrystalsize: Analyzer crystal size (mm)
+    - DeltaD: Detector pixel width in energy dispersion direction (mm)
+    """
+
+    text = scan_comment_str
+
+    # Regular expressions for new format
+    analyzer_eb_kev = re.search(r"Analyzer_EB_keV\s*=\s*([\d.]+)", text)
+    rowland_radius_m = re.search(r"Rowland_Radius_m\s*=\s*([\d.]+)", text)
+    center_x_pixel = re.search(r"Center_x_pixel\s*=\s*([\d.]+)", text)
+    low_y_pixel = re.search(r"Low_y_pixel\s*=\s*([\d.]+)", text)
+    high_y_pixel = re.search(r"High_y_pixel\s*=\s*([\d.]+)", text)
+    analyzer_crystal_size_mm = re.search(
+        r"Analyzer_Crystal_Size_mm\s*=\s*([\d.]+)", text
+    )
+    lambda_strip_size_mm = re.search(r"Lambda_Strip_Size_mm\s*=\s*([\d.]+)", text)
+
+    # Build result dictionary
+    result = {
+        "Eb": float(analyzer_eb_kev.group(1)),
+        "Ra": float(rowland_radius_m.group(1)),
+        "RefL": float(center_x_pixel.group(1)),
+        "Ylow": int(float(low_y_pixel.group(1))),
+        "Yhigh": int(float(high_y_pixel.group(1))),
+        "Acrystalsize": float(analyzer_crystal_size_mm.group(1)),
+        "DeltaD": float(lambda_strip_size_mm.group(1)),
+    }
+
+    # Keep binning_range for backward compatibility
+    result["binning_range"] = (result["Ylow"], result["Yhigh"])
+
+    return result
+
+
+class RixsSpecTable(QAbstractTableModel):
     def __init__(self, fname, tif_folder, parent=None):
         super().__init__(parent)
-        self.scanindex_to_tablerow = {}
-        self.tablerow_to_scanindex = {}
-        self.specfile = SpecFile(fname)
+        self.spec_fname = fname
         self.tif_folder = tif_folder
-        self._headers = ["Scan #", "Type", "Points"]
+        self.last_modtime = -1
+        self._headers = ["Scan#", "Type", "ExpectedPoints", "ActualPoints"]
+        self.record = []
+        self.process_spec_file()
+
+    def process_spec_file(self):
+        last_modtime = os.path.getmtime(self.spec_fname)
+        if last_modtime == self.last_modtime:
+            return
+        else:
+            self.last_modtime = last_modtime
+
+        self.record = []  # empty the record
+        specfile = SpecFile(self.spec_fname)
+        for scan_index in range(len(specfile)):
+            scan_pack = specfile[scan_index]
+            scan_type, scan_info = parse_single_scan(scan_pack)
+            if scan_type is not None:
+                self.record.append(scan_info)
 
     def rowCount(self, parent=None):
-        return len(self.specfile)
+        return len(self.record)
 
     def columnCount(self, parent=None):
         return len(self._headers)
 
-    def get_scan_information(self, row):
-        header = ["E", "C", "A", "M", "I0", "I2"]
-        scan = self.specfile[row]
-        scan_data = scan.data.T
-        scan_df = pd.DataFrame(scan_data, columns=header)
-        scan_meta = parse_scan_info(scan.scan_header_dict["C"])
-        scan_df["ThetaB"] = np.arcsin(scan_meta["EB"] / scan_df["E"])
-        return {"data": scan_df, "meta": scan_meta}
-
-    def get_selected_dataset(self, rows, threshold, RefL=70):
-        dset_types = list(set([self.parse_scan(row)[1] for row in rows]))
-        if len(dset_types) > 1:
-            logger.error("Error: mixed type of dataset selected")
-            return None
-
-        if dset_types[0] == "SpectrumScan":
-            _scan_info = self.get_scan_information(rows[0])
-            index = self.tablerow_to_scanindex[rows[0]]
-            fnames = glob.glob(os.path.join(self.tif_folder, f"*_scan{index}_*.tif"))
+    def get_selected_dataset(self, row, threshold, RefL=70):
+        scan_info = self.record[row]
+        if scan_info["scan_type"] == "EnergyScan":
+            scan_number = scan_info["scan_number"]
+            basename = os.path.basename(self.spec_fname)
+            fnames = glob.glob(
+                os.path.join(
+                    self.tif_folder, f"{basename}_scan{scan_number}_point*.tif"
+                )
+            )
             fnames.sort()
-            dset = RixsScanImageDataset(
+            dset = RixsScanTiffDataset(
                 fnames,
-                scan_info=_scan_info,
-                scan_type="SpectrumScan",
+                scan_info=scan_info,
                 threshold=threshold,
             )
             return dset
-        else:
-            fnames = []
-            scan_data_list = []
-            prev_scan_info = None
-            for row in rows:
-                _scan_info = self.get_scan_information(row)
-                _scan_info.pop("datetime", None)  # allow multi-day measurements
-                index = self.tablerow_to_scanindex[row]
-                _fnames = glob.glob(
-                    os.path.join(self.tif_folder, f"*_scan{index}_*.tif")
-                )
-                if len(_fnames) == 1:
-                    if (
-                        prev_scan_info is None
-                        or prev_scan_info["meta"] == _scan_info["meta"]
-                    ):
-                        scan_data_list.append(_scan_info["data"].iloc[0])
-                        fnames.extend(_fnames)
-                        prev_scan_info = _scan_info
-
-            if len(fnames) == 0:
-                logger.error("Error: no TIFF files found for the selected scans")
-                return None
-            else:
-                # fnames.sort()
-                prev_scan_info["data"] = pd.DataFrame(scan_data_list)
-                dset = RixsScanImageDataset(
-                    fnames,
-                    scan_info=prev_scan_info,
-                    scan_type="SnapshotScan",
-                    threshold=threshold,
-                )
-                return dset
-
-    def parse_scan(self, row):
-        scan = self.specfile[row]
-        scan_number = scan.number
-        if scan_number not in self.scanindex_to_tablerow:
-            self.scanindex_to_tablerow[scan_number] = row
-            self.tablerow_to_scanindex[row] = scan_number
-        if scan.scan_header_dict["C"].startswith("ascan  merixE"):
-            scan_type = "SpectrumScan"
-        elif scan.scan_header_dict["C"].startswith("Snapshot energy"):
-            scan_type = "SnapshotScan"
-        else:
-            scan_type = "UndefinedScan"
-
-        scan_points = scan.data.shape[1]
-        return (scan_number, scan_type, scan_points)
 
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():
             return None
         if role == Qt.DisplayRole:
             row, col = index.row(), index.column()
-            scan_info = self.parse_scan(row)
-            return scan_info[col]
+            key = {
+                0: "scan_number",
+                1: "scan_type",
+                2: "actual_points",
+                3: "actual_points",
+            }[col]
+            return self.record[row][key]
 
         elif role == Qt.TextAlignmentRole:
             return Qt.AlignCenter
@@ -157,10 +164,9 @@ class RixsScanListTable(QAbstractTableModel):
             return str(section + 1)
 
 
-class RixsScanImageDataset:
-    def __init__(self, fnames, scan_info, scan_type, threshold=4095):
+class RixsScanTiffDataset:
+    def __init__(self, fnames, scan_info, threshold=4095):
         self.fnames = fnames
-        self.scan_type = scan_type
         self.threshod = threshold
         self.scan_info = scan_info
         self.data = self.read_data()
@@ -184,8 +190,8 @@ class RixsScanImageDataset:
         # center of mass in pixels for the peak position;
         com_pixel = np.sum(data_1d * xaxis, axis=1) / np.sum(data_1d, axis=1)
 
-        Eb = self.scan_info["meta"]["EB"]
-        rowland_radius = self.scan_info["meta"]["Rowland_radius"]
+        Eb = self.scan_info["meta"]["Eb"]
+        rowland_radius = self.scan_info["meta"]["Ra"]
         theta_b = self.scan_info["data"]["ThetaB"]
         energy_cen = np.array(self.scan_info["data"]["E"]).reshape(-1, 1)
 
@@ -195,7 +201,7 @@ class RixsScanImageDataset:
             logger.warning("fit_pixel_size is not implemented for SnapshotScan")
             fit_pixel_size = False
 
-        if fit_pixel_size and self.scan_type == "SpectrumScan":
+        if fit_pixel_size and self.scan_type == "EnergyScan":
             a_mat = np.array(com_pixel * scale).reshape(shape[0], 1)
             a_mat = np.hstack([a_mat, np.ones_like(a_mat)])  # n_images x 2
             effective_pixel_size, energy_fit = np.linalg.lstsq(a_mat, energy_cen)[0]

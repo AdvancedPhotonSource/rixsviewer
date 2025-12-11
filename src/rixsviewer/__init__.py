@@ -8,6 +8,6 @@ __version__ = "0.1.0"
 __author__ = "MQICHU"
 
 from .rixsviewer_gui import RixsViewerGUI
-from .specfile_reader import RixsScanListTable
+from .specfile_reader import RixsSpecTable
 
-__all__ = ["RixsViewerGUI", "RixsScanListTable"]
+__all__ = ["RixsViewerGUI", "RixsSpecTable"]
