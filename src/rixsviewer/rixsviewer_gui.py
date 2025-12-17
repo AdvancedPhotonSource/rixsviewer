@@ -237,7 +237,7 @@ class RixsViewerGUI(QMainWindow):
             return
 
         self.current_rixs_dset = dset
-        self.ui.tableView_image.setModel(self.current_rixs_dset.model)
+        self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         data, levels = self.current_rixs_dset.get_data_for_display()

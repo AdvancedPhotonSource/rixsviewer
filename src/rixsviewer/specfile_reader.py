@@ -11,8 +11,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def parse_single_scan(scan):
-    scan_number = scan.number
+def percentile_clip(data):
+    if data.size == 0:
+        return (0, 0)
+    if data.ndim == 2:
+        mask = data > 0
+        vmax = np.percentile(data[mask], 99)
+    elif data.ndim == 3:
+        mask = data[0] > 0
+        vmax = np.percentile(data[0][mask], 99)
+    return (0, vmax)
+
+
+def get_scan_type(scan) -> str:
     scan_type = "Unknown"
     if "Y" in scan.scan_header_dict:
         scan_signature = scan.scan_header_dict["Y"]
@@ -20,21 +31,32 @@ def parse_single_scan(scan):
             scan_type = "EnergyScan"
         elif scan_signature.startswith("SnapshotScan"):
             scan_type = "SnapshotScan"
+    return scan_type
 
-    if scan_type == "Unknown":
-        return None, None
 
+def parse_single_scan(scan, spec_fname, tif_folder):
+    scan_number = scan.number
     scandata = get_scandata_information(scan)
-
+    filenames = get_linked_tiff_filenames(spec_fname, tif_folder, scan_number)
     info = {
         "scan_number": scan_number,
-        "scan_type": scan_type,
-        "actual_points": scandata.shape[0],
+        "scan_type": get_scan_type(scan),
+        "spec_points": scandata.shape[0],
+        "tiff_points": len(filenames),
         "metadata": get_metadata_from_header(scan.scan_header_dict["B"]),
         "scandata": scandata,
+        "filenames": filenames,
     }
+    return info
 
-    return scan_number, info
+
+def get_linked_tiff_filenames(spec_fname, tif_folder, scan_number):
+    basename = os.path.basename(spec_fname)
+    fnames = glob.glob(
+        os.path.join(tif_folder, f"{basename}_scan{scan_number}_point*.tif")
+    )
+    fnames.sort()
+    return fnames
 
 
 def get_scandata_information(scan):
@@ -93,26 +115,34 @@ class RixsSpecTable(QAbstractTableModel):
     def __init__(self, fname, tif_folder, parent=None):
         super().__init__(parent)
         self.spec_fname = fname
+        self.spec_container = None
         self.tif_folder = tif_folder
         self.last_modtime = -1
-        self._headers = ["Scan#", "Type", "ExpectedPoints", "ActualPoints"]
+        self._headers = ["Scan#", "Type", "SpecPoints", "TiffPoints"]
         self.record = []
         self.process_spec_file()
 
-    def process_spec_file(self):
+    def read_latest_spec_file(self):
         last_modtime = os.path.getmtime(self.spec_fname)
-        if last_modtime == self.last_modtime:
-            return
+        if last_modtime == self.last_modtime and self.spec_container is not None:
+            return False
         else:
             self.last_modtime = last_modtime
+        self.spec_container = SpecFile(self.spec_fname)
+        return True
 
-        self.record = []  # empty the record
-        specfile = SpecFile(self.spec_fname)
-        for scan_index in range(len(specfile)):
-            scan_pack = specfile[scan_index]
-            scan_type, scan_info = parse_single_scan(scan_pack)
-            if scan_type is not None:
-                self.record.append(scan_info)
+    def process_spec_file(self):
+        if not self.read_latest_spec_file():
+            return
+
+        for scan_index in range(len(self.spec_container)):
+            scan = self.spec_container[scan_index]
+            if get_scan_type(scan) in ["EnergyScan", "SnapshotScan"]:
+                scan_dset = RixsScanTiffDataset(
+                    scan_index, self.spec_fname, self.tif_folder
+                )
+                scan_dset.update_scan_info(self.spec_container)
+                self.record.append(scan_dset)
 
     def rowCount(self, parent=None):
         return len(self.record)
@@ -121,35 +151,15 @@ class RixsSpecTable(QAbstractTableModel):
         return len(self._headers)
 
     def get_selected_dataset(self, row, threshold, RefL=70):
-        scan_info = self.record[row]
-        if scan_info["scan_type"] == "EnergyScan":
-            scan_number = scan_info["scan_number"]
-            basename = os.path.basename(self.spec_fname)
-            fnames = glob.glob(
-                os.path.join(
-                    self.tif_folder, f"{basename}_scan{scan_number}_point*.tif"
-                )
-            )
-            fnames.sort()
-            dset = RixsScanTiffDataset(
-                fnames,
-                scan_info=scan_info,
-                threshold=threshold,
-            )
-            return dset
+        scan_tiff_dset = self.record[row]
+        return scan_tiff_dset
 
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():
             return None
         if role == Qt.DisplayRole:
             row, col = index.row(), index.column()
-            key = {
-                0: "scan_number",
-                1: "scan_type",
-                2: "actual_points",
-                3: "actual_points",
-            }[col]
-            return self.record[row][key]
+            return self.record[row].get_qtableview_display_data(col)
 
         elif role == Qt.TextAlignmentRole:
             return Qt.AlignCenter
@@ -165,35 +175,54 @@ class RixsSpecTable(QAbstractTableModel):
 
 
 class RixsScanTiffDataset:
-    def __init__(self, fnames, scan_info, threshold=4095):
-        self.fnames = fnames
-        self.threshod = threshold
-        self.scan_info = scan_info
-        self.data = self.read_data()
-        self.model = self.get_table_model()
+    def __init__(self, scan_index, spec_fname, tif_folder, threshold=4095):
+        self.scan_index = scan_index
+        self.spec_fname = spec_fname
+        self.tif_folder = tif_folder
+        self.threshold = threshold
+        self._model = None
+        self._data = None
+        self.scan_info = None
 
-    def get_data_for_display(self, data=None):
-        if data is None:
-            data = self.data
-        mask = data[0] > 0
-        vmin = 0
-        vmax = np.percentile(data[0][mask], 99)
-        return data, (vmin, vmax)
+    def update_scan_info(self, spec_container):
+        scan_pack = spec_container[self.scan_index]
+        self.scan_info = parse_single_scan(
+            scan_pack,
+            self.spec_fname,
+            self.tif_folder,
+        )
+
+    def get_qtableview_display_data(self, col):
+        key = {
+            0: "scan_number",
+            1: "scan_type",
+            2: "spec_points",
+            3: "tiff_points",
+        }[col]
+        return self.scan_info[key]
+
+    def get_data_for_display(self):
+        if self._data is None:
+            self._data = self.read_data()
+        levels = percentile_clip(self._data)
+        return self._data, levels
 
     def bin_data(self, DeltaD=0.022, xref=70, fit_pixel_size=True, **kwargs):
-        shape = self.data.shape
-        data_1d = np.sum(self.data, axis=1)
+        if self._data is None:
+            self._data = self.read_data()
+        shape = self._data.shape
+        data_1d = np.sum(self._data, axis=1)
         # pad values after xrefl
         data_1d[:, 2 * xref :] = np.mean(data_1d[:, 2 * xref])
 
         xaxis = np.arange(shape[2]) - xref
-        # center of mass in pixels for the peak position;
-        com_pixel = np.sum(data_1d * xaxis, axis=1) / np.sum(data_1d, axis=1)
 
-        Eb = self.scan_info["meta"]["Eb"]
-        rowland_radius = self.scan_info["meta"]["Ra"]
-        theta_b = self.scan_info["data"]["ThetaB"]
-        energy_cen = np.array(self.scan_info["data"]["E"]).reshape(-1, 1)
+        Eb = self.scan_info["metadata"]["Eb"]
+        rowland_radius = self.scan_info["metadata"]["Ra"]
+        theta_b = np.arcsin(
+            self.scan_info["metadata"]["Eb"] / self.scan_info["scandata"]["merixE"]
+        )
+        energy_cen = np.array(self.scan_info["scandata"]["merixE"]).reshape(-1, 1)
 
         scale = np.array(Eb / (2 * rowland_radius) / np.tan(theta_b))
 
@@ -202,6 +231,9 @@ class RixsScanTiffDataset:
             fit_pixel_size = False
 
         if fit_pixel_size and self.scan_type == "EnergyScan":
+            # center of mass in pixels for the peak position;
+            com_pixel = np.sum(data_1d * xaxis, axis=1) / np.sum(data_1d, axis=1)
+
             a_mat = np.array(com_pixel * scale).reshape(shape[0], 1)
             a_mat = np.hstack([a_mat, np.ones_like(a_mat)])  # n_images x 2
             effective_pixel_size, energy_fit = np.linalg.lstsq(a_mat, energy_cen)[0]
@@ -239,9 +271,9 @@ class RixsScanTiffDataset:
         eff_data_len = np.sum(~np.isnan(bin_data), axis=0)
         bin_data_err = np.nanstd(bin_data, axis=0) / np.sqrt(eff_data_len)
 
-        if self.scan_type == "SnapshotScan":
-            summed_data = np.sum(self.data, axis=0)
-            summed_data, levels = self.get_data_for_display(summed_data)
+        if self.scan_info["scan_type"] == "SnapshotScan":
+            summed_data = np.sum(self._data, axis=0)
+            levels = percentile_clip(summed_data)
         else:
             summed_data = None
             levels = None
@@ -258,14 +290,21 @@ class RixsScanTiffDataset:
         return len(self.fnames)
 
     def get_table_model(self):
-        return RixsScanImageTable(self.fnames)
+        if self._model is None:
+            self._model = RixsScanImageTable(self.scan_info["filenames"])
+        return self._model
 
     def read_data(self):
+        tiff_points = self.scan_info["tiff_points"]
+        if tiff_points == 0:
+            logger.warning("No linked TIFF files found for this scan.")
+            return np.array([])
+
         data = []
-        for fname in self.fnames:
+        for fname in self.scan_info["filenames"]:
             data.append(tifffile.imread(fname))
         data = np.array(data)
-        data[data >= self.threshod] = 0
+        data[data >= self.threshold] = 0
         return data
 
 
