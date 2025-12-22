@@ -26,19 +26,19 @@ def percentile_clip(data):
 
 def get_scan_type(scan) -> str:
     scan_type = "Unknown"
-    if "Y" in scan.scan_header_dict and "L" in scan.scan_header_dict:
-        scan_signature = scan.scan_header_dict["Y"]
-        if scan_signature.startswith("EnergyScan"):
-            scan_type = "EnergyScan"
-        elif scan_signature.startswith("SnapshotScan"):
-            scan_type = "SnapshotScan"
+    # if "Y" in scan.scan_header_dict and "L" in scan.scan_header_dict:
+    #     scan_signature = scan.scan_header_dict["Y"]
+    #     if scan_signature.startswith("EnergyScan"):
+    #         scan_type = "EnergyScan"
+    #     elif scan_signature.startswith("SnapshotScan"):
+    #         scan_type = "SnapshotScan"
 
     if scan_type != "Unknown":
         return scan_type
     else:
         # for on-going scans; the #Y line doesn't seem to be recognized correctly;
-        scan_type = get_scan_type_from_scanstring(scan.scan_header_dict["S"])
-        return scan_type
+        scan_type, steps = get_scan_type_from_scanstring(scan.scan_header_dict["S"])
+        return scan_type, steps
 
 
 def get_scan_type_from_scanstring(text, tol=1e-6):
@@ -65,22 +65,25 @@ def get_scan_type_from_scanstring(text, tol=1e-6):
 
     start = float(m.group(3))
     end = float(m.group(4))
+    steps = int(m.group(5)) + 1
 
-    return (
-        "SnapshotScan"
-        if math.isclose(start, end, rel_tol=0, abs_tol=tol)
-        else "EnergyScan"
-    )
+    if math.isclose(start, end, rel_tol=0, abs_tol=tol):
+        scan_type = "SnapshotScan"
+    else:
+        scan_type = "EnergyScan"
+
+    return scan_type, steps
 
 
 def parse_single_scan(scan, spec_fname, tif_folder):
     scan_number = scan.number
     scandata = get_scandata_information(scan)
     filenames = get_linked_tiff_filenames(spec_fname, tif_folder, scan_number)
+    scan_type, scan_points = get_scan_type(scan)
     info = {
         "scan_number": scan_number,
-        "scan_type": get_scan_type(scan),
-        "spec_points": scandata.shape[0],
+        "scan_type": scan_type,
+        "spec_points": scan_points,
         "tiff_points": len(filenames),
         "metadata": get_metadata_from_header(scan.scan_header_dict["B"]),
         "scandata": scandata,
@@ -181,7 +184,7 @@ class RixsSpecTable(QAbstractTableModel):
             if scan_number < self.last_scan_index:
                 continue
 
-            if get_scan_type(scan_pack) in ["EnergyScan", "SnapshotScan"]:
+            if get_scan_type(scan_pack)[0] in ["EnergyScan", "SnapshotScan"]:
                 if scan_number in self.record:
                     scan_dset = self.record[scan_number]
                     scan_dset.update_scan_info(scan_pack)
