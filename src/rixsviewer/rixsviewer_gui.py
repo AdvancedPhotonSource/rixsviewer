@@ -5,6 +5,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
 )
+from PySide6.QtCore import QTimer
+
 import sys
 import argparse
 from pathlib import Path
@@ -55,9 +57,27 @@ class RixsViewerGUI(QMainWindow):
         self.init_plot_hdl()
         self.ui.pushButton_process.clicked.connect(self.process_binning)
 
+        self.timer = QTimer(self)
+        self.timer.setInterval(1000)
+        self.timer.timeout.connect(self.update_spec_record)
+        self.ui.checkBox_autoupdate.checkStateChanged.connect(self.start_stop_timer)
+
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
         self.setup_scan_table()
+
+    def start_stop_timer(self):
+        """Auto-update the scan table with new scans from the spec file"""
+        if self.ui.checkBox_autoupdate.isChecked():
+            logger.info("Auto-updating scan table from spec file...")
+            self.timer.start()
+        else:
+            logger.info("Auto-update disabled.")
+            self.timer.stop()
+
+    def update_spec_record(self):
+        if self.scan_model is not None:
+            self.scan_model.process_spec_file()
 
     def setup_image_handler(self):
         plot = self.ui.widget_img.addPlot(row=0, col=0)
@@ -248,6 +268,10 @@ class RixsViewerGUI(QMainWindow):
         # self.img2d_hdl.setCurrentIndex(index.row())
         pass
 
+    def closeEvent(self, event):
+        self.timer.stop()
+        return super().closeEvent(event)
+
 
 def main():
     """Main entry point for the application"""
@@ -258,12 +282,12 @@ def main():
     parser.add_argument(
         "specfile",
         nargs="?",
-        default="/home/beams/RIXS/Data/2025-3/slot12_jhkim/flat4",
+        default="/scratch/MQICHU/Datasets/rixs/rixsviewer_dataset/test_data/simu_data/flat4",
         help="Path to the SPEC file to load (default: %(default)s)",
     )
     parser.add_argument(
         "--tiff-folder",
-        default="/net/s27data/export/sector27/lambda/2025-3/slot11/cray_clean",
+        default="/scratch/MQICHU/Datasets/rixs/rixsviewer_dataset/test_data/simu_data/tiffs",
         help="Path to the TIFF folder (default: %(default)s)",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")

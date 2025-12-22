@@ -2,7 +2,8 @@ import os
 import numpy as np
 import re
 import glob
-from PySide6.QtCore import Qt, QAbstractTableModel
+import math
+from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 from silx.io.specfile import SpecFile
 import pandas as pd
 import tifffile
@@ -25,13 +26,51 @@ def percentile_clip(data):
 
 def get_scan_type(scan) -> str:
     scan_type = "Unknown"
-    if "Y" in scan.scan_header_dict:
+    if "Y" in scan.scan_header_dict and "L" in scan.scan_header_dict:
         scan_signature = scan.scan_header_dict["Y"]
         if scan_signature.startswith("EnergyScan"):
             scan_type = "EnergyScan"
         elif scan_signature.startswith("SnapshotScan"):
             scan_type = "SnapshotScan"
-    return scan_type
+
+    if scan_type != "Unknown":
+        return scan_type
+    else:
+        # for on-going scans; the #Y line doesn't seem to be recognized correctly;
+        scan_type = get_scan_type_from_scanstring(scan.scan_header_dict["S"])
+        return scan_type
+
+
+def get_scan_type_from_scanstring(text, tol=1e-6):
+    """
+    Classify a spec scan header line (without '#S') as SnapshotScan or EnergyScan,
+    but only if the motor name is exactly 'merixE'.
+    Example text: "286  ascan  merixE 11.2146 11.2154  80 1"
+    """
+    pattern = re.compile(
+        r"""^
+            \s*(\d+)\s+          # scan number
+            (\w*scan)\s+         # scan macro name (e.g. ascan, dscan)
+            merixE\s+            # motor name must be exactly 'merixE'
+            ([+-]?\d*\.?\d+)\s+  # start
+            ([+-]?\d*\.?\d+)\s+  # end
+            (\d+)\s+             # steps
+            ([+-]?\d*\.?\d+)\s*  # time
+        $""",
+        re.VERBOSE,
+    )
+    m = pattern.search(text)
+    if not m:
+        return "Unknown"
+
+    start = float(m.group(3))
+    end = float(m.group(4))
+
+    return (
+        "SnapshotScan"
+        if math.isclose(start, end, rel_tol=0, abs_tol=tol)
+        else "EnergyScan"
+    )
 
 
 def parse_single_scan(scan, spec_fname, tif_folder):
@@ -119,7 +158,8 @@ class RixsSpecTable(QAbstractTableModel):
         self.tif_folder = tif_folder
         self.last_modtime = -1
         self._headers = ["Scan#", "Type", "SpecPoints", "TiffPoints"]
-        self.record = []
+        self.record = {}
+        self.last_scan_index = 0
         self.process_spec_file()
 
     def read_latest_spec_file(self):
@@ -135,14 +175,32 @@ class RixsSpecTable(QAbstractTableModel):
         if not self.read_latest_spec_file():
             return
 
-        for scan_index in range(len(self.spec_container)):
-            scan = self.spec_container[scan_index]
-            if get_scan_type(scan) in ["EnergyScan", "SnapshotScan"]:
-                scan_dset = RixsScanTiffDataset(
-                    scan_index, self.spec_fname, self.tif_folder
-                )
-                scan_dset.update_scan_info(self.spec_container)
-                self.record.append(scan_dset)
+        for scan_pack in self.spec_container:
+            scan_number = scan_pack.number
+            # no need to re-process old scans
+            if scan_number < self.last_scan_index:
+                continue
+
+            if get_scan_type(scan_pack) in ["EnergyScan", "SnapshotScan"]:
+                if scan_number in self.record:
+                    scan_dset = self.record[scan_number]
+                    scan_dset.update_scan_info(scan_pack)
+                    # update the view for this row
+                    row = scan_dset.row_position
+                    index_top_left = self.index(row, 0)
+                    index_bottom_right = self.index(row, self.columnCount() - 1)
+                    self.dataChanged.emit(index_top_left, index_bottom_right)
+                else:
+                    # new scan dataset
+                    row = len(self.record)
+                    scan_dset = RixsScanTiffDataset(
+                        row, self.spec_fname, self.tif_folder
+                    )
+                    scan_dset.update_scan_info(scan_pack)
+                    self.beginInsertRows(QModelIndex(), row, row)
+                    self.record[scan_number] = scan_dset
+                    self.endInsertRows()
+                    self.last_scan_index = max(self.last_scan_index, scan_number)
 
     def rowCount(self, parent=None):
         return len(self.record)
@@ -151,15 +209,26 @@ class RixsSpecTable(QAbstractTableModel):
         return len(self._headers)
 
     def get_selected_dataset(self, row, threshold, RefL=70):
-        scan_tiff_dset = self.record[row]
+        scan_index = list(self.record.keys())[row]
+        scan_tiff_dset = self.record[scan_index]
         return scan_tiff_dset
+
+    def setData(self, index, value, role=Qt.EditRole):
+        if not index.isValid():
+            return False
+
+        # notify views
+        self.dataChanged.emit(index, index, [role])
+        return True
 
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():
             return None
         if role == Qt.DisplayRole:
             row, col = index.row(), index.column()
-            return self.record[row].get_qtableview_display_data(col)
+            scan_index = list(self.record.keys())[row]
+            scan_tiff_dset = self.record[scan_index]
+            return scan_tiff_dset.get_qtableview_display_data(col)
 
         elif role == Qt.TextAlignmentRole:
             return Qt.AlignCenter
@@ -175,8 +244,8 @@ class RixsSpecTable(QAbstractTableModel):
 
 
 class RixsScanTiffDataset:
-    def __init__(self, scan_index, spec_fname, tif_folder, threshold=4095):
-        self.scan_index = scan_index
+    def __init__(self, row_position, spec_fname, tif_folder, threshold=4095):
+        self.row_position = row_position
         self.spec_fname = spec_fname
         self.tif_folder = tif_folder
         self.threshold = threshold
@@ -184,8 +253,7 @@ class RixsScanTiffDataset:
         self._data = None
         self.scan_info = None
 
-    def update_scan_info(self, spec_container):
-        scan_pack = spec_container[self.scan_index]
+    def update_scan_info(self, scan_pack):
         self.scan_info = parse_single_scan(
             scan_pack,
             self.spec_fname,
@@ -226,11 +294,13 @@ class RixsScanTiffDataset:
 
         scale = np.array(Eb / (2 * rowland_radius) / np.tan(theta_b))
 
-        if fit_pixel_size and self.scan_type == "SnapshotScan":
+        scan_type = self.scan_info["scan_type"]
+
+        if fit_pixel_size and scan_type == "SnapshotScan":
             logger.warning("fit_pixel_size is not implemented for SnapshotScan")
             fit_pixel_size = False
 
-        if fit_pixel_size and self.scan_type == "EnergyScan":
+        if fit_pixel_size and scan_type == "EnergyScan":
             # center of mass in pixels for the peak position;
             com_pixel = np.sum(data_1d * xaxis, axis=1) / np.sum(data_1d, axis=1)
 
