@@ -204,13 +204,13 @@ class Ui_MainWindow(object):
 
         self.gridLayout_5.addWidget(self.label_4, 1, 0, 1, 1)
 
-        self.comboBox = QComboBox(self.groupBox_4)
-        self.comboBox.addItem("")
-        self.comboBox.addItem("")
-        self.comboBox.addItem("")
-        self.comboBox.setObjectName(u"comboBox")
+        self.comboBox_metasource = QComboBox(self.groupBox_4)
+        self.comboBox_metasource.addItem("")
+        self.comboBox_metasource.addItem("")
+        self.comboBox_metasource.addItem("")
+        self.comboBox_metasource.setObjectName(u"comboBox_metasource")
 
-        self.gridLayout_5.addWidget(self.comboBox, 1, 1, 1, 1)
+        self.gridLayout_5.addWidget(self.comboBox_metasource, 1, 1, 1, 1)
 
         self.pushButton_4 = QPushButton(self.groupBox_4)
         self.pushButton_4.setObjectName(u"pushButton_4")
@@ -315,9 +315,9 @@ class Ui_MainWindow(object):
         self.groupBox_3.setTitle(QCoreApplication.translate("MainWindow", u"2D Images", None))
         self.groupBox_4.setTitle(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.label_4.setText(QCoreApplication.translate("MainWindow", u"Source:", None))
-        self.comboBox.setItemText(0, QCoreApplication.translate("MainWindow", u"SpecFile", None))
-        self.comboBox.setItemText(1, QCoreApplication.translate("MainWindow", u"PV", None))
-        self.comboBox.setItemText(2, QCoreApplication.translate("MainWindow", u"GUI", None))
+        self.comboBox_metasource.setItemText(0, QCoreApplication.translate("MainWindow", u"SpecFile", None))
+        self.comboBox_metasource.setItemText(1, QCoreApplication.translate("MainWindow", u"PV", None))
+        self.comboBox_metasource.setItemText(2, QCoreApplication.translate("MainWindow", u"GUI", None))
 
         self.pushButton_4.setText(QCoreApplication.translate("MainWindow", u"Save", None))
         self.pushButton_3.setText(QCoreApplication.translate("MainWindow", u"Load", None))
