@@ -163,6 +163,7 @@ class RixsSpecTable(QAbstractTableModel):
         self._headers = ["Scan#", "Type", "SpecPoints", "TiffPoints"]
         self.record = {}
         self.last_scan_index = 0
+        self.last_scan_dset = None
         self.process_spec_file()
 
     def read_latest_spec_file(self):
@@ -204,6 +205,7 @@ class RixsSpecTable(QAbstractTableModel):
                     self.record[scan_number] = scan_dset
                     self.endInsertRows()
                     self.last_scan_index = max(self.last_scan_index, scan_number)
+        self.last_scan_dset = scan_dset
 
     def rowCount(self, parent=None):
         return len(self.record)
@@ -211,7 +213,7 @@ class RixsSpecTable(QAbstractTableModel):
     def columnCount(self, parent=None):
         return len(self._headers)
 
-    def get_selected_dataset(self, row, threshold, RefL=70):
+    def get_selected_dataset(self, row):
         scan_index = list(self.record.keys())[row]
         scan_tiff_dset = self.record[scan_index]
         return scan_tiff_dset
@@ -254,14 +256,27 @@ class RixsScanTiffDataset:
         self.threshold = threshold
         self._model = None
         self._data = None
+        self.unloaded_filenames = []
         self.scan_info = None
 
     def update_scan_info(self, scan_pack):
-        self.scan_info = parse_single_scan(
+        scan_info = parse_single_scan(
             scan_pack,
             self.spec_fname,
             self.tif_folder,
         )
+        if (
+            self.scan_info is None
+            or self.scan_info["tiff_points"] != scan_info["tiff_points"]
+        ):
+            prev_filenames = (
+                [] if self.scan_info is None else self.scan_info["filenames"]
+            )
+            unloaded_filenames = [
+                fn for fn in scan_info["filenames"] if fn not in prev_filenames
+            ]
+            self.unloaded_filenames = unloaded_filenames
+            self.scan_info = scan_info
 
     def get_qtableview_display_data(self, col):
         key = {
@@ -273,14 +288,12 @@ class RixsScanTiffDataset:
         return self.scan_info[key]
 
     def get_data_for_display(self):
-        if self._data is None:
-            self._data = self.read_data()
+        self._data = self.read_data()
         levels = percentile_clip(self._data)
         return self._data, levels
 
     def bin_data(self, DeltaD=0.022, xref=70, fit_pixel_size=True, **kwargs):
-        if self._data is None:
-            self._data = self.read_data()
+        self._data = self.read_data()
         shape = self._data.shape
         data_1d = np.sum(self._data, axis=1)
         # pad values after xrefl
@@ -368,17 +381,19 @@ class RixsScanTiffDataset:
         return self._model
 
     def read_data(self):
-        tiff_points = self.scan_info["tiff_points"]
-        if tiff_points == 0:
-            logger.warning("No linked TIFF files found for this scan.")
-            return np.array([])
-
-        data = []
-        for fname in self.scan_info["filenames"]:
-            data.append(tifffile.imread(fname))
-        data = np.array(data)
-        data[data >= self.threshold] = 0
-        return data
+        if len(self.unloaded_filenames) > 0:
+            logger.info(f"Reading {len(self.unloaded_filenames)} tiff files")
+            data = []
+            for fname in self.unloaded_filenames:
+                data.append(tifffile.imread(fname))
+            data = np.array(data)
+            data[data >= self.threshold] = 0
+            if self._data is None:
+                self._data = data
+            else:
+                self._data = np.concatenate([self._data, data], axis=0)
+            self.unloaded_filenames = []
+        return self._data
 
 
 class RixsScanImageTable(QAbstractTableModel):

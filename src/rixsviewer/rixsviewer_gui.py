@@ -69,15 +69,20 @@ class RixsViewerGUI(QMainWindow):
     def start_stop_timer(self):
         """Auto-update the scan table with new scans from the spec file"""
         if self.ui.checkBox_autoupdate.isChecked():
+            self.ui.checkBox_fit_pixel_size.setDisabled(True)
+            self.ui.checkBox_fit_pixel_size.setChecked(False)
             logger.info("Auto-updating scan table from spec file...")
             self.timer.start()
         else:
+            self.ui.checkBox_fit_pixel_size.setEnabled(True)
             logger.info("Auto-update disabled.")
             self.timer.stop()
 
     def update_spec_record(self):
         if self.scan_model is not None:
             self.scan_model.process_spec_file()
+            self.process_binning()
+            self.current_rixs_dset = self.scan_model.last_scan_dset
 
     def setup_image_handler(self):
         plot = self.ui.widget_img.addPlot(row=0, col=0)
@@ -137,9 +142,13 @@ class RixsViewerGUI(QMainWindow):
 
         fit_pixel_size = self.ui.checkBox_fit_pixel_size.isChecked()
         show_rawdata = self.ui.checkBox_show_rawdata.isChecked()
+        meta_source = self.ui.comboBox_metasource.currentText()
+
+        if len(self.current_rixs_dset.unloaded_filenames) == 0:
+            return
 
         result = self.current_rixs_dset.bin_data(
-            fit_pixel_size=fit_pixel_size, **self.binning_model.get_kwargs()
+            fit_pixel_size=False, **self.binning_model.get_kwargs()
         )
 
         self.plot_hdl.clear()
@@ -251,8 +260,12 @@ class RixsViewerGUI(QMainWindow):
         """
         selected_indexes = self.ui.tableView_scan.selectionModel().selectedIndexes()
         row = [index.row() for index in selected_indexes][0]
-        threshold = self.binning_model.get_parameter("threshold")
-        dset = self.scan_model.get_selected_dataset(row, threshold)
+        if self.ui.checkBox_autoupdate.isChecked():
+            row = (
+                self.scan_model.rowCount() - 1
+            )  # choose the last row in auto-update mode
+
+        dset = self.scan_model.get_selected_dataset(row)
         if dset is None:
             return
 
