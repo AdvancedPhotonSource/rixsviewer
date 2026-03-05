@@ -260,21 +260,15 @@ class Ui_MainWindow(object):
 
         self.gridLayout_7.addWidget(self.checkBox_show_rawdata, 0, 2, 1, 1)
 
-        self.checkBox_fit_pixel_size = QCheckBox(self.groupBox_6)
-        self.checkBox_fit_pixel_size.setObjectName(u"checkBox_fit_pixel_size")
-        self.checkBox_fit_pixel_size.setChecked(True)
-
-        self.gridLayout_7.addWidget(self.checkBox_fit_pixel_size, 0, 1, 1, 1)
-
         self.pushButton_process = QPushButton(self.groupBox_6)
         self.pushButton_process.setObjectName(u"pushButton_process")
 
         self.gridLayout_7.addWidget(self.pushButton_process, 1, 1, 1, 1)
 
-        self.pushButton_2 = QPushButton(self.groupBox_6)
-        self.pushButton_2.setObjectName(u"pushButton_2")
+        self.pushButton_fit_pixel_size = QPushButton(self.groupBox_6)
+        self.pushButton_fit_pixel_size.setObjectName(u"pushButton_fit_pixel_size")
 
-        self.gridLayout_7.addWidget(self.pushButton_2, 1, 0, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton_fit_pixel_size, 1, 0, 1, 1)
 
         self.splitter.addWidget(self.groupBox_6)
         self.splitter_3.addWidget(self.splitter)
@@ -297,6 +291,7 @@ class Ui_MainWindow(object):
         self.menuFile.addAction(self.actionSet_Tif_folder)
 
         self.retranslateUi(MainWindow)
+        self.checkBox_autoupdate.toggled.connect(self.pushButton_fit_pixel_size.setDisabled)
 
         QMetaObject.connectSlotsByName(MainWindow)
     # setupUi
@@ -326,9 +321,8 @@ class Ui_MainWindow(object):
         self.groupBox_6.setTitle(QCoreApplication.translate("MainWindow", u"Process", None))
         self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Export", None))
         self.checkBox_show_rawdata.setText(QCoreApplication.translate("MainWindow", u"Show RawData", None))
-        self.checkBox_fit_pixel_size.setText(QCoreApplication.translate("MainWindow", u"Fit DeltaD", None))
         self.pushButton_process.setText(QCoreApplication.translate("MainWindow", u"Process Binning", None))
-        self.pushButton_2.setText(QCoreApplication.translate("MainWindow", u"Fit DeltaD", None))
+        self.pushButton_fit_pixel_size.setText(QCoreApplication.translate("MainWindow", u"Fit DeltaD", None))
         self.menuFile.setTitle(QCoreApplication.translate("MainWindow", u"File", None))
     # retranslateUi
 

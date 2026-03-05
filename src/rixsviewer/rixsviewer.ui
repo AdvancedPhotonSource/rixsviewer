@@ -413,16 +413,6 @@
            </property>
           </widget>
          </item>
-         <item row="0" column="1">
-          <widget class="QCheckBox" name="checkBox_fit_pixel_size">
-           <property name="text">
-            <string>Fit DeltaD</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
          <item row="1" column="1">
           <widget class="QPushButton" name="pushButton_process">
            <property name="text">
@@ -431,7 +421,7 @@
           </widget>
          </item>
          <item row="1" column="0">
-          <widget class="QPushButton" name="pushButton_2">
+          <widget class="QPushButton" name="pushButton_fit_pixel_size">
            <property name="text">
             <string>Fit DeltaD</string>
            </property>
@@ -489,5 +479,22 @@
   </customwidget>
  </customwidgets>
  <resources/>
- <connections/>
+ <connections>
+  <connection>
+   <sender>checkBox_autoupdate</sender>
+   <signal>toggled(bool)</signal>
+   <receiver>pushButton_fit_pixel_size</receiver>
+   <slot>setDisabled(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>491</x>
+     <y>140</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>684</x>
+     <y>812</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
 </ui>
