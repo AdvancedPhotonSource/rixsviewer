@@ -60,7 +60,7 @@ where = ["src"]
 rixsviewer = ["*.ui"]
 
 [tool.black]
-line-length = 88
+line-length = 120
 target-version = ['py38', 'py39', 'py310', 'py311']
 include = '\.pyi?$'
 extend-exclude = '''
@@ -82,6 +82,3 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-
-[tool.black]
-line-length = 120

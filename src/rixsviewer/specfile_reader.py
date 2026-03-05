@@ -46,7 +46,7 @@ def percentile_clip(data, threshold=99.9):
     return (0, vmax)
 
 
-def get_scan_type(scan) -> str:
+def get_scan_type(scan):
     """
     Determine the scan type from a silx SpecFile scan object.
 
@@ -66,7 +66,7 @@ def get_scan_type(scan) -> str:
         ``'EnergyScan'``, ``'SnapshotScan'``, or ``'Unknown'`` and
         *steps* is the number of scan points (0 when unknown).
     """
-    scan_type = "Unknown"
+    # scan_type = "Unknown"
     # if "Y" in scan.scan_header_dict and "L" in scan.scan_header_dict:
     #     scan_signature = scan.scan_header_dict["Y"]
     #     if scan_signature.startswith("EnergyScan"):
@@ -74,12 +74,12 @@ def get_scan_type(scan) -> str:
     #     elif scan_signature.startswith("SnapshotScan"):
     #         scan_type = "SnapshotScan"
 
-    if scan_type != "Unknown":
-        return scan_type
-    else:
-        # for on-going scans; the #Y line doesn't seem to be recognized correctly;
-        scan_type, steps = get_scan_type_from_scanstring(scan.scan_header_dict["S"])
-        return scan_type, steps
+    # if scan_type != "Unknown":
+    #     return scan_type
+    # else:
+    #    for on-going scans; the #Y line doesn't seem to be recognized correctly;
+    scan_type, steps = get_scan_type_from_scanstring(scan.scan_header_dict["S"])
+    return scan_type, steps
 
 
 def get_scan_type_from_scanstring(text, tol=1e-6):
@@ -393,35 +393,9 @@ class RixsSpecTable(QAbstractTableModel):
         self.last_scan_dset = scan_dset
 
     def rowCount(self, parent=None):
-        """
-        Return the number of scans currently stored in the model.
-
-        Parameters
-        ----------
-        parent : QModelIndex, optional
-            Unused; present for Qt API compatibility.
-
-        Returns
-        -------
-        int
-            Number of rows (scans) in the table.
-        """
         return len(self.record)
 
     def columnCount(self, parent=None):
-        """
-        Return the number of columns in the table.
-
-        Parameters
-        ----------
-        parent : QModelIndex, optional
-            Unused; present for Qt API compatibility.
-
-        Returns
-        -------
-        int
-            Number of columns (always 4: Scan#, Type, SpecPoints, TiffPoints).
-        """
         return len(self._headers)
 
     def get_selected_dataset(self, row):
@@ -443,26 +417,6 @@ class RixsSpecTable(QAbstractTableModel):
         return scan_tiff_dset
 
     def setData(self, index, value, role=Qt.EditRole):
-        """
-        Update a cell value and notify attached views.
-
-        The current implementation does not modify any underlying data but
-        emits the ``dataChanged`` signal so views repaint the affected cell.
-
-        Parameters
-        ----------
-        index : QModelIndex
-            Model index of the cell to update.
-        value : object
-            New value (currently unused).
-        role : Qt.ItemDataRole, optional
-            Data role, by default ``Qt.EditRole``.
-
-        Returns
-        -------
-        bool
-            ``True`` when the index is valid; ``False`` otherwise.
-        """
         if not index.isValid():
             return False
 
@@ -471,23 +425,6 @@ class RixsSpecTable(QAbstractTableModel):
         return True
 
     def data(self, index, role=Qt.DisplayRole):
-        """
-        Return display or alignment data for a given model index.
-
-        Parameters
-        ----------
-        index : QModelIndex
-            Cell to query.
-        role : Qt.ItemDataRole, optional
-            Requested data role.  Supports ``Qt.DisplayRole`` and
-            ``Qt.TextAlignmentRole``; all others return ``None``.
-
-        Returns
-        -------
-        object or None
-            Cell text for ``DisplayRole``, ``Qt.AlignCenter`` for
-            ``TextAlignmentRole``, or ``None`` for unsupported roles.
-        """
         if not index.isValid():
             return None
         if role == Qt.DisplayRole:
@@ -501,27 +438,6 @@ class RixsSpecTable(QAbstractTableModel):
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
-        """
-        Return header label for the given section and orientation.
-
-        Parameters
-        ----------
-        section : int
-            Column (horizontal) or row (vertical) index.
-        orientation : Qt.Orientation
-            ``Qt.Horizontal`` for column headers;
-            ``Qt.Vertical`` for row headers.
-        role : Qt.ItemDataRole, optional
-            Only ``Qt.DisplayRole`` is supported; other roles return
-            ``None``.
-
-        Returns
-        -------
-        str or None
-            Column name string for horizontal headers; one-based row
-            number string for vertical headers; ``None`` for unsupported
-            roles.
-        """
         if role != Qt.DisplayRole:
             return None
         if orientation == Qt.Horizontal and self._headers:
@@ -795,9 +711,9 @@ class RixsScanTiffDataset:
         self._data = self.read_data()
         shape = self._data.shape
 
-        assert (
-            Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh
-        ), "check Ylow and Yhigh and detector shape"
+        assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, (
+            "check Ylow and Yhigh and detector shape"
+        )
         data_1d = np.sum(self._data[:, Ylow:Yhigh, :], axis=1)
 
         # pad values after xrefl if needed;
@@ -807,9 +723,9 @@ class RixsScanTiffDataset:
         xaxis = np.arange(shape[2]) - RefL
 
         merixE = self.scan_info["scandata"]["merixE"]
-        assert (
-            merixE.shape[0] == shape[0]
-        ), "merixE and data_1d must have the same number of rows"
+        assert merixE.shape[0] == shape[0], (
+            "merixE and data_1d must have the same number of rows"
+        )
 
         theta_b = np.arcsin(Eb / merixE)
         energy_cen = np.array(merixE).reshape(-1, 1)
@@ -978,56 +894,12 @@ class RixsScanImageTable(QAbstractTableModel):
         self._headers = ["TIF filename"]
 
     def rowCount(self, parent=None):
-        """
-        Return the number of TIFF files.
-
-        Parameters
-        ----------
-        parent : QModelIndex, optional
-            Unused; present for Qt API compatibility.
-
-        Returns
-        -------
-        int
-            Number of rows (one per TIFF file).
-        """
         return len(self.fnames)
 
     def columnCount(self, parent=None):
-        """
-        Return the number of columns (always 1).
-
-        Parameters
-        ----------
-        parent : QModelIndex, optional
-            Unused; present for Qt API compatibility.
-
-        Returns
-        -------
-        int
-            Always ``1``.
-        """
         return 1
 
     def data(self, index, role=Qt.DisplayRole):
-        """
-        Return display or alignment data for a given model index.
-
-        Parameters
-        ----------
-        index : QModelIndex
-            Cell to query.
-        role : Qt.ItemDataRole, optional
-            Requested data role.  Supports ``Qt.DisplayRole`` (returns
-            the file basename) and ``Qt.TextAlignmentRole``; all others
-            return ``None``.
-
-        Returns
-        -------
-        str or Qt.AlignmentFlag or None
-            Filename basename for ``DisplayRole``, ``Qt.AlignCenter``
-            for ``TextAlignmentRole``, or ``None``.
-        """
         if not index.isValid():
             return None
         if role == Qt.DisplayRole:
@@ -1039,27 +911,6 @@ class RixsScanImageTable(QAbstractTableModel):
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
-        """
-        Return the header label for the given section and orientation.
-
-        Parameters
-        ----------
-        section : int
-            Column (horizontal) or row (vertical) index.
-        orientation : Qt.Orientation
-            ``Qt.Horizontal`` for column headers;
-            ``Qt.Vertical`` for row headers.
-        role : Qt.ItemDataRole, optional
-            Only ``Qt.DisplayRole`` is handled; other roles return
-            ``None``.
-
-        Returns
-        -------
-        str or None
-            ``'TIF filename'`` for the single horizontal header;
-            one-based row number string for vertical headers;
-            ``None`` for unsupported roles.
-        """
         if role != Qt.DisplayRole:
             return None
         if orientation == Qt.Horizontal and self._headers:
