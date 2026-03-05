@@ -1,7 +1,8 @@
-import tifffile
 import numpy as np
-from .process_parameters import params
+import tifffile
 from epics import caget, caget_many
+
+from .process_parameters import params
 
 
 class RixsBinningModel:

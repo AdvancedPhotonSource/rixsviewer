@@ -1,23 +1,19 @@
-from PySide6.QtWidgets import (
-    QApplication,
-    QMainWindow,
-    QHeaderView,
-    QFileDialog,
-    QMessageBox,
-)
-from PySide6.QtCore import QTimer
-
-import sys
 import argparse
+import logging
+import sys
+import traceback
 from pathlib import Path
-from .specfile_reader import RixsSpecTable
-from .binning_model import RixsBinningModel
-from .rixsviewer_ui import Ui_MainWindow
+
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
-import logging
-import traceback
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import (QApplication, QFileDialog, QHeaderView,
+                               QMainWindow, QMessageBox)
+
+from .binning_model import RixsBinningModel
+from .rixsviewer_ui import Ui_MainWindow
+from .specfile_reader import RixsSpecTable
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"

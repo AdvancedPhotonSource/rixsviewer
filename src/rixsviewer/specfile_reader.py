@@ -1,13 +1,14 @@
-import os
-import numpy as np
-import re
 import glob
+import logging
 import math
-from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
-from silx.io.specfile import SpecFile
+import os
+import re
+
+import numpy as np
 import pandas as pd
 import tifffile
-import logging
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from silx.io.specfile import SpecFile
 
 logger = logging.getLogger(__name__)
 
