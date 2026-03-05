@@ -11,7 +11,7 @@ import sys
 import argparse
 from pathlib import Path
 from .specfile_reader import RixsSpecTable
-from .rixs_image import RixsBinningModel
+from .binning_model import RixsBinningModel
 from .rixsviewer_ui import Ui_MainWindow
 import numpy as np
 import pyqtgraph as pg
@@ -144,13 +144,24 @@ class RixsViewerGUI(QMainWindow):
         show_rawdata = self.ui.checkBox_show_rawdata.isChecked()
         meta_source = self.ui.comboBox_metasource.currentText()
 
+        if meta_source == "SpecFile":
+            binning_kwargs = None
+        elif meta_source == "PV":
+            binning_kwargs = self.binning_model.get_kwargs_from_pv()
+        elif meta_source == "GUI":
+            binning_kwargs = self.binning_model.get_kwargs()
+
         if len(self.current_rixs_dset.unloaded_filenames) == 0:
-            return
+            if self.ui.checkBox_autoupdate.isChecked():
+                return
 
-        result = self.current_rixs_dset.bin_data(
-            fit_pixel_size=False, **self.binning_model.get_kwargs()
+        result = self.current_rixs_dset.bin_data_wrap(
+            fit_pixel_size=fit_pixel_size,
+            binning_kwargs=binning_kwargs,
         )
+        self.plot_binned_data(result, show_rawdata, fit_pixel_size)
 
+    def plot_binned_data(self, result, show_rawdata=False, fit_pixel_size=False):
         self.plot_hdl.clear()
         if show_rawdata:
             for x, y in result["rawdata_lines"]:
@@ -273,7 +284,9 @@ class RixsViewerGUI(QMainWindow):
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
-        data, levels = self.current_rixs_dset.get_data_for_display()
+        data, levels = self.current_rixs_dset.get_data_for_display(
+            **self.binning_model.get_kwargs()
+        )
         self.img2d_hdl.setImage(np.flipud(data[-1]), levels=levels)
         self.ui.tableView_image.clicked.connect(self.on_image_table_clicked)
 
@@ -295,12 +308,12 @@ def main():
     parser.add_argument(
         "specfile",
         nargs="?",
-        default="/scratch/MQICHU/Datasets/rixs/rixsviewer_dataset/test_data/simu_data/flat4",
+        default="/home/beams/RIXS/Data/2026-1/slot4_rixsviewer/4March2026",
         help="Path to the SPEC file to load (default: %(default)s)",
     )
     parser.add_argument(
         "--tiff-folder",
-        default="/scratch/MQICHU/Datasets/rixs/rixsviewer_dataset/test_data/simu_data/tiffs",
+        default="/net/s27data/export/sector27/lambda/2026-1/slot4/cray_clean",
         help="Path to the TIFF folder (default: %(default)s)",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")

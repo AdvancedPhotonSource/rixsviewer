@@ -61,7 +61,7 @@ def get_scan_type_from_scanstring(text, tol=1e-6):
     )
     m = pattern.search(text)
     if not m:
-        return "Unknown"
+        return "Unknown", 0
 
     start = float(m.group(3))
     end = float(m.group(4))
@@ -140,7 +140,7 @@ def get_metadata_from_header(scan_comment_str) -> dict:
     result = {
         "Eb": float(analyzer_eb_kev.group(1)),
         "Ra": float(rowland_radius_m.group(1)),
-        "RefL": float(center_x_pixel.group(1)),
+        "RefL": int(float(center_x_pixel.group(1))),
         "Ylow": int(float(low_y_pixel.group(1))),
         "Yhigh": int(float(high_y_pixel.group(1))),
         "Acrystalsize": float(analyzer_crystal_size_mm.group(1)),
@@ -249,11 +249,10 @@ class RixsSpecTable(QAbstractTableModel):
 
 
 class RixsScanTiffDataset:
-    def __init__(self, row_position, spec_fname, tif_folder, threshold=4095):
+    def __init__(self, row_position, spec_fname, tif_folder):
         self.row_position = row_position
         self.spec_fname = spec_fname
         self.tif_folder = tif_folder
-        self.threshold = threshold
         self._model = None
         self._data = None
         self.unloaded_filenames = []
@@ -287,26 +286,63 @@ class RixsScanTiffDataset:
         }[col]
         return self.scan_info[key]
 
-    def get_data_for_display(self):
+    def get_data_for_display(self, **kwargs):
         self._data = self.read_data()
         levels = percentile_clip(self._data)
         return self._data, levels
 
-    def bin_data(self, DeltaD=0.022, xref=70, fit_pixel_size=True, **kwargs):
+    def bin_data_wrap(
+        self,
+        fit_pixel_size=False,
+        metadata_source="internal",
+        noise_model="poisson",
+        binning_kwargs=None,
+    ):
+        assert metadata_source in [
+            "internal",
+            "external",
+        ], "metadata_source must be internal or external"
+        kwargs = {"fit_pixel_size": fit_pixel_size, "noise_model": noise_model}
+        if metadata_source == "internal":
+            kwargs.update(self.scan_info["metadata"])
+        elif metadata_source == "external":
+            kwargs.update(binning_kwargs)
+        return self._bin_data(**kwargs)
+
+    def _bin_data(
+        self,
+        DeltaD=0.022,
+        RefL=70,
+        fit_pixel_size=True,
+        Eb=10,
+        rowland_radius=1900,
+        energy_cen=None,
+        Ylow=0,
+        Yhigh=256,
+        noise_model="poisson",
+        **kwargs,
+    ):
         self._data = self.read_data()
         shape = self._data.shape
-        data_1d = np.sum(self._data, axis=1)
-        # pad values after xrefl
-        data_1d[:, 2 * xref :] = np.mean(data_1d[:, 2 * xref])
 
-        xaxis = np.arange(shape[2]) - xref
+        assert (
+            Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh
+        ), "check Ylow and Yhigh and detector shape"
+        data_1d = np.sum(self._data[:, Ylow:Yhigh, :], axis=1)
 
-        Eb = self.scan_info["metadata"]["Eb"]
-        rowland_radius = self.scan_info["metadata"]["Ra"]
-        theta_b = np.arcsin(
-            self.scan_info["metadata"]["Eb"] / self.scan_info["scandata"]["merixE"]
-        )
-        energy_cen = np.array(self.scan_info["scandata"]["merixE"]).reshape(-1, 1)
+        # pad values after xrefl if needed;
+        if 2 * RefL < shape[2]:
+            data_1d[:, 2 * RefL :] = np.mean(data_1d[:, 2 * RefL])
+
+        xaxis = np.arange(shape[2]) - RefL
+
+        merixE = self.scan_info["scandata"]["merixE"]
+        assert (
+            merixE.shape[0] == shape[0]
+        ), "merixE and data_1d must have the same number of rows"
+
+        theta_b = np.arcsin(Eb / merixE)
+        energy_cen = np.array(merixE).reshape(-1, 1)
 
         scale = np.array(Eb / (2 * rowland_radius) / np.tan(theta_b))
 
@@ -325,6 +361,7 @@ class RixsScanTiffDataset:
             effective_pixel_size, energy_fit = np.linalg.lstsq(a_mat, energy_cen)[0]
             logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
         else:
+            # use DeltaD as the effective pixel size
             effective_pixel_size = DeltaD
 
         energy_axis = energy_cen - np.outer(scale, xaxis) * effective_pixel_size
@@ -351,11 +388,17 @@ class RixsScanTiffDataset:
 
         bin_data = np.array(bin_data)
         bin_data_sum = np.nansum(bin_data, axis=0)
-        bin_data_norm = np.nansum(~np.isnan(bin_data), axis=0)
-        bin_data_mean = bin_data_sum / np.clip(bin_data_norm, a_min=1, a_max=None)
+        bin_data_cnt = np.sum(~np.isnan(bin_data), axis=0)
+        bin_data_mean = bin_data_sum / np.clip(bin_data_cnt, a_min=1, a_max=None)
 
-        eff_data_len = np.sum(~np.isnan(bin_data), axis=0)
-        bin_data_err = np.nanstd(bin_data, axis=0) / np.sqrt(eff_data_len)
+        assert noise_model in [
+            "poisson",
+            "gaussian",
+        ], "noise_model must be either 'poisson' or 'gaussian'"
+        if noise_model == "poisson":
+            bin_data_err = np.sqrt(bin_data_mean / bin_data_cnt)
+        elif noise_model == "gaussian":
+            bin_data_err = np.nanstd(bin_data, axis=0) / np.sqrt(bin_data_cnt)
 
         if self.scan_info["scan_type"] == "SnapshotScan":
             summed_data = np.sum(self._data, axis=0)
@@ -382,12 +425,13 @@ class RixsScanTiffDataset:
 
     def read_data(self):
         if len(self.unloaded_filenames) > 0:
-            logger.info(f"Reading {len(self.unloaded_filenames)} tiff files")
+            logger.info(f"Reading {len(self.unloaded_filenames)} tiff file(s)")
             data = []
             for fname in self.unloaded_filenames:
                 data.append(tifffile.imread(fname))
-            data = np.array(data)
-            data[data >= self.threshold] = 0
+            data = np.array(data).astype(np.float32)
+            data[:, 101, 147] = 0
+            data[:, 98, 170] = 0
             if self._data is None:
                 self._data = data
             else:
