@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'rixsviewer.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.9.3
+## Created by: Qt User Interface Compiler version 6.10.0
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -29,7 +29,7 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(1181, 867)
+        MainWindow.resize(1429, 867)
         self.actionLoad_Spec_file = QAction(MainWindow)
         self.actionLoad_Spec_file.setObjectName(u"actionLoad_Spec_file")
         self.actionSet_Tif_folder = QAction(MainWindow)
@@ -104,6 +104,7 @@ class Ui_MainWindow(object):
         sizePolicy.setHeightForWidth(self.tableView_scan.sizePolicy().hasHeightForWidth())
         self.tableView_scan.setSizePolicy(sizePolicy)
         self.tableView_scan.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.tableView_scan.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
         self.gridLayout.addWidget(self.tableView_scan, 3, 0, 1, 3)
 
@@ -150,12 +151,12 @@ class Ui_MainWindow(object):
         self.splitter = QSplitter(self.splitter_3)
         self.splitter.setObjectName(u"splitter")
         self.splitter.setOrientation(Qt.Orientation.Vertical)
-        self.widget = QWidget(self.splitter)
-        self.widget.setObjectName(u"widget")
-        self.horizontalLayout = QHBoxLayout(self.widget)
+        self.layoutWidget = QWidget(self.splitter)
+        self.layoutWidget.setObjectName(u"layoutWidget")
+        self.horizontalLayout = QHBoxLayout(self.layoutWidget)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
-        self.groupBox_3 = QGroupBox(self.widget)
+        self.groupBox_3 = QGroupBox(self.layoutWidget)
         self.groupBox_3.setObjectName(u"groupBox_3")
         sizePolicy4 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         sizePolicy4.setHorizontalStretch(2)
@@ -178,7 +179,7 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout.addWidget(self.groupBox_3)
 
-        self.groupBox_4 = QGroupBox(self.widget)
+        self.groupBox_4 = QGroupBox(self.layoutWidget)
         self.groupBox_4.setObjectName(u"groupBox_4")
         sizePolicy6 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         sizePolicy6.setHorizontalStretch(0)
@@ -228,7 +229,7 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout.addWidget(self.groupBox_4)
 
-        self.splitter.addWidget(self.widget)
+        self.splitter.addWidget(self.layoutWidget)
         self.groupBox_5 = QGroupBox(self.splitter)
         self.groupBox_5.setObjectName(u"groupBox_5")
         sizePolicy6.setHeightForWidth(self.groupBox_5.sizePolicy().hasHeightForWidth())
@@ -283,7 +284,7 @@ class Ui_MainWindow(object):
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 1181, 23))
+        self.menubar.setGeometry(QRect(0, 0, 1429, 23))
         self.menuFile = QMenu(self.menubar)
         self.menuFile.setObjectName(u"menuFile")
         MainWindow.setMenuBar(self.menubar)
