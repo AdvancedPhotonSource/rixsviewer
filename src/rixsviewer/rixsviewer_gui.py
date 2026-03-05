@@ -52,6 +52,8 @@ class RixsViewerGUI(QMainWindow):
         self.setup_image_handler()
         self.init_plot_hdl()
         self.ui.pushButton_process.clicked.connect(self.process_binning)
+        self.ui.pushButton_fit_pixel_size.clicked.connect(lambda: self.process_binning(fit_pixel_size=True))
+        self.ui.comboBox_metasource.currentIndexChanged.connect(self.update_meta_source)
 
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
@@ -65,14 +67,22 @@ class RixsViewerGUI(QMainWindow):
     def start_stop_timer(self):
         """Auto-update the scan table with new scans from the spec file"""
         if self.ui.checkBox_autoupdate.isChecked():
-            self.ui.checkBox_fit_pixel_size.setDisabled(True)
-            self.ui.checkBox_fit_pixel_size.setChecked(False)
+            self.ui.pushButton_fit_pixel_size.setDisabled(True)
+            self.ui.pushButton_fit_pixel_size.setChecked(False)
             logger.info("Auto-updating scan table from spec file...")
             self.timer.start()
         else:
-            self.ui.checkBox_fit_pixel_size.setEnabled(True)
+            self.ui.pushButton_fit_pixel_size.setEnabled(True)
             logger.info("Auto-update disabled.")
             self.timer.stop()
+
+    def update_meta_source(self):
+        """Update the binning kwargs source based on the combo box selection"""
+        meta_source = self.ui.comboBox_metasource.currentText()
+        if meta_source == "PV":
+            logger.info("Using PVs for binning parameters")
+            self.binning_model.get_kwargs_from_pv()
+        return
 
     def update_spec_record(self):
         if self.scan_model is not None:
@@ -125,18 +135,20 @@ class RixsViewerGUI(QMainWindow):
 
     def on_parameter_changed(self, param, changes):
         """Handle parameter tree changes and sync with binning model"""
-        self.binning_model.update_from_parameter(param, changes)
+        meta_source = self.ui.comboBox_metasource.currentText()
+        # Parameters are only editable when meta source is set to 'GUI'
+        if meta_source == "GUI":
+            self.binning_model.update_from_parameter(param, changes)
 
     def init_plot_hdl(self):
         self.plot_hdl = self.ui.widget_binhdl.addPlot()
         cmap = pg.colormap.get("plasma")
         self.img2d_hdl.setColorMap(cmap)
 
-    def process_binning(self):
+    def process_binning(self, fit_pixel_size=False):
         if self.current_rixs_dset is None:
             return
 
-        fit_pixel_size = self.ui.checkBox_fit_pixel_size.isChecked()
         show_rawdata = self.ui.checkBox_show_rawdata.isChecked()
         meta_source = self.ui.comboBox_metasource.currentText()
 
@@ -154,6 +166,7 @@ class RixsViewerGUI(QMainWindow):
         result = self.current_rixs_dset.bin_data_wrap(
             fit_pixel_size=fit_pixel_size,
             binning_kwargs=binning_kwargs,
+            metadata_source=meta_source,
         )
         self.plot_binned_data(result, show_rawdata, fit_pixel_size)
 
@@ -183,7 +196,7 @@ class RixsViewerGUI(QMainWindow):
             reply = QMessageBox.question(
                 self,
                 "Update DeltaD Parameter",
-                f"Update DeltaD parameter with fitted value {fitted_value:.6f} µm?",
+                f"Update DeltaD parameter with fitted value {fitted_value:.6f} mm?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes,
             )

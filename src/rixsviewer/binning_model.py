@@ -27,6 +27,8 @@ class RixsBinningModel:
 
         for name, value in zip(names, values):
             # update the UI parameter tree if it's connected
+            if name in ("Ylow", "Yhigh", "RefL"):
+                value = int(value)
             if value is not None:
                 self.put_parameter(name, value)
         return self.get_kwargs()

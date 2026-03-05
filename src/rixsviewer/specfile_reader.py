@@ -575,7 +575,7 @@ class RixsScanTiffDataset:
     def bin_data_wrap(
         self,
         fit_pixel_size=False,
-        metadata_source="internal",
+        metadata_source="SpecFile",
         noise_model="poisson",
         binning_kwargs=None,
     ):
@@ -591,11 +591,13 @@ class RixsScanTiffDataset:
         metadata_source : {'internal', 'external'}
             Source of instrument parameters:
 
-            ``'internal'``
+            ``'SpecFile'``
                 Use parameters parsed from the SPEC ``#B`` header line
                 (stored in :attr:`scan_info['metadata']`).
-            ``'external'``
-                Use parameters supplied via *binning_kwargs*.
+            ``'PV'``
+                Use parameters from the PVs.
+            ``'GUI'``
+                Use parameters from the GUI.
         noise_model : {'poisson', 'gaussian'}
             Statistical model used to estimate per-bin uncertainty.
             Default is ``'poisson'``.
@@ -613,14 +615,11 @@ class RixsScanTiffDataset:
         AssertionError
             If *metadata_source* is not ``'internal'`` or ``'external'``.
         """
-        assert metadata_source in [
-            "internal",
-            "external",
-        ], "metadata_source must be internal or external"
+        assert metadata_source in ["SpecFile", "PV", "GUI"], "metadata_source not supported."
         kwargs = {"fit_pixel_size": fit_pixel_size, "noise_model": noise_model}
-        if metadata_source == "internal":
+        if metadata_source == "SpecFile":
             kwargs.update(self.scan_info["metadata"])
-        elif metadata_source == "external":
+        else:
             kwargs.update(binning_kwargs)
         return self._bin_data(**kwargs)
 
@@ -745,6 +744,7 @@ class RixsScanTiffDataset:
             a_mat = np.array(com_pixel * scale).reshape(shape[0], 1)
             a_mat = np.hstack([a_mat, np.ones_like(a_mat)])  # n_images x 2
             effective_pixel_size, energy_fit = np.linalg.lstsq(a_mat, energy_cen)[0]
+            effective_pixel_size = float(effective_pixel_size)
             logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
         else:
             # use DeltaD as the effective pixel size
