@@ -18,8 +18,12 @@ class RixsBinningModel:
         """Get current parameter values as a dictionary for processing"""
         kwargs = {}
         for param in self.params:
-            kwargs[param["name"]] = self.get_parameter(param["name"])
+            kwargs[param["name"]] = self._get_single_parameter(param["name"])
         return kwargs
+
+    def put_kwargs(self, kwargs):
+        for name, value in kwargs.items():
+            self.put_single_parameter(name, value)
 
     def get_kwargs_from_pv(self, timeout=0.05):
         pvs, names = zip(*self.pv_info)
@@ -30,13 +34,13 @@ class RixsBinningModel:
             if name in ("Ylow", "Yhigh", "RefL"):
                 value = int(value)
             if value is not None:
-                self.put_parameter(name, value)
+                self.put_single_parameter(name, value)
         return self.get_kwargs()
 
-    def get_parameter(self, name):
+    def _get_single_parameter(self, name):
         return self.params[self.params_map[name]]["value"]
 
-    def put_parameter(self, name, value):
+    def put_single_parameter(self, name, value):
         """Update a parameter value by name and sync with UI if connected
 
         Args:
@@ -50,6 +54,9 @@ class RixsBinningModel:
                 param = self.param_tree.child(name)
                 if param is not None:
                     param.setValue(value)
+        else:
+            print(name, "not in params_map")
+            print(self.params_map)
 
     def update_from_parameter(self, param, changes):
         """Update model attributes when parameter tree values change"""

@@ -9,11 +9,12 @@ import pandas as pd
 import tifffile
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
+from .utils import find_peaks
 
 logger = logging.getLogger(__name__)
 
 
-def percentile_clip(data, threshold=99.9):
+def percentile_clip(data, threshold=99):
     """
     Compute display intensity limits using percentile clipping.
 
@@ -212,9 +213,7 @@ def get_linked_tiff_filenames(spec_fname, tif_folder, scan_number):
         Sorted list of absolute TIFF file paths.
     """
     basename = os.path.basename(spec_fname)
-    fnames = glob.glob(
-        os.path.join(tif_folder, f"{basename}_scan{scan_number}_point*.tif")
-    )
+    fnames = glob.glob(os.path.join(tif_folder, f"{basename}_scan{scan_number}_point*.tif"))
     fnames.sort()
     return fnames
 
@@ -265,9 +264,7 @@ def get_metadata_from_header(scan_comment_str) -> dict:
     center_x_pixel = re.search(r"Center_x_pixel\s*=\s*([\d.]+)", text)
     low_y_pixel = re.search(r"Low_y_pixel\s*=\s*([\d.]+)", text)
     high_y_pixel = re.search(r"High_y_pixel\s*=\s*([\d.]+)", text)
-    analyzer_crystal_size_mm = re.search(
-        r"Analyzer_Crystal_Size_mm\s*=\s*([\d.]+)", text
-    )
+    analyzer_crystal_size_mm = re.search(r"Analyzer_Crystal_Size_mm\s*=\s*([\d.]+)", text)
     lambda_strip_size_mm = re.search(r"Lambda_Strip_Size_mm\s*=\s*([\d.]+)", text)
 
     # Build result dictionary
@@ -282,7 +279,7 @@ def get_metadata_from_header(scan_comment_str) -> dict:
     }
 
     # Keep binning_range for backward compatibility
-    result["binning_range"] = (result["Ylow"], result["Yhigh"])
+    # result["binning_range"] = (result["Ylow"], result["Yhigh"])
 
     return result
 
@@ -382,9 +379,7 @@ class RixsSpecTable(QAbstractTableModel):
                 else:
                     # new scan dataset
                     row = len(self.record)
-                    scan_dset = RixsScanTiffDataset(
-                        row, self.spec_fname, self.tif_folder
-                    )
+                    scan_dset = RixsScanTiffDataset(row, self.spec_fname, self.tif_folder)
                     scan_dset.update_scan_info(scan_pack)
                     self.beginInsertRows(QModelIndex(), row, row)
                     self.record[scan_number] = scan_dset
@@ -505,16 +500,9 @@ class RixsScanTiffDataset:
             self.spec_fname,
             self.tif_folder,
         )
-        if (
-            self.scan_info is None
-            or self.scan_info["tiff_points"] != scan_info["tiff_points"]
-        ):
-            prev_filenames = (
-                [] if self.scan_info is None else self.scan_info["filenames"]
-            )
-            unloaded_filenames = [
-                fn for fn in scan_info["filenames"] if fn not in prev_filenames
-            ]
+        if self.scan_info is None or self.scan_info["tiff_points"] != scan_info["tiff_points"]:
+            prev_filenames = [] if self.scan_info is None else self.scan_info["filenames"]
+            unloaded_filenames = [fn for fn in scan_info["filenames"] if fn not in prev_filenames]
             self.unloaded_filenames = unloaded_filenames
             self.scan_info = scan_info
 
@@ -551,7 +539,7 @@ class RixsScanTiffDataset:
         }[col]
         return self.scan_info[key]
 
-    def get_data_for_display(self, **kwargs):
+    def get_data_for_display(self, frame_index=0, percentile_cutoff=99.0, **kwargs):
         """
         Load the TIFF stack and compute display intensity limits.
 
@@ -569,14 +557,21 @@ class RixsScanTiffDataset:
             ``(vmin, vmax)`` computed by :func:`percentile_clip`.
         """
         self._data = self.read_data()
-        levels = percentile_clip(self._data)
-        return self._data, levels
+        num_frames = len(self._data)
+        frame_index = max(0, min(frame_index, num_frames - 1))
+        levels = percentile_clip(self._data[frame_index], percentile_cutoff)
+
+        frame_metadata = self.scan_info["metadata"].copy()
+        frame_metadata["E"] = self.scan_info["scandata"]["merixE"][frame_index]
+        frame_metadata["ThetaB"] = np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6  # micro-radian
+        return self._data[frame_index], levels, num_frames, frame_metadata
 
     def bin_data_wrap(
         self,
         fit_pixel_size=False,
         metadata_source="SpecFile",
         noise_model="poisson",
+        center_method="gaussian",
         binning_kwargs=None,
     ):
         """
@@ -616,7 +611,7 @@ class RixsScanTiffDataset:
             If *metadata_source* is not ``'internal'`` or ``'external'``.
         """
         assert metadata_source in ["SpecFile", "PV", "GUI"], "metadata_source not supported."
-        kwargs = {"fit_pixel_size": fit_pixel_size, "noise_model": noise_model}
+        kwargs = {"fit_pixel_size": fit_pixel_size, "noise_model": noise_model, "center_method": center_method}
         if metadata_source == "SpecFile":
             kwargs.update(self.scan_info["metadata"])
         else:
@@ -634,6 +629,7 @@ class RixsScanTiffDataset:
         Ylow=0,
         Yhigh=256,
         noise_model="poisson",
+        center_method="gaussian",
         **kwargs,
     ):
         """
@@ -710,9 +706,7 @@ class RixsScanTiffDataset:
         self._data = self.read_data()
         shape = self._data.shape
 
-        assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, (
-            "check Ylow and Yhigh and detector shape"
-        )
+        assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, "check Ylow and Yhigh and detector shape"
         data_1d = np.sum(self._data[:, Ylow:Yhigh, :], axis=1)
 
         # pad values after xrefl if needed;
@@ -722,9 +716,7 @@ class RixsScanTiffDataset:
         xaxis = np.arange(shape[2]) - RefL
 
         merixE = self.scan_info["scandata"]["merixE"]
-        assert merixE.shape[0] == shape[0], (
-            "merixE and data_1d must have the same number of rows"
-        )
+        assert merixE.shape[0] == shape[0], "merixE and data_1d must have the same number of rows"
 
         theta_b = np.arcsin(Eb / merixE)
         energy_cen = np.array(merixE).reshape(-1, 1)
@@ -738,12 +730,10 @@ class RixsScanTiffDataset:
             fit_pixel_size = False
 
         if fit_pixel_size and scan_type == "EnergyScan":
-            # center of mass in pixels for the peak position;
-            com_pixel = np.sum(data_1d * xaxis, axis=1) / np.sum(data_1d, axis=1)
-
+            com_pixel, valid_mask = find_peaks(data_1d, method=center_method, smooth_window=3, poly_order=2)
             a_mat = np.array(com_pixel * scale).reshape(shape[0], 1)
             a_mat = np.hstack([a_mat, np.ones_like(a_mat)])  # n_images x 2
-            effective_pixel_size, energy_fit = np.linalg.lstsq(a_mat, energy_cen)[0]
+            effective_pixel_size, energy_fit = np.linalg.lstsq(a_mat[valid_mask], energy_cen[valid_mask])[0]
             effective_pixel_size = float(effective_pixel_size)
             logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
         else:
@@ -760,16 +750,11 @@ class RixsScanTiffDataset:
 
         lines = [[energy_axis[n], data_1d[n]] for n in range(shape[0])]
         energy_min, energy_max = np.min(energy_axis), np.max(energy_axis)
-        step = int(
-            (energy_max - energy_min) / np.mean(np.abs((np.diff(energy_axis, axis=1))))
-        )
+        step = int((energy_max - energy_min) / np.mean(np.abs((np.diff(energy_axis, axis=1)))))
 
         bin_energy_axis = np.linspace(energy_min, energy_max, step)
         bin_data = [
-            np.interp(
-                bin_energy_axis, energy_axis[n], data_1d[n], left=np.nan, right=np.nan
-            )
-            for n in range(shape[0])
+            np.interp(bin_energy_axis, energy_axis[n], data_1d[n], left=np.nan, right=np.nan) for n in range(shape[0])
         ]
 
         bin_data = np.array(bin_data)

@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -8,19 +9,15 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import (QApplication, QFileDialog, QHeaderView,
-                               QMainWindow, QMessageBox)
+from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMainWindow, QMessageBox
 
 from .binning_model import RixsBinningModel
 from .rixsviewer_ui import Ui_MainWindow
 from .specfile_reader import RixsSpecTable
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-pg.setConfigOption("background", "w")  # or (255, 255, 255)
-pg.setConfigOption("foreground", "k")
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,15 +42,14 @@ class RixsViewerGUI(QMainWindow):
 
         # Connect signals
         self.ui.toolButton_load_specfile.clicked.connect(self.on_load_specfile_clicked)
-        self.ui.toolButton_set_tifffolder.clicked.connect(
-            self.on_set_tifffolder_clicked
-        )
+        self.ui.toolButton_set_tifffolder.clicked.connect(self.on_set_tifffolder_clicked)
         self.ui.pushButton_load_scan.clicked.connect(self.setup_scan_table)
         self.setup_image_handler()
         self.init_plot_hdl()
         self.ui.pushButton_process.clicked.connect(self.process_binning)
-        self.ui.pushButton_fit_pixel_size.clicked.connect(lambda: self.process_binning(fit_pixel_size=True))
+        self.ui.pushButton_fit_pixel_size.clicked.connect(self.fit_effective_pixel_size)
         self.ui.comboBox_metasource.currentIndexChanged.connect(self.update_meta_source)
+        self.ui.horizontalSlider_frame_index.valueChanged.connect(self.update_image)
 
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
@@ -82,6 +78,11 @@ class RixsViewerGUI(QMainWindow):
         if meta_source == "PV":
             logger.info("Using PVs for binning parameters")
             self.binning_model.get_kwargs_from_pv()
+        # if meta_source in ("PV", "SpecFile"):
+        #     self.ui.widget_ptree.setEnabled(False)
+        # else:
+        #     self.ui.widget_ptree.setEnabled(True)
+
         return
 
     def update_spec_record(self):
@@ -145,12 +146,21 @@ class RixsViewerGUI(QMainWindow):
         cmap = pg.colormap.get("plasma")
         self.img2d_hdl.setColorMap(cmap)
 
+    def fit_effective_pixel_size(self):
+        if self.current_rixs_dset is None:
+            return
+        if self.current_rixs_dset.scan_info["scan_type"] != "EnergyScan":
+            QMessageBox.warning(self, "Warning", "Effective pixel size can only be fitted for EnergyScan")
+            return
+        self.process_binning(fit_pixel_size=True)
+
     def process_binning(self, fit_pixel_size=False):
         if self.current_rixs_dset is None:
             return
 
         show_rawdata = self.ui.checkBox_show_rawdata.isChecked()
         meta_source = self.ui.comboBox_metasource.currentText()
+        center_method = self.ui.comboBox_center_method.currentText()
 
         if meta_source == "SpecFile":
             binning_kwargs = None
@@ -167,6 +177,7 @@ class RixsViewerGUI(QMainWindow):
             fit_pixel_size=fit_pixel_size,
             binning_kwargs=binning_kwargs,
             metadata_source=meta_source,
+            center_method=center_method,
         )
         self.plot_binned_data(result, show_rawdata, fit_pixel_size)
 
@@ -202,12 +213,10 @@ class RixsViewerGUI(QMainWindow):
             )
 
             if reply == QMessageBox.Yes:
-                self.binning_model.put_parameter("DeltaD", fitted_value)
+                self.binning_model.put_single_parameter("DeltaD", fitted_value)
 
         if result["summed_data"] is not None:
-            self.img2d_hdl.setImage(
-                np.flipud(result["summed_data"]), levels=result["levels"]
-            )
+            self.img2d_hdl.setImage(np.flipud(result["summed_data"]), levels=result["levels"])
 
     def on_load_specfile_clicked(self):
         """Handle the load spec file button click"""
@@ -267,9 +276,7 @@ class RixsViewerGUI(QMainWindow):
 
         # Connect click signal to handler
         # self.ui.tableView_scan.clicked.connect(self.on_scan_table_clicked)
-        self.ui.tableView_scan.selectionModel().selectionChanged.connect(
-            self.on_selection_changed
-        )
+        self.ui.tableView_scan.selectionModel().selectionChanged.connect(self.on_selection_changed)
         self.scan_model = scan_model
         return
 
@@ -281,9 +288,7 @@ class RixsViewerGUI(QMainWindow):
         selected_indexes = self.ui.tableView_scan.selectionModel().selectedIndexes()
         row = [index.row() for index in selected_indexes][0]
         if self.ui.checkBox_autoupdate.isChecked():
-            row = (
-                self.scan_model.rowCount() - 1
-            )  # choose the last row in auto-update mode
+            row = self.scan_model.rowCount() - 1  # choose the last row in auto-update mode
 
         dset = self.scan_model.get_selected_dataset(row)
         if dset is None:
@@ -293,11 +298,21 @@ class RixsViewerGUI(QMainWindow):
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
-        data, levels = self.current_rixs_dset.get_data_for_display(
-            **self.binning_model.get_kwargs()
+        self.update_image()
+
+    def update_image(self):
+        percentile_cutoff = self.ui.doubleSpinBox_percentile_cutoff.value()
+        frame_index = self.ui.horizontalSlider_frame_index.value()
+        data, levels, num_frames, frame_metadata = self.current_rixs_dset.get_data_for_display(
+            frame_index=frame_index, percentile_cutoff=percentile_cutoff, **self.binning_model.get_kwargs()
         )
-        self.img2d_hdl.setImage(np.flipud(data[-1]), levels=levels)
+        self.ui.horizontalSlider_frame_index.setRange(0, num_frames - 1)
+        self.img2d_hdl.setImage(np.flipud(data), levels=levels)
         self.ui.tableView_image.clicked.connect(self.on_image_table_clicked)
+
+        meta_source = self.ui.comboBox_metasource.currentText()
+        if meta_source == "SpecFile":
+            self.binning_model.put_kwargs(frame_metadata)
 
     def on_image_table_clicked(self, index):
         # self.img2d_hdl.setCurrentIndex(index.row())
@@ -330,8 +345,19 @@ def main():
     # Parse arguments (filter out Qt arguments)
     args, qt_args = parser.parse_known_args()
 
+    # Suppress a harmless pyqtgraph/Qt6 warning about UniqueConnection + lambdas:
+    # "qt.core.qobject.connect: QObject::connect(QStyleHints, QStyleHints):
+    #  unique connections require a pointer to member function of a QObject subclass"
+    # This must be set before QApplication is created.
+    os.environ.setdefault("QT_LOGGING_RULES", "qt.core.qobject.connect=false")
+
     # Create QApplication with remaining arguments
     app = QApplication([sys.argv[0]] + qt_args)
+
+    # Configure pyqtgraph after QApplication is created to avoid Qt
+    # "unique connections require a pointer to member function" warnings
+    pg.setConfigOption("background", "w")
+    pg.setConfigOption("foreground", "k")
 
     # Create and show the GUI
     gui = RixsViewerGUI(spec_filename=args.specfile, tiff_folder=args.tiff_folder)
