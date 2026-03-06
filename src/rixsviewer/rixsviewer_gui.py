@@ -5,15 +5,15 @@ import sys
 import traceback
 from pathlib import Path
 
-import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMainWindow, QMessageBox
 
-from .binning_model import RixsBinningModel
-from .rixsviewer_ui import Ui_MainWindow
-from .specfile_reader import RixsSpecTable
+from .model.binning_model import RixsBinningModel
+from .model.specfile_reader import RixsSpecTable
+from .view.view import RixsView
+from .view.ui.rixsviewer_ui import Ui_MainWindow
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -44,8 +44,7 @@ class RixsViewerGUI(QMainWindow):
         self.ui.toolButton_load_specfile.clicked.connect(self.on_load_specfile_clicked)
         self.ui.toolButton_set_tifffolder.clicked.connect(self.on_set_tifffolder_clicked)
         self.ui.pushButton_load_scan.clicked.connect(self.setup_scan_table)
-        self.setup_image_handler()
-        self.init_plot_hdl()
+        self.view = RixsView(self.ui)
         self.ui.pushButton_process.clicked.connect(self.process_binning)
         self.ui.pushButton_fit_pixel_size.clicked.connect(self.fit_effective_pixel_size)
         self.ui.comboBox_metasource.currentIndexChanged.connect(self.update_meta_source)
@@ -91,28 +90,6 @@ class RixsViewerGUI(QMainWindow):
             self.process_binning()
             self.current_rixs_dset = self.scan_model.last_scan_dset
 
-    def setup_image_handler(self):
-        plot = self.ui.widget_img.addPlot(row=0, col=0)
-        plot.setLabel("bottom", "Energy bin")
-        plot.setLabel("left", "Position (pixel)")
-        # Optional: grid and aspect ratio
-        # plot.showGrid(x=True, y=True)
-        plot.getViewBox().setAspectLocked(False)
-
-        # --- Add the ImageItem ---
-        self.img2d_hdl = pg.ImageItem(axisOrder="row-major")
-        plot.addItem(self.img2d_hdl)
-        # Example image data
-
-        # Optional: colorbar
-        hist = pg.HistogramLUTItem()
-        hist.setImageItem(self.img2d_hdl)
-        self.ui.widget_img.addItem(hist, row=0, col=1)
-        # Optional: apply a matplotlib colormap
-        cmap = pg.colormap.getFromMatplotlib("viridis")
-        self.img2d_hdl.setLookupTable(cmap.getLookupTable())
-        hist.gradient.setColorMap(cmap)
-
     def setup_parameter_tree(self):
         """Set up the parameter tree with RixsBinningModel parameters"""
         # Create the RixsBinningModel instance
@@ -140,11 +117,6 @@ class RixsViewerGUI(QMainWindow):
         # Parameters are only editable when meta source is set to 'GUI'
         if meta_source == "GUI":
             self.binning_model.update_from_parameter(param, changes)
-
-    def init_plot_hdl(self):
-        self.plot_hdl = self.ui.widget_binhdl.addPlot()
-        cmap = pg.colormap.get("plasma")
-        self.img2d_hdl.setColorMap(cmap)
 
     def fit_effective_pixel_size(self):
         if self.current_rixs_dset is None:
@@ -179,44 +151,11 @@ class RixsViewerGUI(QMainWindow):
             metadata_source=meta_source,
             center_method=center_method,
         )
-        self.plot_binned_data(result, show_rawdata, fit_pixel_size)
+        accepted_fitted_value = self.view.plot_binned_data(result, show_rawdata, fit_pixel_size, parent_widget=self)
+        if accepted_fitted_value is not None:
+            self.binning_model.put_single_parameter("DeltaD", accepted_fitted_value)
 
-    def plot_binned_data(self, result, show_rawdata=False, fit_pixel_size=False):
-        self.plot_hdl.clear()
-        if show_rawdata:
-            for x, y in result["rawdata_lines"]:
-                color = tuple(np.random.randint(100, 256, size=3))  # avoid dark colors
-                pen = pg.mkPen(color=color, width=1)
-                self.plot_hdl.plot(x, y, pen=pen)
-
-        # plot the binned line with error bars
-        x, y, err = result["binned_line"]
-        pen = pg.mkPen(color=(0, 0, 255), width=1)
-        self.plot_hdl.plot(x, y, pen=pen)
-
-        # --- Error bar item ---
-        err_plot = pg.ErrorBarItem(x=x, y=y, top=err, bottom=err, beam=0.00001)
-        self.plot_hdl.addItem(err_plot)
-
-        self.plot_hdl.setLabel("left", "Intensity")
-        self.plot_hdl.setLabel("bottom", "Energy (keV)")
-
-        if fit_pixel_size:
-            # Show confirmation dialog before updating DeltaD parameter
-            fitted_value = float(result["DeltaD_fit"])
-            reply = QMessageBox.question(
-                self,
-                "Update DeltaD Parameter",
-                f"Update DeltaD parameter with fitted value {fitted_value:.6f} mm?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-
-            if reply == QMessageBox.Yes:
-                self.binning_model.put_single_parameter("DeltaD", fitted_value)
-
-        if result["summed_data"] is not None:
-            self.img2d_hdl.setImage(np.flipud(result["summed_data"]), levels=result["levels"])
+    # plot_binned_data is handled by RixsView
 
     def on_load_specfile_clicked(self):
         """Handle the load spec file button click"""
@@ -303,11 +242,12 @@ class RixsViewerGUI(QMainWindow):
     def update_image(self):
         percentile_cutoff = self.ui.doubleSpinBox_percentile_cutoff.value()
         frame_index = self.ui.horizontalSlider_frame_index.value()
-        data, levels, num_frames, frame_metadata = self.current_rixs_dset.get_data_for_display(
-            frame_index=frame_index, percentile_cutoff=percentile_cutoff, **self.binning_model.get_kwargs()
+        _num_frames, frame_metadata = self.view.update_image(
+            self.current_rixs_dset,
+            frame_index=frame_index,
+            percentile_cutoff=percentile_cutoff,
+            binning_kwargs=self.binning_model.get_kwargs(),
         )
-        self.ui.horizontalSlider_frame_index.setRange(0, num_frames - 1)
-        self.img2d_hdl.setImage(np.flipud(data), levels=levels)
         self.ui.tableView_image.clicked.connect(self.on_image_table_clicked)
 
         meta_source = self.ui.comboBox_metasource.currentText()
