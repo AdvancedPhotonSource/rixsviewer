@@ -119,35 +119,27 @@ class RixsView:
 
         return accepted_fitted_value
 
-    def update_image(self, rixs_dset, frame_index, percentile_cutoff, binning_kwargs):
-        """Render a single detector frame from *rixs_dset*.
+    def update_image(self, data, levels, num_frames, binning_kwargs, scan_index, frame_index):
+        """Render a single detector frame.
 
         Parameters
         ----------
-        rixs_dset : RixsDataset
-            The currently selected dataset.
-        frame_index : int
-            Index of the frame to display.
-        percentile_cutoff : float
-            Percentile used to clip the colour scale.
+        data : numpy.ndarray
+            2-D frame array (pre-flip not yet applied).
+        levels : tuple of (float, float)
+            ``(vmin, vmax)`` colour scale limits.
+        num_frames : int
+            Total number of frames in the dataset (used to set slider range).
         binning_kwargs : dict
-            Keyword arguments forwarded to ``get_data_for_display``.
-
-        Returns
-        -------
-        tuple
-            ``(num_frames, frame_metadata)`` so the controller can update the
-            slider range and sync the binning model.
+            Current binning parameters; forwarded to ``_update_roi`` so the
+            ROI overlay reflects ``Ylow``, ``Yhigh``, and ``RefL``.
         """
-        data, levels, num_frames, frame_metadata = rixs_dset.get_data_for_display(
-            frame_index=frame_index,
-            percentile_cutoff=percentile_cutoff,
-            **binning_kwargs,
-        )
         self.ui.horizontalSlider_frame_index.setRange(0, num_frames - 1)
         self.img2d_hdl.setImage(np.flipud(data), levels=levels)
         self._update_roi(data.shape, binning_kwargs)
-        return num_frames, frame_metadata
+        self.ui.groupBox_2d_scattering.setTitle(
+            f"2D Scattering: [Scan: {scan_index}, Frame: {frame_index+1}/{num_frames}]"
+        )
 
     # ------------------------------------------------------------------
     # ROI helpers

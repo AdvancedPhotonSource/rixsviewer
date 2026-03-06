@@ -379,7 +379,7 @@ class RixsSpecTable(QAbstractTableModel):
                 else:
                     # new scan dataset
                     row = len(self.record)
-                    scan_dset = RixsScanTiffDataset(row, self.spec_fname, self.tif_folder)
+                    scan_dset = RixsScanTiffDataset(row, self.spec_fname, self.tif_folder, scan_number)
                     scan_dset.update_scan_info(scan_pack)
                     self.beginInsertRows(QModelIndex(), row, row)
                     self.record[scan_number] = scan_dset
@@ -392,6 +392,9 @@ class RixsSpecTable(QAbstractTableModel):
 
     def columnCount(self, parent=None):
         return len(self._headers)
+
+    def get_scan_number(self, row):
+        return list(self.record.keys())[row]
 
     def get_selected_dataset(self, row):
         """
@@ -407,7 +410,7 @@ class RixsSpecTable(QAbstractTableModel):
         RixsScanTiffDataset
             Dataset object associated with the scan at *row*.
         """
-        scan_index = list(self.record.keys())[row]
+        scan_index = self.get_scan_number(row)
         scan_tiff_dset = self.record[scan_index]
         return scan_tiff_dset
 
@@ -424,8 +427,8 @@ class RixsSpecTable(QAbstractTableModel):
             return None
         if role == Qt.DisplayRole:
             row, col = index.row(), index.column()
-            scan_index = list(self.record.keys())[row]
-            scan_tiff_dset = self.record[scan_index]
+            scan_number = self.get_scan_number(row)
+            scan_tiff_dset = self.record[scan_number]
             return scan_tiff_dset.get_qtableview_display_data(col)
 
         elif role == Qt.TextAlignmentRole:
@@ -460,7 +463,7 @@ class RixsScanTiffDataset:
         Directory containing the TIFF image files.
     """
 
-    def __init__(self, row_position, spec_fname, tif_folder):
+    def __init__(self, row_position, spec_fname, tif_folder, scan_index):
         """
         Initialise dataset with file paths; no images are loaded yet.
 
@@ -472,8 +475,11 @@ class RixsScanTiffDataset:
             Path to the SPEC data file.
         tif_folder : str
             Directory containing the TIFF image files.
+        scan_index : int
+            Scan index in the SPEC file.
         """
         self.row_position = row_position
+        self.scan_index = scan_index
         self.spec_fname = spec_fname
         self.tif_folder = tif_folder
         self._model = None
@@ -564,7 +570,7 @@ class RixsScanTiffDataset:
         frame_metadata = self.scan_info["metadata"].copy()
         frame_metadata["E"] = self.scan_info["scandata"]["merixE"][frame_index]
         frame_metadata["ThetaB"] = np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6  # micro-radian
-        return self._data[frame_index], levels, num_frames, frame_metadata
+        return self._data[frame_index], levels, num_frames, frame_metadata, self.scan_index
 
     def bin_data_wrap(
         self,

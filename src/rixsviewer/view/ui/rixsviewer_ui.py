@@ -157,17 +157,17 @@ class Ui_MainWindow(object):
         self.horizontalLayout = QHBoxLayout(self.layoutWidget)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
-        self.groupBox_3 = QGroupBox(self.layoutWidget)
-        self.groupBox_3.setObjectName(u"groupBox_3")
+        self.groupBox_2d_scattering = QGroupBox(self.layoutWidget)
+        self.groupBox_2d_scattering.setObjectName(u"groupBox_2d_scattering")
         sizePolicy4 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         sizePolicy4.setHorizontalStretch(2)
         sizePolicy4.setVerticalStretch(2)
-        sizePolicy4.setHeightForWidth(self.groupBox_3.sizePolicy().hasHeightForWidth())
-        self.groupBox_3.setSizePolicy(sizePolicy4)
-        self.gridLayout_3 = QGridLayout(self.groupBox_3)
+        sizePolicy4.setHeightForWidth(self.groupBox_2d_scattering.sizePolicy().hasHeightForWidth())
+        self.groupBox_2d_scattering.setSizePolicy(sizePolicy4)
+        self.gridLayout_3 = QGridLayout(self.groupBox_2d_scattering)
         self.gridLayout_3.setObjectName(u"gridLayout_3")
         self.gridLayout_3.setContentsMargins(0, 0, 0, 0)
-        self.doubleSpinBox_percentile_cutoff = QDoubleSpinBox(self.groupBox_3)
+        self.doubleSpinBox_percentile_cutoff = QDoubleSpinBox(self.groupBox_2d_scattering)
         self.doubleSpinBox_percentile_cutoff.setObjectName(u"doubleSpinBox_percentile_cutoff")
         self.doubleSpinBox_percentile_cutoff.setMinimum(50.000000000000000)
         self.doubleSpinBox_percentile_cutoff.setMaximum(100.000000000000000)
@@ -176,13 +176,13 @@ class Ui_MainWindow(object):
 
         self.gridLayout_3.addWidget(self.doubleSpinBox_percentile_cutoff, 0, 1, 1, 1)
 
-        self.horizontalSlider_frame_index = QSlider(self.groupBox_3)
+        self.horizontalSlider_frame_index = QSlider(self.groupBox_2d_scattering)
         self.horizontalSlider_frame_index.setObjectName(u"horizontalSlider_frame_index")
         self.horizontalSlider_frame_index.setOrientation(Qt.Orientation.Horizontal)
 
         self.gridLayout_3.addWidget(self.horizontalSlider_frame_index, 0, 3, 1, 1)
 
-        self.widget_img = GraphicsLayoutWidget(self.groupBox_3)
+        self.widget_img = GraphicsLayoutWidget(self.groupBox_2d_scattering)
         self.widget_img.setObjectName(u"widget_img")
         sizePolicy5 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         sizePolicy5.setHorizontalStretch(0)
@@ -192,18 +192,18 @@ class Ui_MainWindow(object):
 
         self.gridLayout_3.addWidget(self.widget_img, 1, 0, 1, 4)
 
-        self.label_2 = QLabel(self.groupBox_3)
+        self.label_2 = QLabel(self.groupBox_2d_scattering)
         self.label_2.setObjectName(u"label_2")
 
         self.gridLayout_3.addWidget(self.label_2, 0, 0, 1, 1)
 
-        self.label_6 = QLabel(self.groupBox_3)
+        self.label_6 = QLabel(self.groupBox_2d_scattering)
         self.label_6.setObjectName(u"label_6")
 
         self.gridLayout_3.addWidget(self.label_6, 0, 2, 1, 1)
 
 
-        self.horizontalLayout.addWidget(self.groupBox_3)
+        self.horizontalLayout.addWidget(self.groupBox_2d_scattering)
 
         self.groupBox_4 = QGroupBox(self.layoutWidget)
         self.groupBox_4.setObjectName(u"groupBox_4")
@@ -361,7 +361,7 @@ class Ui_MainWindow(object):
         self.pushButton_load_scan.setText(QCoreApplication.translate("MainWindow", u"load", None))
         self.checkBox_autoupdate.setText(QCoreApplication.translate("MainWindow", u"AutoUpdate", None))
         self.groupBox_2.setTitle(QCoreApplication.translate("MainWindow", u"Single Scan", None))
-        self.groupBox_3.setTitle(QCoreApplication.translate("MainWindow", u"2D Images", None))
+        self.groupBox_2d_scattering.setTitle(QCoreApplication.translate("MainWindow", u"2D Images", None))
         self.label_2.setText(QCoreApplication.translate("MainWindow", u"Percentile Enhancement", None))
         self.label_6.setText(QCoreApplication.translate("MainWindow", u"Frame", None))
         self.groupBox_4.setTitle(QCoreApplication.translate("MainWindow", u"Settings", None))
