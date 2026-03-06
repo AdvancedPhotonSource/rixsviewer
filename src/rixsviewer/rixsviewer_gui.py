@@ -10,10 +10,9 @@ from pyqtgraph.parametertree import Parameter
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMainWindow, QMessageBox
 
-from .model.binning_model import RixsBinningModel
-from .model.specfile_reader import RixsSpecTable
-from .view.view import RixsView
-from .view.ui.rixsviewer_ui import Ui_MainWindow
+from .model import RixsBinningModel, RixsSpecTable
+from .view import RixsView
+from .view.ui import Ui_MainWindow
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -76,11 +75,8 @@ class RixsViewerGUI(QMainWindow):
         meta_source = self.ui.comboBox_metasource.currentText()
         if meta_source == "PV":
             logger.info("Using PVs for binning parameters")
-            self.binning_model.get_kwargs_from_pv()
-        # if meta_source in ("PV", "SpecFile"):
-        #     self.ui.widget_ptree.setEnabled(False)
-        # else:
-        #     self.ui.widget_ptree.setEnabled(True)
+            kwargs = self.binning_model.get_kwargs_from_pv()
+            self._put_params(kwargs)  # reflect PV values in the param-tree widget
 
         return
 
@@ -102,9 +98,6 @@ class RixsViewerGUI(QMainWindow):
             children=self.binning_model.params,
         )
 
-        # Connect the parameter tree to the model for bidirectional sync
-        self.binning_model.param_tree = self.params
-
         # Connect parameter changes to update the binning model
         self.params.sigTreeStateChanged.connect(self.on_parameter_changed)
 
@@ -117,6 +110,25 @@ class RixsViewerGUI(QMainWindow):
         # Parameters are only editable when meta source is set to 'GUI'
         if meta_source == "GUI":
             self.binning_model.update_from_parameter(param, changes)
+
+    # ------------------------------------------------------------------
+    # Controller helpers: keep model and param-tree widget in sync
+    # ------------------------------------------------------------------
+
+    def _put_param(self, name, value):
+        """Update one parameter in the model and reflect the new value in the
+        parameter-tree widget.  This is the only place in the controller that
+        should write a single named value to both M and V."""
+        self.binning_model.put_single_parameter(name, value)
+        param = self.params.child(name)
+        if param is not None:
+            param.setValue(value)
+
+    def _put_params(self, kwargs):
+        """Bulk version of :meth:`_put_param` — update all key/value pairs in
+        *kwargs* in both the model and the parameter-tree widget."""
+        for name, value in kwargs.items():
+            self._put_param(name, value)
 
     def fit_effective_pixel_size(self):
         if self.current_rixs_dset is None:
@@ -153,7 +165,7 @@ class RixsViewerGUI(QMainWindow):
         )
         accepted_fitted_value = self.view.plot_binned_data(result, show_rawdata, fit_pixel_size, parent_widget=self)
         if accepted_fitted_value is not None:
-            self.binning_model.put_single_parameter("DeltaD", accepted_fitted_value)
+            self._put_param("DeltaD", accepted_fitted_value)
 
     # plot_binned_data is handled by RixsView
 
@@ -252,7 +264,7 @@ class RixsViewerGUI(QMainWindow):
 
         meta_source = self.ui.comboBox_metasource.currentText()
         if meta_source == "SpecFile":
-            self.binning_model.put_kwargs(frame_metadata)
+            self._put_params(frame_metadata)
 
     def on_image_table_clicked(self, index):
         # self.img2d_hdl.setCurrentIndex(index.row())

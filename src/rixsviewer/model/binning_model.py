@@ -11,7 +11,6 @@ class RixsBinningModel:
         self.params_map = {}
         for index, param in enumerate(self.params):
             self.params_map[param["name"]] = index
-        self.param_tree = None  # Will be set by GUI to enable UI updates
         self.pv_info = [(p["pv"], p["name"]) for p in self.params if p["pv"] != "none"]
 
     def get_kwargs(self):
@@ -41,7 +40,7 @@ class RixsBinningModel:
         return self.params[self.params_map[name]]["value"]
 
     def put_single_parameter(self, name, value):
-        """Update a parameter value by name and sync with UI if connected
+        """Update a single parameter value in the model.
 
         Args:
             name: Parameter name to update
@@ -49,11 +48,6 @@ class RixsBinningModel:
         """
         if name in self.params_map:
             self.params[self.params_map[name]]["value"] = value
-            # Update the UI parameter tree if it's connected
-            if self.param_tree is not None:
-                param = self.param_tree.child(name)
-                if param is not None:
-                    param.setValue(value)
         else:
             print(name, "not in params_map")
             print(self.params_map)
