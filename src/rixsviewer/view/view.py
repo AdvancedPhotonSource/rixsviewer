@@ -1,4 +1,3 @@
-import numpy as np
 import pyqtgraph as pg
 from PySide6.QtWidgets import QMessageBox
 
@@ -12,6 +11,21 @@ class RixsView:
     returns values (e.g. the fitted DeltaD) and lets the controller (GUI class)
     decide what to do with them.
     """
+
+    # Tableau-10 palette: perceptually distinct, high-contrast, deterministic.
+    # Cycles via  i % len(_LINE_COLORS)  when there are more lines than colours.
+    _LINE_COLORS = (
+        (31, 119, 180),  # blue
+        (255, 127, 14),  # orange
+        (44, 160, 44),  # green
+        (214, 39, 40),  # red
+        (148, 103, 189),  # purple
+        (140, 86, 75),  # brown
+        (227, 119, 194),  # pink
+        (188, 189, 34),  # olive
+        (23, 190, 207),  # cyan
+        (127, 127, 127),  # grey
+    )
 
     def __init__(self, ui):
         self.ui = ui
@@ -32,6 +46,7 @@ class RixsView:
         # Optional: grid and aspect ratio
         # plot.showGrid(x=True, y=True)
         plot.getViewBox().setAspectLocked(False)
+        plot.invertY(True)  # row 0 at top; Y axis increases downward
         self._img_plot = plot
 
         # --- Add the ImageItem ---
@@ -84,8 +99,8 @@ class RixsView:
         """
         self.plot_hdl.clear()
         if show_rawdata:
-            for x, y in result["rawdata_lines"]:
-                color = tuple(np.random.randint(100, 256, size=3))  # avoid dark colors
+            for i, (x, y) in enumerate(result["rawdata_lines"]):
+                color = self._LINE_COLORS[i % len(self._LINE_COLORS)]
                 pen = pg.mkPen(color=color, width=1)
                 self.plot_hdl.plot(x, y, pen=pen)
 
@@ -115,7 +130,7 @@ class RixsView:
                 accepted_fitted_value = fitted_value
 
         if result["summed_data"] is not None:
-            self.img2d_hdl.setImage(np.flipud(result["summed_data"]), levels=result["levels"])
+            self.img2d_hdl.setImage(result["summed_data"], levels=result["levels"])
 
         return accepted_fitted_value
 
@@ -135,7 +150,7 @@ class RixsView:
             ROI overlay reflects ``Ylow``, ``Yhigh``, and ``RefL``.
         """
         self.ui.horizontalSlider_frame_index.setRange(0, num_frames - 1)
-        self.img2d_hdl.setImage(np.flipud(data), levels=levels)
+        self.img2d_hdl.setImage(data, levels=levels)
         self._update_roi(data.shape, binning_kwargs)
         self.ui.groupBox_2d_scattering.setTitle(
             f"2D Scattering: [Scan: {scan_index}, Frame: {frame_index+1}/{num_frames}]"
@@ -148,23 +163,14 @@ class RixsView:
     def _update_roi(self, image_shape, binning_kwargs):
         """Create (first call) or reposition (subsequent calls) the ROI overlay.
 
-        The ROI is drawn in *display* coordinates — i.e. after ``np.flipud``
-        has been applied to the image — so the Y axis runs from 0 (top of the
-        displayed image) to ``image_shape[0] - 1`` (bottom).  In the original
-        data:
-
-        * row 0   → display row ``H - 1``
-        * row H-1 → display row 0
-
-        Therefore ``Ylow`` in data space maps to ``H - 1 - Ylow`` in display
-        space, and ``Yhigh`` maps to ``H - 1 - Yhigh``.  The ROI's top-left
-        corner is at display-y = ``H - 1 - Yhigh`` (smallest display-y) and
-        its height is ``Yhigh - Ylow``.
+        With ``invertY(True)`` on the plot, display coordinates match data
+        coordinates directly: row ``Ylow`` is at ``y = Ylow`` and row
+        ``Yhigh`` is at ``y = Yhigh``.  No coordinate transformation is needed.
 
         Parameters
         ----------
         image_shape : tuple of int
-            ``(rows, cols)`` of the *original* (pre-flip) data array.
+            ``(rows, cols)`` of the data array (used for default fallbacks).
         binning_kwargs : dict
             Must contain ``"Ylow"``, ``"Yhigh"``, and ``"RefL"``.
         """
@@ -172,16 +178,10 @@ class RixsView:
         yhigh = binning_kwargs.get("Yhigh", image_shape[0])
         refl = binning_kwargs.get("RefL", image_shape[1] // 2)
 
-        H = image_shape[0]
-
-        # Convert data-space Y bounds to display-space (flipud)
-        disp_y_bottom = H - 1 - ylow  # larger display-y value
-        disp_y_top = H - 1 - yhigh  # smaller display-y value
-
         roi_x = 0
-        roi_y = disp_y_top
+        roi_y = ylow
         roi_w = 2 * refl
-        roi_h = disp_y_bottom - disp_y_top  # always >= 0
+        roi_h = yhigh - ylow  # always >= 0
 
         if self._roi_rect is None:
             # Create once; make it non-interactive (display-only)
