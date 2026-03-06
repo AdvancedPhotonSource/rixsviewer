@@ -9,42 +9,9 @@ import pandas as pd
 import tifffile
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
-from .utils import find_peaks
+from .utils import find_peaks, bin_rixs_data, percentile_clip
 
 logger = logging.getLogger(__name__)
-
-
-def percentile_clip(data, threshold=99):
-    """
-    Compute display intensity limits using percentile clipping.
-
-    Calculates a (vmin, vmax) tuple suitable for image display by computing
-    the given percentile of positive values.  Only the first frame is used
-    for 3-D arrays.
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        Input array with ndim 2 or 3.  Pixels with value ``<= 0`` are
-        excluded from the percentile calculation.
-    threshold : float, optional
-        Upper percentile used to clip hot pixels, by default ``99.9``.
-
-    Returns
-    -------
-    tuple of (float, float)
-        ``(0, vmax)`` where *vmax* is the *threshold*-th percentile of the
-        positive pixels.  Returns ``(0, 0)`` when *data* is empty.
-    """
-    if data.size == 0:
-        return (0, 0)
-    if data.ndim == 2:
-        mask = data > 0
-        vmax = np.percentile(data[mask], threshold)
-    elif data.ndim == 3:
-        mask = data[0] > 0
-        vmax = np.percentile(data[0][mask], threshold)
-    return (0, vmax)
 
 
 def get_scan_type(scan):
@@ -581,229 +548,47 @@ class RixsScanTiffDataset:
         binning_kwargs=None,
     ):
         """
-        High-level wrapper that calls :meth:`_bin_data` with resolved parameters.
+        High-level wrapper that delegates to :func:`~.utils.bin_rixs_data`.
+
+        Resolves all ``self``-dependent data (image stack, incident energies,
+        scan type) and merges instrument parameters, then calls the pure
+        function so that the computation has no dependency on this object.
 
         Parameters
         ----------
         fit_pixel_size : bool, optional
             When ``True`` and the scan is an ``EnergyScan``, fit the
-            effective pixel size from the data rather than using the
-            value stored in the metadata.  Default is ``False``.
-        metadata_source : {'internal', 'external'}
-            Source of instrument parameters:
-
-            ``'SpecFile'``
-                Use parameters parsed from the SPEC ``#B`` header line
-                (stored in :attr:`scan_info['metadata']`).
-            ``'PV'``
-                Use parameters from the PVs.
-            ``'GUI'``
-                Use parameters from the GUI.
+            effective pixel size from the data.  Default is ``False``.
+        metadata_source : {'SpecFile', 'PV', 'GUI'}
+            Source of instrument parameters.
         noise_model : {'poisson', 'gaussian'}
-            Statistical model used to estimate per-bin uncertainty.
-            Default is ``'poisson'``.
+            Statistical model for per-bin uncertainty.  Default ``'poisson'``.
+        center_method : str, optional
+            Peak-finding method.  Default ``'gaussian'``.
         binning_kwargs : dict or None, optional
-            Instrument parameters forwarded to :meth:`_bin_data` when
-            *metadata_source* is ``'external'``.  Ignored otherwise.
+            Instrument parameters used when *metadata_source* is not
+            ``'SpecFile'``.
 
         Returns
         -------
         dict
-            Result dictionary returned by :meth:`_bin_data`.
-
-        Raises
-        ------
-        AssertionError
-            If *metadata_source* is not ``'internal'`` or ``'external'``.
+            Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
         assert metadata_source in ["SpecFile", "PV", "GUI"], "metadata_source not supported."
+
+        # Resolve instrument parameters
         kwargs = {"fit_pixel_size": fit_pixel_size, "noise_model": noise_model, "center_method": center_method}
         if metadata_source == "SpecFile":
             kwargs.update(self.scan_info["metadata"])
         else:
             kwargs.update(binning_kwargs)
-        return self._bin_data(**kwargs)
 
-    def _bin_data(
-        self,
-        DeltaD=0.022,
-        RefL=70,
-        fit_pixel_size=True,
-        Eb=10,
-        rowland_radius=1900,
-        energy_cen=None,
-        Ylow=0,
-        Yhigh=256,
-        noise_model="poisson",
-        center_method="gaussian",
-        **kwargs,
-    ):
-        """
-        Compute the binned RIXS spectrum from the loaded TIFF stack.
-
-        Applies row-range selection, optional reflectivity tail masking,
-        energy-axis calibration using the Rowland circle geometry, and
-        interpolated rebinning onto a uniform energy grid.
-
-        Parameters
-        ----------
-        DeltaD : float, optional
-            Nominal detector pixel pitch in the energy-dispersion direction
-            (mm), used when *fit_pixel_size* is ``False``.  Default ``0.022``.
-        RefL : int, optional
-            Reference pixel (channel) corresponding to the elastic peak
-            position, i.e. the zero of the pixel-offset axis.  Default ``70``.
-        fit_pixel_size : bool, optional
-            If ``True`` and the scan type is ``'EnergyScan'``, estimate the
-            effective pixel size by least-squares fitting the elastic peak
-            positions vs. incident energy.  Default ``True``.
-        Eb : float, optional
-            Analyzer backscattering energy in keV.  Default ``10``.
-        rowland_radius : float, optional
-            Rowland circle radius in mm.  Default ``1900``.
-        energy_cen : ignored
-            Accepted for API compatibility but not used; the incident energy
-            is taken from the ``merixE`` column of :attr:`scan_info`.
-        Ylow : int, optional
-            Lower Y-pixel bound (inclusive) for the row-summation region.
-            Default ``0``.
-        Yhigh : int, optional
-            Upper Y-pixel bound (exclusive) for the row-summation region.
-            Default ``256``.
-        noise_model : {'poisson', 'gaussian'}, optional
-            Statistical model for per-bin error estimation:
-
-            ``'poisson'``
-                ``err = sqrt(mean / count)``.
-            ``'gaussian'``
-                ``err = std / sqrt(count)``.
-
-            Default is ``'poisson'``.
-        **kwargs
-            Additional keyword arguments are silently ignored (allows
-            extra metadata keys to be forwarded without error).
-
-        Returns
-        -------
-        dict
-            Dictionary with the following keys:
-
-            ``rawdata_lines`` : list of [numpy.ndarray, numpy.ndarray]
-                Per-frame ``[energy_axis, intensity]`` pairs before
-                rebinning.
-            ``binned_line`` : tuple of (numpy.ndarray, numpy.ndarray, numpy.ndarray)
-                ``(bin_energy_axis, bin_data_mean, bin_data_err)`` on a
-                uniform energy grid.
-            ``DeltaD_fit`` : float
-                Effective pixel size used (fitted or nominal).
-            ``summed_data`` : numpy.ndarray or None
-                Sum of all frames (only for ``'SnapshotScan'``;
-                ``None`` for ``'EnergyScan'``).
-            ``levels`` : tuple of (float, float) or None
-                Display intensity limits for *summed_data* computed by
-                :func:`percentile_clip`, or ``None`` for ``'EnergyScan'``.
-
-        Raises
-        ------
-        AssertionError
-            If *Ylow* / *Yhigh* are outside the detector dimensions or
-            *noise_model* is not recognised.
-        """
-        self._data = self.read_data()
-        shape = self._data.shape
-
-        assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, "check Ylow and Yhigh and detector shape"
-        data_1d = np.sum(self._data[:, Ylow:Yhigh, :], axis=1)
-
-        # pad values after xrefl if needed;
-        if 2 * RefL < shape[2]:
-            data_1d[:, 2 * RefL :] = np.mean(data_1d[:, 2 * RefL])
-
-        xaxis = np.arange(shape[2]) - RefL
-
+        # Resolve self-dependent context and pass as plain data
+        data = self.read_data()
         merixE = self.scan_info["scandata"]["merixE"]
-        assert merixE.shape[0] == shape[0], "merixE and data_1d must have the same number of rows"
-
-        theta_b = np.arcsin(Eb / merixE)
-        energy_cen = np.array(merixE).reshape(-1, 1)
-
-        scale = np.array(Eb / (2 * rowland_radius) / np.tan(theta_b))
-
         scan_type = self.scan_info["scan_type"]
 
-        if fit_pixel_size and scan_type == "SnapshotScan":
-            logger.warning("fit_pixel_size is not implemented for SnapshotScan")
-            fit_pixel_size = False
-
-        if fit_pixel_size and scan_type == "EnergyScan":
-            com_pixel, valid_mask = find_peaks(data_1d, method=center_method, smooth_window=3, poly_order=2)
-            a_mat = np.array(com_pixel * scale).reshape(shape[0], 1)
-            a_mat = np.hstack([a_mat, np.ones_like(a_mat)])  # n_images x 2
-            effective_pixel_size, energy_fit = np.linalg.lstsq(a_mat[valid_mask], energy_cen[valid_mask])[0]
-            effective_pixel_size = float(effective_pixel_size)
-            logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
-        else:
-            # use DeltaD as the effective pixel size
-            effective_pixel_size = DeltaD
-
-        energy_axis = energy_cen - np.outer(scale, xaxis) * effective_pixel_size
-
-        if scan_type == "SnapshotScan":
-            # All frames share the same incident energy → the energy axis is
-            # identical for every frame.  No sorting or interpolation needed:
-            # just reduce along the frame axis directly.
-            bin_energy_axis = energy_axis[0]  # 1-D, shape (n_cols,)
-            bin_data = data_1d  # shape (n_frames, n_cols)
-            lines = [[bin_energy_axis, data_1d[n]] for n in range(shape[0])]
-        else:
-            # EnergyScan: frames have different energies → sort each row so
-            # that the energy axis is monotonically increasing, then interpolate
-            # all rows onto a common uniform grid before averaging.
-            for n in range(shape[0]):
-                sort_idx = np.argsort(energy_axis[n])
-                energy_axis[n] = energy_axis[n][sort_idx]
-                data_1d[n] = data_1d[n][sort_idx]
-
-            lines = [[energy_axis[n], data_1d[n]] for n in range(shape[0])]
-            energy_min, energy_max = np.min(energy_axis), np.max(energy_axis)
-            step = int((energy_max - energy_min) / np.mean(np.abs(np.diff(energy_axis, axis=1))))
-
-            bin_energy_axis = np.linspace(energy_min, energy_max, step)
-            bin_data = np.array(
-                [
-                    np.interp(bin_energy_axis, energy_axis[n], data_1d[n], left=np.nan, right=np.nan)
-                    for n in range(shape[0])
-                ]
-            )
-
-        bin_data = np.array(bin_data)
-        bin_data_sum = np.nansum(bin_data, axis=0)
-        bin_data_cnt = np.sum(~np.isnan(bin_data), axis=0)
-        bin_data_mean = bin_data_sum / np.clip(bin_data_cnt, a_min=1, a_max=None)
-
-        assert noise_model in [
-            "poisson",
-            "gaussian",
-        ], "noise_model must be either 'poisson' or 'gaussian'"
-        if noise_model == "poisson":
-            bin_data_err = np.sqrt(bin_data_mean / bin_data_cnt)
-        elif noise_model == "gaussian":
-            bin_data_err = np.nanstd(bin_data, axis=0) / np.sqrt(bin_data_cnt)
-
-        if scan_type == "SnapshotScan":
-            summed_data = np.sum(self._data, axis=0)
-            levels = percentile_clip(summed_data)
-        else:
-            summed_data = None
-            levels = None
-
-        return {
-            "rawdata_lines": lines,
-            "binned_line": (bin_energy_axis, bin_data_mean, bin_data_err),
-            "DeltaD_fit": effective_pixel_size,
-            "summed_data": summed_data,
-            "levels": levels,
-        }
+        return bin_rixs_data(data, merixE, scan_type, **kwargs)
 
     def __len__(self):
         """
