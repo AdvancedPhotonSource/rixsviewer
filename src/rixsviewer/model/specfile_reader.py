@@ -748,20 +748,33 @@ class RixsScanTiffDataset:
 
         energy_axis = energy_cen - np.outer(scale, xaxis) * effective_pixel_size
 
-        # sort the data
-        for n in range(shape[0]):
-            sort_idx = np.argsort(energy_axis[n])
-            energy_axis[n] = energy_axis[n][sort_idx]
-            data_1d[n] = data_1d[n][sort_idx]
+        if scan_type == "SnapshotScan":
+            # All frames share the same incident energy → the energy axis is
+            # identical for every frame.  No sorting or interpolation needed:
+            # just reduce along the frame axis directly.
+            bin_energy_axis = energy_axis[0]  # 1-D, shape (n_cols,)
+            bin_data = data_1d  # shape (n_frames, n_cols)
+            lines = [[bin_energy_axis, data_1d[n]] for n in range(shape[0])]
+        else:
+            # EnergyScan: frames have different energies → sort each row so
+            # that the energy axis is monotonically increasing, then interpolate
+            # all rows onto a common uniform grid before averaging.
+            for n in range(shape[0]):
+                sort_idx = np.argsort(energy_axis[n])
+                energy_axis[n] = energy_axis[n][sort_idx]
+                data_1d[n] = data_1d[n][sort_idx]
 
-        lines = [[energy_axis[n], data_1d[n]] for n in range(shape[0])]
-        energy_min, energy_max = np.min(energy_axis), np.max(energy_axis)
-        step = int((energy_max - energy_min) / np.mean(np.abs((np.diff(energy_axis, axis=1)))))
+            lines = [[energy_axis[n], data_1d[n]] for n in range(shape[0])]
+            energy_min, energy_max = np.min(energy_axis), np.max(energy_axis)
+            step = int((energy_max - energy_min) / np.mean(np.abs(np.diff(energy_axis, axis=1))))
 
-        bin_energy_axis = np.linspace(energy_min, energy_max, step)
-        bin_data = [
-            np.interp(bin_energy_axis, energy_axis[n], data_1d[n], left=np.nan, right=np.nan) for n in range(shape[0])
-        ]
+            bin_energy_axis = np.linspace(energy_min, energy_max, step)
+            bin_data = np.array(
+                [
+                    np.interp(bin_energy_axis, energy_axis[n], data_1d[n], left=np.nan, right=np.nan)
+                    for n in range(shape[0])
+                ]
+            )
 
         bin_data = np.array(bin_data)
         bin_data_sum = np.nansum(bin_data, axis=0)
@@ -777,7 +790,7 @@ class RixsScanTiffDataset:
         elif noise_model == "gaussian":
             bin_data_err = np.nanstd(bin_data, axis=0) / np.sqrt(bin_data_cnt)
 
-        if self.scan_info["scan_type"] == "SnapshotScan":
+        if scan_type == "SnapshotScan":
             summed_data = np.sum(self._data, axis=0)
             levels = percentile_clip(summed_data)
         else:
