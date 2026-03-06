@@ -8,6 +8,11 @@ import matplotlib.pyplot as plt
 logger = logging.getLogger(__name__)
 
 
+def _gaussian(x_vals, amp, cen, sigma):
+    """Normalised Gaussian: amp * exp(-0.5 * ((x - cen) / sigma)^2)."""
+    return amp * np.exp(-0.5 * ((x_vals - cen) / sigma) ** 2)
+
+
 def plot_peak_debug(x, centers, num_samples=5, row_indices=None):
     """
     Plots individual row profiles and marks the detected peak centers.
@@ -88,15 +93,11 @@ def find_peaks(x, method="centroid", smooth_window=None, poly_order=2):
         centers = np.divide(np.sum(x_clean * indices, axis=1), row_sums, out=np.zeros(m), where=row_sums != 0)
 
     elif method == "gaussian":
-
-        def gaussian_func(x_vals, amp, cen, sigma):
-            return amp * np.exp(-((x_vals - cen) ** 2) / (2 * sigma**2))
-
         for i in range(m):
             row = x_clean[i]
             p0 = [row.max(), np.argmax(row), 2.0]  # Initial guess
             try:
-                popt, _ = curve_fit(gaussian_func, indices, row, p0=p0)
+                popt, _ = curve_fit(_gaussian, indices, row, p0=p0)
                 centers[i] = popt[1]
             except:
                 centers[i] = np.nan  # Fallback if fit fails
@@ -141,6 +142,225 @@ def percentile_clip(data, threshold=99):
     return (0, vmax)
 
 
+def _preprocess_frames(data, Ylow, Yhigh, RefL):
+    """Sum detector rows in the ROI, pad the reflectivity tail, build xaxis.
+
+    Parameters
+    ----------
+    data : ndarray, shape (n_frames, height, width)
+    Ylow, Yhigh : int  — inclusive/exclusive row bounds
+    RefL : int         — reference pixel (elastic peak channel)
+
+    Returns
+    -------
+    data_1d : ndarray, shape (n_frames, width)
+    xaxis : ndarray, shape (width,)  — pixel offset from elastic peak
+    """
+    shape = data.shape
+    assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, "check Ylow and Yhigh and detector shape"
+
+    data_1d = np.sum(data[:, Ylow:Yhigh, :], axis=1)
+
+    if 2 * RefL < shape[2]:  # pad reflectivity tail beyond 2*RefL
+        data_1d[:, 2 * RefL :] = np.mean(data_1d[:, 2 * RefL])
+
+    xaxis = np.arange(shape[2]) - RefL
+    return data_1d, xaxis
+
+
+def _fit_pixel_size(data_1d, scale, energy_cen, scan_type, center_method, DeltaD):
+    """Determine the effective detector pixel size (mm) by fitting elastic-peak
+    positions vs. incident energy for an EnergyScan.
+
+    Parameters
+    ----------
+    data_1d : ndarray, shape (n_frames, width)
+    scale : ndarray, shape (n_frames,)  -- keV/mm dispersion scale per frame
+    energy_cen : ndarray, shape (n_frames, 1)  -- incident energy per frame
+    scan_type : str  -- 'EnergyScan' or 'SnapshotScan'
+    center_method : str  -- peak-finding method for find_peaks
+    DeltaD : float  -- nominal pixel pitch (mm), returned unchanged when not fitting
+
+    Returns
+    -------
+    float
+        Effective pixel size in mm.
+    """
+    n = data_1d.shape[0]
+    if scan_type == "SnapshotScan":
+        logger.warning("fit_pixel_size is not implemented for SnapshotScan")
+        return float(DeltaD)
+
+    com_pixel, valid_mask = find_peaks(data_1d, method=center_method, smooth_window=3, poly_order=2)
+    a_mat = (com_pixel * scale).reshape(n, 1)
+    a_mat = np.hstack([a_mat, np.ones_like(a_mat)])
+    effective_pixel_size, _ = np.linalg.lstsq(a_mat[valid_mask], energy_cen[valid_mask])[0]
+    effective_pixel_size = float(effective_pixel_size)
+    logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
+    return effective_pixel_size
+
+
+def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, fit_pixel_size, scan_type, center_method, DeltaD):
+    """Build per-pixel energy axes via Rowland geometry, fit DeltaD if needed,
+    and align all frames onto a common energy grid.
+
+    Parameters
+    ----------
+    data_1d : ndarray, shape (n_frames, width)
+    xaxis   : ndarray, shape (width,)
+    merixE  : ndarray, shape (n_frames,)  — incident energy per frame (keV)
+    Eb      : float  — analyser backscattering energy (keV)
+    rowland_radius : float  — Rowland circle radius (mm)
+    fit_pixel_size : bool
+    scan_type      : str   — ``'EnergyScan'`` or ``'SnapshotScan'``
+    center_method  : str   — peak-finding method
+    DeltaD         : float — nominal pixel pitch (mm)
+
+    Returns
+    -------
+    lines           : list of [ndarray, ndarray]  — per-frame [E, I] pairs
+    bin_energy_axis : ndarray  — common energy grid
+    bin_data        : ndarray, shape (n_frames, n_bins)
+    effective_pixel_size : float  — fitted or nominal DeltaD (mm)
+    """
+    n = data_1d.shape[0]
+    assert merixE.shape[0] == n, "merixE and data must have the same number of frames"
+
+    theta_b = np.arcsin(Eb / merixE)
+    energy_cen = merixE.reshape(-1, 1)
+    scale = Eb / (2 * rowland_radius) / np.tan(theta_b)
+
+    if fit_pixel_size:
+        effective_pixel_size = _fit_pixel_size(data_1d, scale, energy_cen, scan_type, center_method, DeltaD)
+    else:
+        effective_pixel_size = DeltaD
+
+    energy_axis = energy_cen - np.outer(scale, xaxis) * effective_pixel_size
+
+    if scan_type == "SnapshotScan":
+        bin_energy_axis = energy_axis[0]
+        bin_data = data_1d.copy()
+        lines = [[bin_energy_axis, data_1d[i]] for i in range(n)]
+    else:
+        for i in range(n):
+            idx = np.argsort(energy_axis[i])
+            energy_axis[i] = energy_axis[i][idx]
+            data_1d[i] = data_1d[i][idx]
+
+        lines = [[energy_axis[i], data_1d[i]] for i in range(n)]
+        e_min, e_max = np.min(energy_axis), np.max(energy_axis)
+        step = int((e_max - e_min) / np.mean(np.abs(np.diff(energy_axis, axis=1))))
+
+        bin_energy_axis = np.linspace(e_min, e_max, step)
+        bin_data = np.array(
+            [np.interp(bin_energy_axis, energy_axis[i], data_1d[i], left=np.nan, right=np.nan) for i in range(n)]
+        )
+
+    return lines, bin_energy_axis, np.array(bin_data), effective_pixel_size
+
+
+def _reduce_frames(bin_data, noise_model):
+    """Average aligned frames and estimate per-bin uncertainty.
+
+    Parameters
+    ----------
+    bin_data : ndarray, shape (n_frames, n_bins)
+        NaN marks bins with no coverage for a given frame.
+    noise_model : {'poisson', 'gaussian'}
+
+    Returns
+    -------
+    mean : ndarray, shape (n_bins,)
+    err  : ndarray, shape (n_bins,)
+    """
+    assert noise_model in ("poisson", "gaussian"), "noise_model must be either 'poisson' or 'gaussian'"
+
+    count = np.sum(~np.isnan(bin_data), axis=0)
+    mean = np.nansum(bin_data, axis=0) / np.clip(count, a_min=1, a_max=None)
+
+    if noise_model == "poisson":
+        err = np.sqrt(mean / count)
+    else:
+        err = np.nanstd(bin_data, axis=0) / np.sqrt(count)
+
+    return mean, err
+
+
+def compute_fwhm(energy_axis, intensity, err=None):
+    """Estimate the full-width at half-maximum (FWHM) of a spectral line.
+
+    Attempts a Gaussian least-squares fit first.  If the fit fails (e.g.
+    flat or noisy data) falls back to linear interpolation of the
+    half-maximum crossings.
+
+    Parameters
+    ----------
+    energy_axis : ndarray, shape (n,)
+        Energy values (keV).  Must be monotonically increasing.
+    intensity : ndarray, shape (n,)
+        Spectral intensity, e.g. ``bin_data_mean`` from :func:`bin_rixs_data`.
+    err : ndarray, shape (n,) or None, optional
+        Per-point uncertainty used as weights (``1/err``) in the Gaussian fit.
+        Ignored for the interpolation fallback.  Default ``None``.
+
+    Returns
+    -------
+    tuple of (float or None, float or None)
+        ``(fwhm, center)`` where *fwhm* is the full-width at half-maximum and
+        *center* is the peak position, both in the same units as *energy_axis*
+        (keV).  Either value is ``None`` when the estimate cannot be computed.
+    """
+    # --- clean up NaN / non-finite values ---
+    mask = np.isfinite(intensity) & np.isfinite(energy_axis)
+    x = energy_axis[mask]
+    y = intensity[mask]
+    if len(x) < 5:
+        logger.warning("compute_fwhm: too few finite points to estimate FWHM")
+        return None, None
+
+    # subtract baseline (minimum) so the peak sits above zero
+    y = y - y.min()
+    peak_val = y.max()
+    if peak_val == 0:
+        return None, None
+
+    # --- Gaussian fit ---
+    p0 = [peak_val, x[np.argmax(y)], (x[-1] - x[0]) / 6]
+    sigma_w = err[mask] if err is not None else None
+    try:
+        with np.errstate(all="ignore"):
+            popt, _ = curve_fit(_gaussian, x, y, p0=p0, sigma=sigma_w, absolute_sigma=True, maxfev=2000)
+        fwhm = 2.0 * np.sqrt(2.0 * np.log(2.0)) * abs(popt[2])
+        center = float(popt[1])
+        logger.info(f"FWHM (Gaussian fit): {fwhm:.6f} keV  center: {center:.6f} keV")
+        return float(fwhm), center
+    except Exception:
+        pass  # fall through to interpolation fallback
+
+    # --- interpolation fallback: find half-max crossings ---
+    half = peak_val / 2.0
+    above = y >= half
+    edges = np.diff(above.astype(int))
+    rise_idx = np.where(edges == 1)[0]
+    fall_idx = np.where(edges == -1)[0]
+    if len(rise_idx) == 0 or len(fall_idx) == 0 or rise_idx[0] >= fall_idx[-1]:
+        logger.warning("compute_fwhm: half-max crossings not found")
+        return None, None
+
+    def _interp_crossing(i):
+        """Linear interpolation of the x position where y crosses half."""
+        dx = x[i + 1] - x[i]
+        dy = y[i + 1] - y[i]
+        return x[i] + dx * (half - y[i]) / dy if dy != 0 else x[i]
+
+    x_left = _interp_crossing(rise_idx[0])
+    x_right = _interp_crossing(fall_idx[-1])
+    fwhm = x_right - x_left
+    center = float((x_left + x_right) / 2.0)
+    logger.info(f"FWHM (interpolation): {fwhm:.6f} keV  center: {center:.6f} keV")
+    return float(fwhm), center
+
+
 def bin_rixs_data(
     data,
     merixE,
@@ -158,130 +378,51 @@ def bin_rixs_data(
 ):
     """Compute the binned RIXS spectrum from a TIFF image stack.
 
-    This is a pure function with no dependency on any dataset object.
-    All data required for computation is passed in explicitly.
+    Pure function — no dataset-object dependency.  Delegates to three helpers:
+
+    1. :func:`_preprocess_frames`   — ROI sum + pixel-offset axis
+    2. :func:`_compute_energy_axis` — Rowland calibration + grid alignment
+    3. :func:`_reduce_frames`       — weighted mean + uncertainty
 
     Parameters
     ----------
-    data : numpy.ndarray
-        3-D array of shape ``(n_frames, height, width)``, dtype ``float32``.
-    merixE : array-like of float
-        Incident energy for each frame (keV), length ``n_frames``.
+    data : ndarray, shape (n_frames, height, width)
+    merixE : array-like, shape (n_frames,)  — incident energy per frame (keV)
     scan_type : {'EnergyScan', 'SnapshotScan'}
-        Scan classification:
-
-        ``'EnergyScan'``
-            Each frame has a different incident energy; frames are sorted and
-            interpolated onto a common uniform energy grid before averaging.
-        ``'SnapshotScan'``
-            All frames share the same incident energy; no sorting or
-            interpolation is performed.
-    DeltaD : float, optional
-        Nominal detector pixel pitch in the energy-dispersion direction (mm).
-        Used when *fit_pixel_size* is ``False``.  Default ``0.022``.
-    RefL : int, optional
-        Reference pixel corresponding to the elastic peak (zero of the
-        pixel-offset axis).  Default ``70``.
-    fit_pixel_size : bool, optional
-        When ``True`` and *scan_type* is ``'EnergyScan'``, estimate the
-        effective pixel size by least-squares fitting.  Default ``True``.
-    Eb : float, optional
-        Analyzer backscattering energy in keV.  Default ``10``.
-    rowland_radius : float, optional
-        Rowland circle radius in mm.  Default ``1900``.
-    Ylow : int, optional
-        Lower Y-pixel bound (inclusive) for the row-summation region.
-        Default ``0``.
-    Yhigh : int, optional
-        Upper Y-pixel bound (exclusive) for the row-summation region.
-        Default ``256``.
-    noise_model : {'poisson', 'gaussian'}, optional
-        Statistical model for per-bin error estimation.  Default ``'poisson'``.
-    center_method : str, optional
-        Peak-finding method forwarded to :func:`find_peaks`.
-        Default ``'gaussian'``.
-    **kwargs
-        Additional keyword arguments are silently ignored (allows extra
-        metadata keys to be forwarded without error).
+    DeltaD : float   — nominal pixel pitch (mm). Default ``0.022``.
+    RefL : int       — reference pixel (elastic peak). Default ``70``.
+    fit_pixel_size : bool. Default ``True``.
+    Eb : float       — backscattering energy (keV). Default ``10``.
+    rowland_radius : float  — Rowland radius (mm). Default ``1900``.
+    Ylow, Yhigh : int  — row-summation bounds. Default ``0``, ``256``.
+    noise_model : {'poisson', 'gaussian'}. Default ``'poisson'``.
+    center_method : str  — peak-finding method. Default ``'gaussian'``.
+    **kwargs : silently ignored (allows metadata dicts to be forwarded).
 
     Returns
     -------
-    dict
-        ``rawdata_lines``
-            Per-frame ``[energy_axis, intensity]`` pairs before rebinning.
-        ``binned_line``
-            ``(bin_energy_axis, bin_data_mean, bin_data_err)`` on a uniform
-            energy grid.
-        ``DeltaD_fit``
-            Effective pixel size used (fitted or nominal).
-        ``summed_data``
-            Sum of all frames (``SnapshotScan`` only; ``None`` otherwise).
-        ``levels``
-            ``(vmin, vmax)`` display limits for *summed_data*, or ``None``.
+    dict with keys ``rawdata_lines``, ``binned_line``, ``DeltaD_fit``,
+    ``summed_data``, ``levels``.
     """
     merixE = np.asarray(merixE, dtype=float)
-    shape = data.shape  # (n_frames, height, width)
 
-    assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, "check Ylow and Yhigh and detector shape"
-    data_1d = np.sum(data[:, Ylow:Yhigh, :], axis=1)
+    data_1d, xaxis = _preprocess_frames(data, Ylow, Yhigh, RefL)
 
-    # Pad pixel columns beyond 2*RefL with the column mean
-    if 2 * RefL < shape[2]:
-        data_1d[:, 2 * RefL :] = np.mean(data_1d[:, 2 * RefL])
+    lines, bin_energy_axis, bin_data, effective_pixel_size = _compute_energy_axis(
+        data_1d,
+        xaxis,
+        merixE,
+        Eb,
+        rowland_radius,
+        fit_pixel_size,
+        scan_type,
+        center_method,
+        DeltaD,
+    )
 
-    xaxis = np.arange(shape[2]) - RefL
+    bin_data_mean, bin_data_err = _reduce_frames(bin_data, noise_model)
 
-    assert merixE.shape[0] == shape[0], "merixE and data must have the same number of frames"
-
-    theta_b = np.arcsin(Eb / merixE)
-    energy_cen = merixE.reshape(-1, 1)
-    scale = np.array(Eb / (2 * rowland_radius) / np.tan(theta_b))
-
-    if fit_pixel_size and scan_type == "SnapshotScan":
-        logger.warning("fit_pixel_size is not implemented for SnapshotScan")
-        fit_pixel_size = False
-
-    if fit_pixel_size and scan_type == "EnergyScan":
-        com_pixel, valid_mask = find_peaks(data_1d, method=center_method, smooth_window=3, poly_order=2)
-        a_mat = np.array(com_pixel * scale).reshape(shape[0], 1)
-        a_mat = np.hstack([a_mat, np.ones_like(a_mat)])
-        effective_pixel_size, _ = np.linalg.lstsq(a_mat[valid_mask], energy_cen[valid_mask])[0]
-        effective_pixel_size = float(effective_pixel_size)
-        logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
-    else:
-        effective_pixel_size = DeltaD
-
-    energy_axis = energy_cen - np.outer(scale, xaxis) * effective_pixel_size
-
-    if scan_type == "SnapshotScan":
-        bin_energy_axis = energy_axis[0]
-        bin_data = data_1d
-        lines = [[bin_energy_axis, data_1d[n]] for n in range(shape[0])]
-    else:
-        for n in range(shape[0]):
-            sort_idx = np.argsort(energy_axis[n])
-            energy_axis[n] = energy_axis[n][sort_idx]
-            data_1d[n] = data_1d[n][sort_idx]
-
-        lines = [[energy_axis[n], data_1d[n]] for n in range(shape[0])]
-        energy_min, energy_max = np.min(energy_axis), np.max(energy_axis)
-        step = int((energy_max - energy_min) / np.mean(np.abs(np.diff(energy_axis, axis=1))))
-
-        bin_energy_axis = np.linspace(energy_min, energy_max, step)
-        bin_data = np.array(
-            [np.interp(bin_energy_axis, energy_axis[n], data_1d[n], left=np.nan, right=np.nan) for n in range(shape[0])]
-        )
-
-    bin_data = np.array(bin_data)
-    bin_data_sum = np.nansum(bin_data, axis=0)
-    bin_data_cnt = np.sum(~np.isnan(bin_data), axis=0)
-    bin_data_mean = bin_data_sum / np.clip(bin_data_cnt, a_min=1, a_max=None)
-
-    assert noise_model in ("poisson", "gaussian"), "noise_model must be either 'poisson' or 'gaussian'"
-    if noise_model == "poisson":
-        bin_data_err = np.sqrt(bin_data_mean / bin_data_cnt)
-    else:
-        bin_data_err = np.nanstd(bin_data, axis=0) / np.sqrt(bin_data_cnt)
+    fwhm, center = compute_fwhm(bin_energy_axis, bin_data_mean, bin_data_err)
 
     if scan_type == "SnapshotScan":
         summed_data = np.sum(data, axis=0)
@@ -296,4 +437,6 @@ def bin_rixs_data(
         "DeltaD_fit": effective_pixel_size,
         "summed_data": summed_data,
         "levels": levels,
+        "fwhm": fwhm,
+        "center": center,
     }
