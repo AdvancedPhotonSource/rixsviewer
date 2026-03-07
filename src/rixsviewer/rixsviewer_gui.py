@@ -107,8 +107,8 @@ class RixsViewerGUI(QMainWindow):
     def on_parameter_changed(self, param, changes):
         """Handle parameter tree changes and sync with binning model"""
         meta_source = self.ui.comboBox_metasource.currentText()
-        # Parameters are only editable when meta source is set to 'GUI'
-        if meta_source == "GUI":
+        # Parameters are only editable when meta source is set to 'USER'
+        if meta_source == "USER":
             self.binning_model.update_from_parameter(param, changes)
 
     # ------------------------------------------------------------------
@@ -130,15 +130,60 @@ class RixsViewerGUI(QMainWindow):
         for name, value in kwargs.items():
             self._put_param(name, value)
 
+    def _get_binning_kwargs(self, meta_source):
+        """
+        Resolve the binning keyword arguments based on the metadata source.
+
+        Parameters
+        ----------
+        meta_source : str
+            One of 'SpecFile', 'PV', or 'USER'.
+
+        Returns
+        -------
+        dict or None
+            A dictionary of binning parameters, or None if the source is 'SpecFile'.
+        """
+        if meta_source == "PV":
+            return self.binning_model.get_kwargs_from_pv()
+        elif meta_source in ("USER", "SpecFile"):
+            return self.binning_model.get_kwargs()
+
     def fit_effective_pixel_size(self):
         if self.current_rixs_dset is None:
             return
         if self.current_rixs_dset.scan_info["scan_type"] != "EnergyScan":
             QMessageBox.warning(self, "Warning", "Effective pixel size can only be fitted for EnergyScan")
             return
-        self.process_binning(fit_pixel_size=True)
 
-    def process_binning(self, fit_pixel_size=False):
+        meta_source = self.ui.comboBox_metasource.currentText()
+        center_method = self.ui.comboBox_center_method.currentText()
+
+        binning_kwargs = self._get_binning_kwargs(meta_source)
+
+        try:
+            fitted_val, result = self.current_rixs_dset.fit_pixel_size_wrap(
+                metadata_source=meta_source,
+                center_method=center_method,
+                **binning_kwargs,
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Pixel size fitting failed:\n{e}")
+            return
+
+        if fitted_val:
+            reply = QMessageBox.question(
+                self,
+                "Update DeltaD Parameter",
+                f"Fitted effective pixel size: {fitted_val:.6f} mm.\nDo you want to apply this value?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                self._put_param("DeltaD", fitted_val)
+
+            self.view.plot_binned_data(result, False, hdl_target="calib")
+
+    def process_binning(self):
         if self.current_rixs_dset is None:
             return
 
@@ -146,26 +191,18 @@ class RixsViewerGUI(QMainWindow):
         meta_source = self.ui.comboBox_metasource.currentText()
         center_method = self.ui.comboBox_center_method.currentText()
 
-        if meta_source == "SpecFile":
-            binning_kwargs = None
-        elif meta_source == "PV":
-            binning_kwargs = self.binning_model.get_kwargs_from_pv()
-        elif meta_source == "GUI":
-            binning_kwargs = self.binning_model.get_kwargs()
+        binning_kwargs = self._get_binning_kwargs(meta_source)
 
         if len(self.current_rixs_dset.unloaded_filenames) == 0:
             if self.ui.checkBox_autoupdate.isChecked():
                 return
 
         result = self.current_rixs_dset.bin_data_wrap(
-            fit_pixel_size=fit_pixel_size,
-            binning_kwargs=binning_kwargs,
             metadata_source=meta_source,
             center_method=center_method,
+            **binning_kwargs,
         )
-        accepted_fitted_value = self.view.plot_binned_data(result, show_rawdata, fit_pixel_size, parent_widget=self)
-        if accepted_fitted_value is not None:
-            self._put_param("DeltaD", accepted_fitted_value)
+        self.view.plot_binned_data(result, show_rawdata, hdl_target="plot")
 
     # plot_binned_data is handled by RixsView
 

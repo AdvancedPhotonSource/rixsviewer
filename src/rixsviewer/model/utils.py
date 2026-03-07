@@ -1,4 +1,5 @@
 import logging
+import warnings
 
 import numpy as np
 from scipy.signal import savgol_filter
@@ -200,9 +201,62 @@ def _fit_pixel_size(data_1d, scale, energy_cen, scan_type, center_method, DeltaD
     return effective_pixel_size
 
 
-def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, fit_pixel_size, scan_type, center_method, DeltaD):
-    """Build per-pixel energy axes via Rowland geometry, fit DeltaD if needed,
-    and align all frames onto a common energy grid.
+def fit_pixel_size(
+    data,
+    merixE,
+    scan_type,
+    DeltaD=0.022,
+    RefL=70,
+    Eb=10,
+    rowland_radius=1900,
+    Ylow=0,
+    Yhigh=256,
+    center_method="gaussian",
+    **kwargs,
+):
+    """Determine the effective detector pixel size (mm) from an EnergyScan.
+
+    Pure function — no dataset-object dependency.
+
+    Parameters
+    ----------
+    data : ndarray, shape (n_frames, height, width)
+    merixE : array-like, shape (n_frames,)  — incident energy per frame (keV)
+    scan_type : {'EnergyScan', 'SnapshotScan'}
+    DeltaD : float   — nominal pixel pitch (mm). Default ``0.022``.
+    RefL : int       — reference pixel (elastic peak). Default ``70``.
+    Eb : float       — backscattering energy (keV). Default ``10``.
+    rowland_radius : float  — Rowland radius (mm). Default ``1900``.
+    Ylow, Yhigh : int  — row-summation bounds. Default ``0``, ``256``.
+    center_method : str  — peak-finding method. Default ``'gaussian'``.
+    **kwargs : silently ignored (allows metadata dicts to be forwarded).
+
+    Returns
+    -------
+    float
+        Effective pixel size in mm.
+    """
+    merixE = np.asarray(merixE, dtype=float)
+
+    data_1d, _ = _preprocess_frames(data, Ylow, Yhigh, RefL)
+
+    theta_b = np.arcsin(Eb / merixE)
+    energy_cen = merixE.reshape(-1, 1)
+    scale = Eb / (2 * rowland_radius) / np.tan(theta_b)
+
+    return _fit_pixel_size(
+        data_1d,
+        scale,
+        energy_cen,
+        scan_type,
+        center_method,
+        DeltaD,
+    )
+
+
+def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, scan_type, DeltaD):
+    """Build per-pixel energy axes via Rowland geometry and align all
+    frames onto a common energy grid.
 
     Parameters
     ----------
@@ -211,9 +265,7 @@ def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, fit_pixel_s
     merixE  : ndarray, shape (n_frames,)  — incident energy per frame (keV)
     Eb      : float  — analyser backscattering energy (keV)
     rowland_radius : float  — Rowland circle radius (mm)
-    fit_pixel_size : bool
     scan_type      : str   — ``'EnergyScan'`` or ``'SnapshotScan'``
-    center_method  : str   — peak-finding method
     DeltaD         : float — nominal pixel pitch (mm)
 
     Returns
@@ -221,7 +273,6 @@ def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, fit_pixel_s
     lines           : list of [ndarray, ndarray]  — per-frame [E, I] pairs
     bin_energy_axis : ndarray  — common energy grid
     bin_data        : ndarray, shape (n_frames, n_bins)
-    effective_pixel_size : float  — fitted or nominal DeltaD (mm)
     """
     n = data_1d.shape[0]
     assert merixE.shape[0] == n, "merixE and data must have the same number of frames"
@@ -230,12 +281,7 @@ def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, fit_pixel_s
     energy_cen = merixE.reshape(-1, 1)
     scale = Eb / (2 * rowland_radius) / np.tan(theta_b)
 
-    if fit_pixel_size:
-        effective_pixel_size = _fit_pixel_size(data_1d, scale, energy_cen, scan_type, center_method, DeltaD)
-    else:
-        effective_pixel_size = DeltaD
-
-    energy_axis = energy_cen - np.outer(scale, xaxis) * effective_pixel_size
+    energy_axis = energy_cen - np.outer(scale, xaxis) * DeltaD
 
     if scan_type == "SnapshotScan":
         bin_energy_axis = energy_axis[0]
@@ -256,7 +302,7 @@ def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, fit_pixel_s
             [np.interp(bin_energy_axis, energy_axis[i], data_1d[i], left=np.nan, right=np.nan) for i in range(n)]
         )
 
-    return lines, bin_energy_axis, np.array(bin_data), effective_pixel_size
+    return lines, bin_energy_axis, np.array(bin_data)
 
 
 def _reduce_frames(bin_data, noise_model):
@@ -326,9 +372,17 @@ def compute_fwhm(energy_axis, intensity, err=None):
 
     # --- Gaussian fit ---
     p0 = [peak_val, x[np.argmax(y)], (x[-1] - x[0]) / 6]
-    sigma_w = err[mask] if err is not None else None
+
+    # Build sigma weights: must be strictly positive and finite
+    sigma_w = None
+    if err is not None:
+        _w = err[mask].astype(float)
+        if np.all(np.isfinite(_w)) and np.all(_w > 0):
+            sigma_w = _w
+
     try:
-        with np.errstate(all="ignore"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # suppress OptimizeWarning and numpy warnings
             popt, _ = curve_fit(_gaussian, x, y, p0=p0, sigma=sigma_w, absolute_sigma=True, maxfev=2000)
         fwhm = 2.0 * np.sqrt(2.0 * np.log(2.0)) * abs(popt[2])
         center = float(popt[1])
@@ -367,13 +421,11 @@ def bin_rixs_data(
     scan_type,
     DeltaD=0.022,
     RefL=70,
-    fit_pixel_size=True,
     Eb=10,
     rowland_radius=1900,
     Ylow=0,
     Yhigh=256,
     noise_model="poisson",
-    center_method="gaussian",
     **kwargs,
 ):
     """Compute the binned RIXS spectrum from a TIFF image stack.
@@ -391,32 +443,28 @@ def bin_rixs_data(
     scan_type : {'EnergyScan', 'SnapshotScan'}
     DeltaD : float   — nominal pixel pitch (mm). Default ``0.022``.
     RefL : int       — reference pixel (elastic peak). Default ``70``.
-    fit_pixel_size : bool. Default ``True``.
     Eb : float       — backscattering energy (keV). Default ``10``.
     rowland_radius : float  — Rowland radius (mm). Default ``1900``.
     Ylow, Yhigh : int  — row-summation bounds. Default ``0``, ``256``.
     noise_model : {'poisson', 'gaussian'}. Default ``'poisson'``.
-    center_method : str  — peak-finding method. Default ``'gaussian'``.
     **kwargs : silently ignored (allows metadata dicts to be forwarded).
 
     Returns
     -------
-    dict with keys ``rawdata_lines``, ``binned_line``, ``DeltaD_fit``,
+    dict with keys ``rawdata_lines``, ``binned_line``, ``DeltaD``,
     ``summed_data``, ``levels``.
     """
     merixE = np.asarray(merixE, dtype=float)
 
     data_1d, xaxis = _preprocess_frames(data, Ylow, Yhigh, RefL)
 
-    lines, bin_energy_axis, bin_data, effective_pixel_size = _compute_energy_axis(
+    lines, bin_energy_axis, bin_data = _compute_energy_axis(
         data_1d,
         xaxis,
         merixE,
         Eb,
         rowland_radius,
-        fit_pixel_size,
         scan_type,
-        center_method,
         DeltaD,
     )
 
@@ -434,7 +482,7 @@ def bin_rixs_data(
     return {
         "rawdata_lines": lines,
         "binned_line": (bin_energy_axis, bin_data_mean, bin_data_err),
-        "DeltaD_fit": effective_pixel_size,
+        "DeltaD": DeltaD,
         "summed_data": summed_data,
         "levels": levels,
         "fwhm": fwhm,

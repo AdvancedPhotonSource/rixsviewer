@@ -9,7 +9,7 @@ import pandas as pd
 import tifffile
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
-from .utils import find_peaks, bin_rixs_data, percentile_clip
+from .utils import find_peaks, bin_rixs_data, percentile_clip, fit_pixel_size
 
 logger = logging.getLogger(__name__)
 
@@ -539,16 +539,60 @@ class RixsScanTiffDataset:
         frame_metadata["ThetaB"] = np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6  # micro-radian
         return self._data[frame_index], levels, num_frames, frame_metadata, self.scan_index
 
+    # def calibrate_parameters(self, method="AlignCenter", meta_source="SpecFile", **kwargs):
+    #     assert method in ("AlignCenter", "OptmizeFWHM"), "unsupported method"
+    #     if method == "AlignCenter":
+    #         return self.bin_data_wrap(metadata_source, fit_pixel_size=True, **kwargs)
+    #     elif method == "OptimizeFWHM":
+    #         return
+
+    def _prepare_inputs(self, metadata_source, kwargs):
+        """
+        Validate metadata source, merge instrument parameters, and resolve data.
+
+        This helper encapsulates logic common to several processing wrappers.
+        It returns a *new* dict that merges *kwargs* with any SpecFile metadata,
+        leaving the caller's original dict unmodified.
+
+        Parameters
+        ----------
+        metadata_source : {'SpecFile', 'PV', 'USER'}
+            Source of instrument parameters.
+        kwargs : dict
+            Base keyword arguments from the caller.
+
+        Returns
+        -------
+        data : numpy.ndarray
+            Full TIFF image stack.
+        merixE : array-like
+            Per-frame incident energies.
+        scan_type : str
+            Type of scan ('EnergyScan', 'SnapshotScan', etc.).
+        merged_kwargs : dict
+            A new dict containing *kwargs* merged with SpecFile metadata
+            (when applicable). The caller's original dict is not modified.
+        """
+        assert metadata_source in ["SpecFile", "PV", "USER"], "metadata_source not supported."
+
+        # Build a merged copy so the caller's dict is never mutated
+        merged_kwargs = dict(kwargs)
+        if metadata_source == "SpecFile":
+            # SpecFile metadata wins over caller kwargs
+            merged_kwargs.update(self.scan_info["metadata"])
+
+        # Resolve self-dependent context and pass as plain data
+        data = self.read_data()
+        merixE = self.scan_info["scandata"]["merixE"]
+        scan_type = self.scan_info["scan_type"]
+        return data, merixE, scan_type, merged_kwargs
+
     def bin_data_wrap(
         self,
-        fit_pixel_size=False,
         metadata_source="SpecFile",
-        noise_model="poisson",
-        center_method="gaussian",
-        binning_kwargs=None,
+        **kwargs,
     ):
-        """
-        High-level wrapper that delegates to :func:`~.utils.bin_rixs_data`.
+        """High-level wrapper that delegates to :func:`~.utils.bin_rixs_data`.
 
         Resolves all ``self``-dependent data (image stack, incident energies,
         scan type) and merges instrument parameters, then calls the pure
@@ -556,49 +600,66 @@ class RixsScanTiffDataset:
 
         Parameters
         ----------
-        fit_pixel_size : bool, optional
-            When ``True`` and the scan is an ``EnergyScan``, fit the
-            effective pixel size from the data.  Default is ``False``.
-        metadata_source : {'SpecFile', 'PV', 'GUI'}
-            Source of instrument parameters.
-        noise_model : {'poisson', 'gaussian'}
-            Statistical model for per-bin uncertainty.  Default ``'poisson'``.
-        center_method : str, optional
-            Peak-finding method.  Default ``'gaussian'``.
-        binning_kwargs : dict or None, optional
-            Instrument parameters used when *metadata_source* is not
-            ``'SpecFile'``.
+        metadata_source : {'SpecFile', 'PV', 'USER'}
+            Source of instrument parameters:
+
+            ``'SpecFile'``  — use parameters parsed from the SPEC ``#B`` header.
+            ``'PV'``        — use parameters from EPICS PVs.
+            ``'USER'``      — use parameters from the GUI parameter tree.
+        **kwargs
+            Additional keyword arguments forwarded verbatim to
+            :func:`~.utils.bin_rixs_data` (e.g. ``noise_model``).
+            When *metadata_source* is not ``'SpecFile'``, these kwargs
+            should also contain the instrument parameters (``DeltaD``,
+            ``RefL``, ``Eb``, ``rowland_radius``, etc.).
 
         Returns
         -------
         dict
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
-        assert metadata_source in ["SpecFile", "PV", "GUI"], "metadata_source not supported."
+        data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        return bin_rixs_data(data, merixE, scan_type, **merged_kwargs)
 
-        # Resolve instrument parameters
-        kwargs = {"fit_pixel_size": fit_pixel_size, "noise_model": noise_model, "center_method": center_method}
-        if metadata_source == "SpecFile":
-            kwargs.update(self.scan_info["metadata"])
-        else:
-            kwargs.update(binning_kwargs)
+    def fit_pixel_size_wrap(
+        self,
+        metadata_source="SpecFile",
+        **kwargs,
+    ):
+        """High-level wrapper that delegates to :func:`~.utils.fit_pixel_size`.
 
-        # Resolve self-dependent context and pass as plain data
-        data = self.read_data()
-        merixE = self.scan_info["scandata"]["merixE"]
-        scan_type = self.scan_info["scan_type"]
+        Resolves all ``self``-dependent data (image stack, incident energies,
+        scan type) and merges instrument parameters, then calls the pure
+        function.
 
-        return bin_rixs_data(data, merixE, scan_type, **kwargs)
+        Parameters
+        ----------
+        metadata_source : {'SpecFile', 'PV', 'USER'}
+            Source of instrument parameters:
 
-    def __len__(self):
-        """
-        Return the number of TIFF files associated with this scan.
+            ``'SpecFile'``  — use parameters parsed from the SPEC ``#B`` header.
+            ``'PV'``        — use parameters from EPICS PVs.
+            ``'USER'``      — use parameters from the GUI parameter tree.
+        **kwargs
+            Additional keyword arguments forwarded verbatim to
+            :func:`~.utils.fit_pixel_size` (e.g. ``center_method``).
+            When *metadata_source* is not ``'SpecFile'``, these kwargs
+            should also contain the instrument parameters (``DeltaD``,
+            ``RefL``, ``Eb``, ``rowland_radius``, etc.).
 
         Returns
         -------
-        int
-            Length of :attr:`fnames`.
+        float
+            Effective pixel size in mm.
         """
+        data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
+
+        effective_pixel_size = fit_pixel_size(data, merixE, scan_type, **merged_kwargs)
+        merged_kwargs["DeltaD"] = effective_pixel_size
+        result = self.bin_data_wrap(metadata_source="USER", **merged_kwargs)
+        return effective_pixel_size, result
+
+    def __len__(self):
         return len(self.fnames)
 
     def get_table_model(self):

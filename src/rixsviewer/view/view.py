@@ -64,6 +64,7 @@ class RixsView:
 
     def init_plot_hdl(self):
         self.plot_hdl = self.ui.widget_binhdl.addPlot()
+        self.calib_hdl = self.ui.widget_calibhdl.addPlot()
         cmap = pg.colormap.get("plasma")
         self.img2d_hdl.setColorMap(cmap)
 
@@ -71,68 +72,41 @@ class RixsView:
     # Plotting / visualization
     # ------------------------------------------------------------------
 
-    def plot_binned_data(self, result, show_rawdata=False, fit_pixel_size=False, parent_widget=None):
+    def plot_binned_data(self, result, show_rawdata=False, hdl_target="plot"):
         """Render binned RIXS data onto the plot widget.
 
         Parameters
         ----------
         result : dict
             Output from ``RixsDataset.bin_data_wrap``.  Expected keys:
-            ``rawdata_lines``, ``binned_line``, ``DeltaD_fit``,
+            ``rawdata_lines``, ``binned_line``, ``DeltaD``,
             ``summed_data``, ``levels``.
         show_rawdata : bool, optional
             When *True* the individual raw-data lines are drawn in random
             colours behind the binned line.
-        fit_pixel_size : bool, optional
-            When *True* a dialog is shown asking whether to accept the fitted
-            ``DeltaD`` value.  The fitted value is returned so the controller
-            can update the model.
-        parent_widget : QWidget, optional
-            Parent for the confirmation dialog (pass ``self`` from the GUI
-            class so the dialog is centred correctly).
-
-        Returns
-        -------
-        float or None
-            The accepted fitted ``DeltaD`` value when *fit_pixel_size* is
-            *True* and the user confirmed, otherwise *None*.
         """
-        self.plot_hdl.clear()
+        hdl = self.plot_hdl if hdl_target == "plot" else self.calib_hdl
+        hdl.clear()
         if show_rawdata:
             for i, (x, y) in enumerate(result["rawdata_lines"]):
                 color = self._LINE_COLORS[i % len(self._LINE_COLORS)]
                 pen = pg.mkPen(color=color, width=1)
-                self.plot_hdl.plot(x, y, pen=pen)
+                hdl.plot(x, y, pen=pen)
 
         # Plot the binned line with error bars
         x, y, err = result["binned_line"]
         pen = pg.mkPen(color=(0, 0, 255), width=1)
-        self.plot_hdl.plot(x, y, pen=pen)
+        hdl.plot(x, y, pen=pen)
 
         # --- Error bar item ---
         err_plot = pg.ErrorBarItem(x=x, y=y, top=err, bottom=err, beam=0.00001)
-        self.plot_hdl.addItem(err_plot)
+        hdl.addItem(err_plot)
 
-        self.plot_hdl.setLabel("left", "Intensity")
-        self.plot_hdl.setLabel("bottom", "Energy (keV)")
-
-        accepted_fitted_value = None
-        if fit_pixel_size:
-            fitted_value = float(result["DeltaD_fit"])
-            reply = QMessageBox.question(
-                parent_widget,
-                "Update DeltaD Parameter",
-                f"Update DeltaD parameter with fitted value {fitted_value:.6f} mm?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            if reply == QMessageBox.Yes:
-                accepted_fitted_value = fitted_value
+        hdl.setLabel("left", "Intensity")
+        hdl.setLabel("bottom", "Energy (keV)")
 
         if result["summed_data"] is not None:
             self.img2d_hdl.setImage(result["summed_data"], levels=result["levels"])
-
-        return accepted_fitted_value
 
     def update_image(self, data, levels, num_frames, binning_kwargs, scan_index, frame_index):
         """Render a single detector frame.
