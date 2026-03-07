@@ -732,7 +732,7 @@ class RixsScanTiffDataset:
         for deltad in deltad_values:
             sweep_kwargs = dict(base_kwargs)
             sweep_kwargs["DeltaD"] = float(deltad)
-            result = bin_rixs_data(data, merixE, scan_type, **sweep_kwargs)
+            result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **sweep_kwargs)
             fwhm = result.get("fwhm", np.nan)
             linesearch_table.append((float(deltad), float(fwhm)))
             if np.isfinite(fwhm) and fwhm < best_fwhm:
@@ -743,11 +743,11 @@ class RixsScanTiffDataset:
         # Step 4 – binning at the two reference points for overlay comparison
         original_kwargs = dict(base_kwargs)
         original_kwargs["DeltaD"] = float(original_deltad)
-        original_result = bin_rixs_data(data, merixE, scan_type, **original_kwargs)
+        original_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **original_kwargs)
 
         lstsq_kwargs = dict(base_kwargs)
         lstsq_kwargs["DeltaD"] = float(lstsq_deltad)
-        lstsq_result = bin_rixs_data(data, merixE, scan_type, **lstsq_kwargs)
+        lstsq_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **lstsq_kwargs)
 
         return (
             linesearch_table,

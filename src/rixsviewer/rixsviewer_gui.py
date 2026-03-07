@@ -177,6 +177,7 @@ class RixsViewerGUI(QMainWindow):
             )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Pixel size line search failed:\n{e}")
+            traceback.print_exc()
             return
 
         # Plot the sweep curve with all three reference markers
@@ -212,6 +213,7 @@ class RixsViewerGUI(QMainWindow):
         show_rawdata = self.ui.checkBox_show_rawdata.isChecked()
         meta_source = self.ui.comboBox_metasource.currentText()
         center_method = self.ui.comboBox_center_method.currentText()
+        bin_pixel = self.ui.spinBox_binpixel.value()
 
         binning_kwargs = self._get_binning_kwargs(meta_source)
 
@@ -222,6 +224,7 @@ class RixsViewerGUI(QMainWindow):
         result = self.current_rixs_dset.bin_data_wrap(
             metadata_source=meta_source,
             center_method=center_method,
+            bin_pixel=bin_pixel,
             **binning_kwargs,
         )
         self.view.plot_binned_data(result, show_rawdata, hdl_target="plot")

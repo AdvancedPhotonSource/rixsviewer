@@ -160,13 +160,13 @@ def _preprocess_frames(data, Ylow, Yhigh, RefL):
     shape = data.shape
     assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, "check Ylow and Yhigh and detector shape"
 
-    data_1d = np.sum(data[:, Ylow:Yhigh, :], axis=1)
+    data_2d = np.sum(data[:, Ylow:Yhigh, :], axis=1)
 
     if 2 * RefL < shape[2]:  # pad reflectivity tail beyond 2*RefL
-        data_1d[:, 2 * RefL :] = np.mean(data_1d[:, 2 * RefL])
+        data_2d[:, 2 * RefL :] = np.mean(data_2d[:, 2 * RefL])
 
     xaxis = np.arange(shape[2]) - RefL
-    return data_1d, xaxis
+    return data_2d, xaxis
 
 
 def _fit_pixel_size(data_1d, scale, energy_cen, scan_type, center_method, DeltaD):
@@ -254,7 +254,7 @@ def fit_pixel_size(
     )
 
 
-def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, scan_type, DeltaD):
+def _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, DeltaD):
     """Build per-pixel energy axes via Rowland geometry and align all
     frames onto a common energy grid.
 
@@ -274,7 +274,7 @@ def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, scan_type, 
     bin_energy_axis : ndarray  — common energy grid
     bin_data        : ndarray, shape (n_frames, n_bins)
     """
-    n = data_1d.shape[0]
+    n = data_2d.shape[0]
     assert merixE.shape[0] == n, "merixE and data must have the same number of frames"
 
     theta_b = np.arcsin(Eb / merixE)
@@ -285,37 +285,41 @@ def _compute_energy_axis(data_1d, xaxis, merixE, Eb, rowland_radius, scan_type, 
 
     if scan_type == "SnapshotScan":
         bin_energy_axis = energy_axis[0]
-        bin_data = data_1d.copy()
-        lines = [[bin_energy_axis, data_1d[i]] for i in range(n)]
+        bin_data = data_2d.copy()
+        lines = [[bin_energy_axis, data_2d[i]] for i in range(n)]
     else:
         for i in range(n):
             idx = np.argsort(energy_axis[i])
             energy_axis[i] = energy_axis[i][idx]
-            data_1d[i] = data_1d[i][idx]
+            data_2d[i] = data_2d[i][idx]
 
-        lines = [[energy_axis[i], data_1d[i]] for i in range(n)]
+        lines = [[energy_axis[i], data_2d[i]] for i in range(n)]
         e_min, e_max = np.min(energy_axis), np.max(energy_axis)
         step = int((e_max - e_min) / np.mean(np.abs(np.diff(energy_axis, axis=1))))
 
         bin_energy_axis = np.linspace(e_min, e_max, step)
         bin_data = np.array(
-            [np.interp(bin_energy_axis, energy_axis[i], data_1d[i], left=np.nan, right=np.nan) for i in range(n)]
+            [np.interp(bin_energy_axis, energy_axis[i], data_2d[i], left=np.nan, right=np.nan) for i in range(n)]
         )
 
     return lines, bin_energy_axis, np.array(bin_data)
 
 
-def _reduce_frames(bin_data, noise_model):
+def _reduce_frames(bin_energy_axis, bin_data, noise_model, bin_pixel=1):
     """Average aligned frames and estimate per-bin uncertainty.
 
     Parameters
     ----------
+    bin_energy_axis : ndarray, shape (n_bins,)
+        Energy axis for binning.
     bin_data : ndarray, shape (n_frames, n_bins)
         NaN marks bins with no coverage for a given frame.
     noise_model : {'poisson', 'gaussian'}
-
+    bin_pixel : int
+        Number of pixels to bin together.
     Returns
     -------
+    bin_energy_axis : ndarray, shape (n_bins,)
     mean : ndarray, shape (n_bins,)
     err  : ndarray, shape (n_bins,)
     """
@@ -324,15 +328,28 @@ def _reduce_frames(bin_data, noise_model):
     count = np.sum(~np.isnan(bin_data), axis=0)
     mean = np.nansum(bin_data, axis=0) / np.clip(count, a_min=1, a_max=None)
 
-    if noise_model == "poisson":
-        err = np.sqrt(mean / count)
+    assert bin_pixel > 0 and isinstance(bin_pixel, int), "bin_pixel must be a positive integer"
+    if bin_pixel > 1:
+        n = (len(mean) // bin_pixel) * bin_pixel
+        # Reshape bin_data to (n_frames, n_superbins, bin_pixel) for both branches
+        bin_data_3d = bin_data[:, :n].reshape(bin_data.shape[0], -1, bin_pixel)
+        mean = mean[:n].reshape(-1, bin_pixel).sum(axis=1)
+        count = count[:n].reshape(-1, bin_pixel).sum(axis=1)  # total samples per super-bin
+        bin_energy_axis = bin_energy_axis[:n].reshape(-1, bin_pixel).mean(axis=1)
     else:
-        err = np.nanstd(bin_data, axis=0) / np.sqrt(count)
+        bin_data_3d = bin_data[:, :, np.newaxis]  # (n_frames, n_bins, 1) — trivially grouped
 
-    return mean, err
+    if noise_model == "poisson":
+        err = np.sqrt(mean / np.clip(count, a_min=1, a_max=None))
+    else:
+        # Pool all (frame × bin_pixel) samples per super-bin, then standard error of the mean
+        pooled = bin_data_3d.reshape(-1, bin_data_3d.shape[1])  # (n_frames * bin_pixel, n_superbins)
+        err = np.nanstd(pooled, axis=0) / np.sqrt(np.clip(count, a_min=1, a_max=None))
+
+    return bin_energy_axis, mean, err
 
 
-def compute_fwhm(energy_axis, intensity, err=None):
+def _compute_fwhm_func(energy_axis, intensity, err=None):
     """Estimate the full-width at half-maximum (FWHM) of a spectral line.
 
     Attempts a Gaussian least-squares fit first.  If the fit fails (e.g.
@@ -386,7 +403,7 @@ def compute_fwhm(energy_axis, intensity, err=None):
             popt, _ = curve_fit(_gaussian, x, y, p0=p0, sigma=sigma_w, absolute_sigma=True, maxfev=2000)
         fwhm = 2.0 * np.sqrt(2.0 * np.log(2.0)) * abs(popt[2])
         center = float(popt[1])
-        logger.info(f"FWHM (Gaussian fit): {fwhm:.6f} keV  center: {center:.6f} keV")
+        # logger.info(f"FWHM (Gaussian fit): {fwhm:.6f} keV  center: {center:.6f} keV")
         return float(fwhm), center
     except Exception:
         pass  # fall through to interpolation fallback
@@ -426,6 +443,8 @@ def bin_rixs_data(
     Ylow=0,
     Yhigh=256,
     noise_model="poisson",
+    bin_pixel=1,
+    compute_fwhm=False,
     **kwargs,
 ):
     """Compute the binned RIXS spectrum from a TIFF image stack.
@@ -456,10 +475,10 @@ def bin_rixs_data(
     """
     merixE = np.asarray(merixE, dtype=float)
 
-    data_1d, xaxis = _preprocess_frames(data, Ylow, Yhigh, RefL)
+    data_2d, xaxis = _preprocess_frames(data, Ylow, Yhigh, RefL)
 
-    lines, bin_energy_axis, bin_data = _compute_energy_axis(
-        data_1d,
+    lines, bin_energy, bin_data = _compute_energy_axis(
+        data_2d,
         xaxis,
         merixE,
         Eb,
@@ -468,9 +487,12 @@ def bin_rixs_data(
         DeltaD,
     )
 
-    bin_data_mean, bin_data_err = _reduce_frames(bin_data, noise_model)
+    bin_energy, bin_data_mean, bin_data_err = _reduce_frames(bin_energy, bin_data, noise_model, bin_pixel)
 
-    fwhm, center = compute_fwhm(bin_energy_axis, bin_data_mean, bin_data_err)
+    if compute_fwhm:
+        fwhm, center = _compute_fwhm_func(bin_energy, bin_data_mean, bin_data_err)
+    else:
+        fwhm, center = None, None
 
     if scan_type == "SnapshotScan":
         summed_data = np.sum(data, axis=0)
@@ -481,10 +503,11 @@ def bin_rixs_data(
 
     return {
         "rawdata_lines": lines,
-        "binned_line": (bin_energy_axis, bin_data_mean, bin_data_err),
+        "binned_line": (bin_energy, bin_data_mean, bin_data_err),
         "DeltaD": DeltaD,
         "summed_data": summed_data,
         "levels": levels,
         "fwhm": fwhm,
         "center": center,
+        "energy_resolution": round((bin_energy[1] - bin_energy[0]) * 1e6, 3),
     }

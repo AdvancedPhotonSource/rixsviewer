@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
     QDoubleSpinBox, QGridLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMainWindow,
     QMenu, QMenuBar, QPushButton, QSizePolicy,
-    QSlider, QSplitter, QStatusBar, QTabWidget,
-    QTableView, QToolButton, QWidget)
+    QSlider, QSpinBox, QSplitter, QStatusBar,
+    QTabWidget, QTableView, QToolButton, QWidget)
 
 from pyqtgraph import GraphicsLayoutWidget
 from pyqtgraph.parametertree import ParameterTree
@@ -269,22 +269,29 @@ class Ui_MainWindow(object):
         self.gridLayout_7 = QGridLayout(self.groupBox_6)
         self.gridLayout_7.setObjectName(u"gridLayout_7")
         self.gridLayout_7.setContentsMargins(1, 1, 1, 1)
+        self.label_binpixel = QLabel(self.groupBox_6)
+        self.label_binpixel.setObjectName(u"label_binpixel")
+        sizePolicy2.setHeightForWidth(self.label_binpixel.sizePolicy().hasHeightForWidth())
+        self.label_binpixel.setSizePolicy(sizePolicy2)
+
+        self.gridLayout_7.addWidget(self.label_binpixel, 0, 1, 1, 1)
+
+        self.pushButton_process = QPushButton(self.groupBox_6)
+        self.pushButton_process.setObjectName(u"pushButton_process")
+
+        self.gridLayout_7.addWidget(self.pushButton_process, 0, 7, 1, 1)
+
         self.label_7 = QLabel(self.groupBox_6)
         self.label_7.setObjectName(u"label_7")
         sizePolicy2.setHeightForWidth(self.label_7.sizePolicy().hasHeightForWidth())
         self.label_7.setSizePolicy(sizePolicy2)
 
-        self.gridLayout_7.addWidget(self.label_7, 0, 2, 1, 1)
+        self.gridLayout_7.addWidget(self.label_7, 0, 5, 1, 1)
 
         self.pushButton = QPushButton(self.groupBox_6)
         self.pushButton.setObjectName(u"pushButton")
 
-        self.gridLayout_7.addWidget(self.pushButton, 0, 5, 1, 1)
-
-        self.checkBox_show_rawdata = QCheckBox(self.groupBox_6)
-        self.checkBox_show_rawdata.setObjectName(u"checkBox_show_rawdata")
-
-        self.gridLayout_7.addWidget(self.checkBox_show_rawdata, 0, 0, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton, 0, 8, 1, 1)
 
         self.comboBox = QComboBox(self.groupBox_6)
         self.comboBox.addItem("")
@@ -292,12 +299,28 @@ class Ui_MainWindow(object):
         self.comboBox.addItem("")
         self.comboBox.setObjectName(u"comboBox")
 
-        self.gridLayout_7.addWidget(self.comboBox, 0, 3, 1, 1)
+        self.gridLayout_7.addWidget(self.comboBox, 0, 6, 1, 1)
 
-        self.pushButton_process = QPushButton(self.groupBox_6)
-        self.pushButton_process.setObjectName(u"pushButton_process")
+        self.spinBox_binpixel = QSpinBox(self.groupBox_6)
+        self.spinBox_binpixel.setObjectName(u"spinBox_binpixel")
+        sizePolicy7 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        sizePolicy7.setHorizontalStretch(0)
+        sizePolicy7.setVerticalStretch(0)
+        sizePolicy7.setHeightForWidth(self.spinBox_binpixel.sizePolicy().hasHeightForWidth())
+        self.spinBox_binpixel.setSizePolicy(sizePolicy7)
+        self.spinBox_binpixel.setMinimum(1)
 
-        self.gridLayout_7.addWidget(self.pushButton_process, 0, 4, 1, 1)
+        self.gridLayout_7.addWidget(self.spinBox_binpixel, 0, 2, 1, 1)
+
+        self.checkBox_show_rawdata = QCheckBox(self.groupBox_6)
+        self.checkBox_show_rawdata.setObjectName(u"checkBox_show_rawdata")
+
+        self.gridLayout_7.addWidget(self.checkBox_show_rawdata, 0, 4, 1, 1)
+
+        self.label_energy_interval = QLabel(self.groupBox_6)
+        self.label_energy_interval.setObjectName(u"label_energy_interval")
+
+        self.gridLayout_7.addWidget(self.label_energy_interval, 0, 3, 1, 1)
 
 
         self.gridLayout_4.addWidget(self.groupBox_6, 1, 0, 1, 1)
@@ -387,7 +410,7 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
         self.checkBox_autoupdate.toggled.connect(self.pushButton_fit_pixel_size.setDisabled)
 
-        self.tabWidget.setCurrentIndex(1)
+        self.tabWidget.setCurrentIndex(0)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -417,14 +440,16 @@ class Ui_MainWindow(object):
         self.pushButton_4.setText(QCoreApplication.translate("MainWindow", u"Save", None))
         self.pushButton_3.setText(QCoreApplication.translate("MainWindow", u"Load", None))
         self.groupBox_6.setTitle(QCoreApplication.translate("MainWindow", u"Process", None))
+        self.label_binpixel.setText(QCoreApplication.translate("MainWindow", u"Bin Pixel", None))
+        self.pushButton_process.setText(QCoreApplication.translate("MainWindow", u"Process Binning", None))
         self.label_7.setText(QCoreApplication.translate("MainWindow", u"Error Model:", None))
         self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Export", None))
-        self.checkBox_show_rawdata.setText(QCoreApplication.translate("MainWindow", u"Show RawData", None))
         self.comboBox.setItemText(0, QCoreApplication.translate("MainWindow", u"poisson", None))
         self.comboBox.setItemText(1, QCoreApplication.translate("MainWindow", u"gaussian", None))
         self.comboBox.setItemText(2, QCoreApplication.translate("MainWindow", u"none", None))
 
-        self.pushButton_process.setText(QCoreApplication.translate("MainWindow", u"Process Binning", None))
+        self.checkBox_show_rawdata.setText(QCoreApplication.translate("MainWindow", u"Show RawData", None))
+        self.label_energy_interval.setText(QCoreApplication.translate("MainWindow", u"Energy Interval:", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"Process", None))
         self.groupBox_7.setTitle(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.comboBox_fit_target.setItemText(0, QCoreApplication.translate("MainWindow", u"AlignCenter", None))

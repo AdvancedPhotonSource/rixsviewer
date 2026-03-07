@@ -114,6 +114,7 @@ class RixsView:
 
         if result["summed_data"] is not None:
             self.img2d_hdl.setImage(result["summed_data"], levels=result["levels"])
+        self.ui.label_energy_interval.setText(f"Energy interval: [{result['energy_resolution']:.3f} meV]")
 
     def plot_linesearch(
         self,
