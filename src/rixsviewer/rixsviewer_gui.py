@@ -318,17 +318,24 @@ class RixsViewerGUI(QMainWindow):
             frame_index = -1
         binning_kwargs = self.binning_model.get_kwargs()
 
-        data, levels, num_frames, frame_metadata, scan_index, frame_index = self.current_rixs_dset.get_data_for_display(
+        frame_info = self.current_rixs_dset.get_data_for_display(
             frame_index=frame_index,
             percentile_cutoff=percentile_cutoff,
             **binning_kwargs,
         )
-        self.view.update_image(data, levels, num_frames, frame_metadata, scan_index, frame_index)
-        # self.ui.tableView_image.clicked.connect(self.on_image_table_clicked)
+        self.view.update_image(
+            frame_info["data"],
+            frame_info["levels"],
+            frame_info["num_frames"],
+            frame_info["frame_metadata"],
+            frame_info["scan_index"],
+            frame_info["frame_index"],
+        )
+        self.ui.horizontalSlider_frame_index.setValue(frame_info["frame_index"])
 
         meta_source = self.ui.comboBox_metasource.currentText()
         if meta_source == "SpecFile":
-            self._put_params(frame_metadata)
+            self._put_params(frame_info["frame_metadata"])
 
     def closeEvent(self, event):
         self.timer.stop()

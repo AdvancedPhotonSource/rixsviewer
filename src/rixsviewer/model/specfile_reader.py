@@ -518,16 +518,23 @@ class RixsScanTiffDataset:
 
         Parameters
         ----------
+        frame_index : int, optional
+            Frame to display.  Negative values resolve to ``num_frames // 2``
+            (the middle frame).  Default ``-1``.
+        percentile_cutoff : float, optional
+            Upper percentile used for colour-scale clipping.  Default ``99.0``.
         **kwargs
             Reserved for future use; not currently forwarded.
 
         Returns
         -------
-        data : numpy.ndarray
-            3-D array of shape ``(n_frames, height, width)`` containing
-            pixel intensities as ``float32``.
-        levels : tuple of (float, float)
-            ``(vmin, vmax)`` computed by :func:`percentile_clip`.
+        dict with keys:
+            ``data``          — 2-D frame array (``float32``).
+            ``levels``        — ``(vmin, vmax)`` colour-scale limits.
+            ``num_frames``    — total number of frames in the stack.
+            ``frame_metadata``— instrument parameters for this frame.
+            ``scan_index``    — scan number.
+            ``frame_index``   — resolved (non-negative) frame index.
         """
         self._data = self.read_data()
         num_frames = len(self._data)
@@ -540,7 +547,14 @@ class RixsScanTiffDataset:
         frame_metadata = self.scan_info["metadata"].copy()
         frame_metadata["E"] = self.scan_info["scandata"]["merixE"][frame_index]
         frame_metadata["ThetaB"] = np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6  # micro-radian
-        return self._data[frame_index], levels, num_frames, frame_metadata, self.scan_index, frame_index
+        return {
+            "data": self._data[frame_index],
+            "levels": levels,
+            "num_frames": num_frames,
+            "frame_metadata": frame_metadata,
+            "scan_index": self.scan_index,
+            "frame_index": frame_index,
+        }
 
     # def calibrate_parameters(self, method="AlignCenter", meta_source="SpecFile", **kwargs):
     #     assert method in ("AlignCenter", "OptmizeFWHM"), "unsupported method"
