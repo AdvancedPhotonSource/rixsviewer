@@ -512,7 +512,7 @@ class RixsScanTiffDataset:
         }[col]
         return self.scan_info[key]
 
-    def get_data_for_display(self, frame_index=0, percentile_cutoff=99.0, **kwargs):
+    def get_data_for_display(self, frame_index=-1, percentile_cutoff=99.0, **kwargs):
         """
         Load the TIFF stack and compute display intensity limits.
 
@@ -531,13 +531,16 @@ class RixsScanTiffDataset:
         """
         self._data = self.read_data()
         num_frames = len(self._data)
+        if frame_index < 0:
+            frame_index = num_frames // 2
         frame_index = max(0, min(frame_index, num_frames - 1))
+
         levels = percentile_clip(self._data[frame_index], percentile_cutoff)
 
         frame_metadata = self.scan_info["metadata"].copy()
         frame_metadata["E"] = self.scan_info["scandata"]["merixE"][frame_index]
         frame_metadata["ThetaB"] = np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6  # micro-radian
-        return self._data[frame_index], levels, num_frames, frame_metadata, self.scan_index
+        return self._data[frame_index], levels, num_frames, frame_metadata, self.scan_index, frame_index
 
     # def calibrate_parameters(self, method="AlignCenter", meta_source="SpecFile", **kwargs):
     #     assert method in ("AlignCenter", "OptmizeFWHM"), "unsupported method"
@@ -658,6 +661,89 @@ class RixsScanTiffDataset:
         merged_kwargs["DeltaD"] = effective_pixel_size
         result = self.bin_data_wrap(metadata_source="USER", **merged_kwargs)
         return effective_pixel_size, result
+
+    def linesearch_pixel_size(
+        self,
+        metadata_source="SpecFile",
+        n_steps=51,
+        **kwargs,
+    ):
+        """Sweep ``DeltaD`` over ``[0.5, 1.5] × effective_pixel_size`` and collect FWHM.
+
+        First the effective pixel size is determined via
+        :meth:`fit_pixel_size_wrap`; then ``DeltaD`` is varied uniformly from
+        ``0.5 × effective_pixel_size`` to ``1.5 × effective_pixel_size`` in
+        *n_steps* steps.  At each step :meth:`bin_data_wrap` is called and the
+        resulting FWHM is recorded.
+
+        Parameters
+        ----------
+        metadata_source : {'SpecFile', 'PV', 'USER'}, optional
+            Source of instrument parameters passed to
+            :meth:`fit_pixel_size_wrap` and :meth:`bin_data_wrap`.
+        n_steps : int, optional
+            Number of uniformly-spaced ``DeltaD`` values to evaluate,
+            by default 20.
+        **kwargs
+            Additional keyword arguments forwarded verbatim to both
+            :meth:`fit_pixel_size_wrap` and :meth:`bin_data_wrap`.
+
+        Returns
+        -------
+        linesearch_table : list of (float, float)
+            List of ``(DeltaD, FWHM)`` pairs for every evaluated step,
+            sorted by ascending ``DeltaD``.
+        best_result : dict
+            The full :meth:`bin_data_wrap` result dict obtained at the
+            ``DeltaD`` value that yielded the smallest FWHM.
+        best_deltad : float
+            The ``DeltaD`` value that minimised the FWHM.
+        """
+        # Step 1 – resolve inputs once, then determine the reference pixel size
+        original_deltad = kwargs["DeltaD"]
+        data, merixE, scan_type, base_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        lstsq_deltad = fit_pixel_size(data, merixE, scan_type, **base_kwargs)
+
+        # Step 2 – build the search grid
+        deltad_low = 0.25 * lstsq_deltad
+        deltad_high = 1.25 * lstsq_deltad
+        deltad_values = np.linspace(deltad_low, deltad_high, n_steps)
+
+        # Step 3 – sweep
+        linesearch_table = []
+        best_fwhm = np.inf
+        linesearch_result = None
+        linesearch_deltad = lstsq_deltad
+
+        for deltad in deltad_values:
+            sweep_kwargs = dict(base_kwargs)
+            sweep_kwargs["DeltaD"] = float(deltad)
+            result = bin_rixs_data(data, merixE, scan_type, **sweep_kwargs)
+            fwhm = result.get("fwhm", np.nan)
+            linesearch_table.append((float(deltad), float(fwhm)))
+            if np.isfinite(fwhm) and fwhm < best_fwhm:
+                best_fwhm = fwhm
+                linesearch_result = result
+                linesearch_deltad = float(deltad)
+
+        # Step 4 – binning at the two reference points for overlay comparison
+        original_kwargs = dict(base_kwargs)
+        original_kwargs["DeltaD"] = float(original_deltad)
+        original_result = bin_rixs_data(data, merixE, scan_type, **original_kwargs)
+
+        lstsq_kwargs = dict(base_kwargs)
+        lstsq_kwargs["DeltaD"] = float(lstsq_deltad)
+        lstsq_result = bin_rixs_data(data, merixE, scan_type, **lstsq_kwargs)
+
+        return (
+            linesearch_table,
+            linesearch_result,
+            linesearch_deltad,
+            original_deltad,
+            original_result,
+            lstsq_deltad,
+            lstsq_result,
+        )
 
     def __len__(self):
         return len(self.fnames)

@@ -64,7 +64,14 @@ class RixsView:
 
     def init_plot_hdl(self):
         self.plot_hdl = self.ui.widget_binhdl.addPlot()
-        self.calib_hdl = self.ui.widget_calibhdl.addPlot()
+
+        # widget_calibhdl: 1-row × 2-column layout
+        # col 0 – calibration plot, col 1 – line-search plot
+        self.calib_hdl = self.ui.widget_calibhdl.addPlot(row=0, col=0)
+        self.linesearch_hdl = self.ui.widget_calibhdl.addPlot(row=0, col=1)
+        self.ui.widget_calibhdl.ci.layout.setColumnStretchFactor(0, 1)
+        self.ui.widget_calibhdl.ci.layout.setColumnStretchFactor(1, 1)
+
         cmap = pg.colormap.get("plasma")
         self.img2d_hdl.setColorMap(cmap)
 
@@ -107,6 +114,146 @@ class RixsView:
 
         if result["summed_data"] is not None:
             self.img2d_hdl.setImage(result["summed_data"], levels=result["levels"])
+
+    def plot_linesearch(
+        self,
+        linesearch_table,
+        best_deltad=None,
+        original_deltad=None,
+        lstsq_deltad=None,
+    ):
+        """Render the DeltaD vs FWHM line-search curve on ``linesearch_hdl``.
+
+        Parameters
+        ----------
+        linesearch_table : list of (float, float)
+            Sequence of ``(DeltaD, FWHM)`` pairs as returned by
+            :meth:`~specfile_reader.RixsScanTiffDataset.linesearch_pixel_size`.
+        best_deltad : float, optional
+            Sweep minimum — drawn as a red dashed vertical line.
+        original_deltad : float, optional
+            User's original DeltaD before any fitting — drawn as a grey
+            dashed vertical line.
+        lstsq_deltad : float, optional
+            Least-squares fitted DeltaD (centre of the sweep grid) — drawn
+            as an orange dashed vertical line.
+        """
+        hdl = self.linesearch_hdl
+        hdl.clear()
+
+        if not linesearch_table:
+            return
+
+        # Legend must exist before items are added (same pattern as calib_hdl)
+        legend = hdl.addLegend(offset=(10, 10))
+
+        deltad_arr = [row[0] for row in linesearch_table]
+        fwhm_arr = [row[1] for row in linesearch_table]
+
+        # Main scatter + line (no legend entry – it is the sweep curve)
+        pen = pg.mkPen(color=(31, 119, 180), width=2)
+        symbol_brush = pg.mkBrush(color=(31, 119, 180))
+        hdl.plot(
+            deltad_arr,
+            fwhm_arr,
+            pen=pen,
+            symbol="o",
+            symbolSize=6,
+            symbolBrush=symbol_brush,
+            symbolPen=None,
+        )
+
+        # Helper: add a vertical dashed line AND a matching legend entry
+        def _vline(pos, color, legend_label, label_pos):
+            line = pg.InfiniteLine(
+                pos=pos,
+                angle=90,
+                pen=pg.mkPen(color=color, width=1, style=pg.QtCore.Qt.DashLine),
+                label=f"{pos:.6f}",
+                labelOpts={"position": label_pos, "color": color},
+            )
+            hdl.addItem(line)
+            # Use a PlotDataItem as the colour swatch in the legend
+            swatch = pg.PlotDataItem(pen=pg.mkPen(color=color, width=2))
+            legend.addItem(swatch, legend_label)
+
+        if original_deltad is not None:
+            _vline(original_deltad, (127, 127, 127), "original", 0.70)
+
+        if lstsq_deltad is not None:
+            _vline(lstsq_deltad, (255, 127, 14), "lstsq", 0.78)
+
+        if best_deltad is not None:
+            _vline(best_deltad, (214, 39, 40), "linesearch", 0.86)
+
+        hdl.setLabel("bottom", "DeltaD (mm)")
+        hdl.setLabel("left", "FWHM (keV)")
+        hdl.setTitle("Pixel-size line search")
+
+    def plot_calib_overlay(
+        self,
+        original_result,
+        lstsq_result,
+        linesearch_result,
+    ):
+        """Overlay three calibration spectra on ``calib_hdl``.
+
+        Draws one binned line per result, colour-coded to match the vertical
+        markers in ``linesearch_hdl``:
+
+        * **grey**   — user's original ``DeltaD``
+        * **orange** — least-squares fitted ``DeltaD``
+        * **red**    — line-search best ``DeltaD`` (minimum FWHM)
+
+        Parameters
+        ----------
+        original_result : dict or None
+            ``bin_data_wrap`` result at the user's original ``DeltaD``.
+        lstsq_result : dict or None
+            ``bin_data_wrap`` result at the least-squares fitted ``DeltaD``.
+        linesearch_result : dict or None
+            ``bin_data_wrap`` result at the line-search best ``DeltaD``.
+        """
+        hdl = self.calib_hdl
+        hdl.clear()
+
+        # Legend must exist before plot() calls so named curves are registered
+        legend = hdl.addLegend(offset=(10, 10))
+
+        # (color, result, label) — same palette as the linesearch markers
+        layers = [
+            ((127, 127, 127), original_result, "original"),
+            ((255, 127, 14), lstsq_result, "lstsq"),
+            ((214, 39, 40), linesearch_result, "linesearch"),
+        ]
+
+        for color, result, label in layers:
+            if result is None:
+                continue
+            x, y, err = result["binned_line"]
+            fwhm_val = result.get("fwhm")
+            fwhm_str = f"{fwhm_val * 1e6:.1f} meV" if fwhm_val is not None else "N/A"
+            legend_name = f"{label} (FWHM={fwhm_str})"
+            pen = pg.mkPen(color=color, width=2)
+            hdl.plot(x, y, pen=pen, name=legend_name)
+            err_item = pg.ErrorBarItem(
+                x=x,
+                y=y,
+                top=err,
+                bottom=err,
+                beam=0.00001,
+                pen=pg.mkPen(color=color, width=1),
+            )
+            hdl.addItem(err_item)
+
+        hdl.setLabel("left", "Intensity")
+        hdl.setLabel("bottom", "Energy (keV)")
+        hdl.setTitle("Calibration spectra overlay")
+
+        # Set x-axis range to ±8 × FWHM around the peak center.
+        fwhm = linesearch_result["fwhm"]
+        center = linesearch_result["center"]
+        hdl.setXRange(center - 8 * fwhm, center + 8 * fwhm, padding=0)
 
     def update_image(self, data, levels, num_frames, binning_kwargs, scan_index, frame_index):
         """Render a single detector frame.

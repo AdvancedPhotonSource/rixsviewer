@@ -162,26 +162,48 @@ class RixsViewerGUI(QMainWindow):
         binning_kwargs = self._get_binning_kwargs(meta_source)
 
         try:
-            fitted_val, result = self.current_rixs_dset.fit_pixel_size_wrap(
+            (
+                linesearch_table,
+                linesearch_result,
+                linesearch_deltad,
+                original_deltad,
+                original_result,
+                lstsq_deltad,
+                lstsq_result,
+            ) = self.current_rixs_dset.linesearch_pixel_size(
                 metadata_source=meta_source,
                 center_method=center_method,
                 **binning_kwargs,
             )
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Pixel size fitting failed:\n{e}")
+            QMessageBox.critical(self, "Error", f"Pixel size line search failed:\n{e}")
             return
 
-        if fitted_val:
+        # Plot the sweep curve with all three reference markers
+        self.view.plot_linesearch(
+            linesearch_table,
+            best_deltad=linesearch_deltad,
+            original_deltad=original_deltad,
+            lstsq_deltad=lstsq_deltad,
+        )
+
+        # Overlay all three spectra on calib_hdl (left panel)
+        self.view.plot_calib_overlay(original_result, lstsq_result, linesearch_result)
+
+        if linesearch_deltad:
             reply = QMessageBox.question(
                 self,
                 "Update DeltaD Parameter",
-                f"Fitted effective pixel size: {fitted_val:.6f} mm.\nDo you want to apply this value?",
+                (
+                    f"original  DeltaD : {original_deltad:.6f} mm\n"
+                    f"lstsq     DeltaD : {lstsq_deltad:.6f} mm\n"
+                    f"linesearch DeltaD: {linesearch_deltad:.6f} mm\n\n"
+                    "Apply the line-search best value?"
+                ),
                 QMessageBox.Yes | QMessageBox.No,
             )
             if reply == QMessageBox.Yes:
-                self._put_param("DeltaD", fitted_val)
-
-            self.view.plot_binned_data(result, False, hdl_target="calib")
+                self._put_param("DeltaD", linesearch_deltad)
 
     def process_binning(self):
         if self.current_rixs_dset is None:
@@ -286,14 +308,17 @@ class RixsViewerGUI(QMainWindow):
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
-        self.update_image()
+        self.update_image(move_to_middle=True)
 
-    def update_image(self):
+    def update_image(self, move_to_middle=False):
         percentile_cutoff = self.ui.doubleSpinBox_percentile_cutoff.value()
-        frame_index = self.ui.horizontalSlider_frame_index.value()
+        if not move_to_middle:
+            frame_index = self.ui.horizontalSlider_frame_index.value()
+        else:
+            frame_index = -1
         binning_kwargs = self.binning_model.get_kwargs()
 
-        data, levels, num_frames, frame_metadata, scan_index = self.current_rixs_dset.get_data_for_display(
+        data, levels, num_frames, frame_metadata, scan_index, frame_index = self.current_rixs_dset.get_data_for_display(
             frame_index=frame_index,
             percentile_cutoff=percentile_cutoff,
             **binning_kwargs,
