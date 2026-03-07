@@ -169,38 +169,6 @@ def _preprocess_frames(data, Ylow, Yhigh, RefL):
     return data_2d, xaxis
 
 
-def _fit_pixel_size(data_1d, scale, energy_cen, scan_type, center_method, DeltaD):
-    """Determine the effective detector pixel size (mm) by fitting elastic-peak
-    positions vs. incident energy for an EnergyScan.
-
-    Parameters
-    ----------
-    data_1d : ndarray, shape (n_frames, width)
-    scale : ndarray, shape (n_frames,)  -- keV/mm dispersion scale per frame
-    energy_cen : ndarray, shape (n_frames, 1)  -- incident energy per frame
-    scan_type : str  -- 'EnergyScan' or 'SnapshotScan'
-    center_method : str  -- peak-finding method for find_peaks
-    DeltaD : float  -- nominal pixel pitch (mm), returned unchanged when not fitting
-
-    Returns
-    -------
-    float
-        Effective pixel size in mm.
-    """
-    n = data_1d.shape[0]
-    if scan_type == "SnapshotScan":
-        logger.warning("fit_pixel_size is not implemented for SnapshotScan")
-        return float(DeltaD)
-
-    com_pixel, valid_mask = find_peaks(data_1d, method=center_method, smooth_window=3, poly_order=2)
-    a_mat = (com_pixel * scale).reshape(n, 1)
-    a_mat = np.hstack([a_mat, np.ones_like(a_mat)])
-    effective_pixel_size, _ = np.linalg.lstsq(a_mat[valid_mask], energy_cen[valid_mask])[0]
-    effective_pixel_size = float(effective_pixel_size)
-    logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
-    return effective_pixel_size
-
-
 def fit_pixel_size(
     data,
     merixE,
@@ -238,20 +206,24 @@ def fit_pixel_size(
     """
     merixE = np.asarray(merixE, dtype=float)
 
+    if scan_type == "SnapshotScan":
+        logger.warning("fit_pixel_size is not implemented for SnapshotScan")
+        return float(DeltaD)
+
     data_1d, _ = _preprocess_frames(data, Ylow, Yhigh, RefL)
 
+    n = data_1d.shape[0]
     theta_b = np.arcsin(Eb / merixE)
     energy_cen = merixE.reshape(-1, 1)
     scale = Eb / (2 * rowland_radius) / np.tan(theta_b)
 
-    return _fit_pixel_size(
-        data_1d,
-        scale,
-        energy_cen,
-        scan_type,
-        center_method,
-        DeltaD,
-    )
+    com_pixel, valid_mask = find_peaks(data_1d, method=center_method, smooth_window=3, poly_order=2)
+    a_mat = (com_pixel * scale).reshape(n, 1)
+    a_mat = np.hstack([a_mat, np.ones_like(a_mat)])
+    effective_pixel_size, _ = np.linalg.lstsq(a_mat[valid_mask], energy_cen[valid_mask])[0]
+    effective_pixel_size = float(effective_pixel_size)
+    logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
+    return effective_pixel_size
 
 
 def _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, DeltaD):
