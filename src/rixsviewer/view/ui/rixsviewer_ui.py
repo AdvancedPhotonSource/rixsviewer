@@ -17,12 +17,12 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
-    QDoubleSpinBox, QGridLayout, QGroupBox, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QMainWindow,
-    QMenu, QMenuBar, QPushButton, QSizePolicy,
-    QSlider, QSpacerItem, QSpinBox, QSplitter,
-    QStatusBar, QTabWidget, QTableView, QToolButton,
-    QWidget)
+    QDoubleSpinBox, QFrame, QGridLayout, QGroupBox,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QMainWindow, QMenu, QMenuBar, QPushButton,
+    QSizePolicy, QSlider, QSpacerItem, QSpinBox,
+    QSplitter, QStatusBar, QTabWidget, QTableView,
+    QToolButton, QWidget)
 
 from pyqtgraph import GraphicsLayoutWidget
 from pyqtgraph.parametertree import ParameterTree
@@ -270,6 +270,13 @@ class Ui_MainWindow(object):
         self.gridLayout_7 = QGridLayout(self.groupBox_6)
         self.gridLayout_7.setObjectName(u"gridLayout_7")
         self.gridLayout_7.setContentsMargins(1, 1, 1, 1)
+        self.line = QFrame(self.groupBox_6)
+        self.line.setObjectName(u"line")
+        self.line.setFrameShape(QFrame.Shape.VLine)
+        self.line.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.gridLayout_7.addWidget(self.line, 0, 3, 1, 1)
+
         self.label_binpixel = QLabel(self.groupBox_6)
         self.label_binpixel.setObjectName(u"label_binpixel")
         sizePolicy2.setHeightForWidth(self.label_binpixel.sizePolicy().hasHeightForWidth())
@@ -280,24 +287,40 @@ class Ui_MainWindow(object):
         self.pushButton_process = QPushButton(self.groupBox_6)
         self.pushButton_process.setObjectName(u"pushButton_process")
 
-        self.gridLayout_7.addWidget(self.pushButton_process, 0, 8, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton_process, 0, 11, 1, 1)
+
+        self.line_2 = QFrame(self.groupBox_6)
+        self.line_2.setObjectName(u"line_2")
+        self.line_2.setFrameShape(QFrame.Shape.VLine)
+        self.line_2.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.gridLayout_7.addWidget(self.line_2, 0, 5, 1, 1)
 
         self.label_energy_interval = QLabel(self.groupBox_6)
         self.label_energy_interval.setObjectName(u"label_energy_interval")
+        sizePolicy7 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        sizePolicy7.setHorizontalStretch(0)
+        sizePolicy7.setVerticalStretch(0)
+        sizePolicy7.setHeightForWidth(self.label_energy_interval.sizePolicy().hasHeightForWidth())
+        self.label_energy_interval.setSizePolicy(sizePolicy7)
 
-        self.gridLayout_7.addWidget(self.label_energy_interval, 0, 3, 1, 1)
+        self.gridLayout_7.addWidget(self.label_energy_interval, 0, 4, 1, 1)
 
         self.label_7 = QLabel(self.groupBox_6)
         self.label_7.setObjectName(u"label_7")
         sizePolicy2.setHeightForWidth(self.label_7.sizePolicy().hasHeightForWidth())
         self.label_7.setSizePolicy(sizePolicy2)
 
-        self.gridLayout_7.addWidget(self.label_7, 0, 5, 1, 1)
+        self.gridLayout_7.addWidget(self.label_7, 0, 8, 1, 1)
+
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.gridLayout_7.addItem(self.horizontalSpacer_2, 0, 10, 1, 1)
 
         self.pushButton = QPushButton(self.groupBox_6)
         self.pushButton.setObjectName(u"pushButton")
 
-        self.gridLayout_7.addWidget(self.pushButton, 0, 9, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton, 0, 12, 1, 1)
 
         self.comboBox = QComboBox(self.groupBox_6)
         self.comboBox.addItem("")
@@ -305,15 +328,15 @@ class Ui_MainWindow(object):
         self.comboBox.addItem("")
         self.comboBox.setObjectName(u"comboBox")
 
-        self.gridLayout_7.addWidget(self.comboBox, 0, 6, 1, 1)
+        self.gridLayout_7.addWidget(self.comboBox, 0, 9, 1, 1)
 
         self.spinBox_binpixel = QSpinBox(self.groupBox_6)
         self.spinBox_binpixel.setObjectName(u"spinBox_binpixel")
-        sizePolicy7 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        sizePolicy7.setHorizontalStretch(0)
-        sizePolicy7.setVerticalStretch(0)
-        sizePolicy7.setHeightForWidth(self.spinBox_binpixel.sizePolicy().hasHeightForWidth())
-        self.spinBox_binpixel.setSizePolicy(sizePolicy7)
+        sizePolicy8 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        sizePolicy8.setHorizontalStretch(0)
+        sizePolicy8.setVerticalStretch(0)
+        sizePolicy8.setHeightForWidth(self.spinBox_binpixel.sizePolicy().hasHeightForWidth())
+        self.spinBox_binpixel.setSizePolicy(sizePolicy8)
         self.spinBox_binpixel.setMinimum(1)
 
         self.gridLayout_7.addWidget(self.spinBox_binpixel, 0, 2, 1, 1)
@@ -321,11 +344,14 @@ class Ui_MainWindow(object):
         self.checkBox_show_rawdata = QCheckBox(self.groupBox_6)
         self.checkBox_show_rawdata.setObjectName(u"checkBox_show_rawdata")
 
-        self.gridLayout_7.addWidget(self.checkBox_show_rawdata, 0, 4, 1, 1)
+        self.gridLayout_7.addWidget(self.checkBox_show_rawdata, 0, 6, 1, 1)
 
-        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.line_3 = QFrame(self.groupBox_6)
+        self.line_3.setObjectName(u"line_3")
+        self.line_3.setFrameShape(QFrame.Shape.VLine)
+        self.line_3.setFrameShadow(QFrame.Shadow.Sunken)
 
-        self.gridLayout_7.addItem(self.horizontalSpacer_2, 0, 7, 1, 1)
+        self.gridLayout_7.addWidget(self.line_3, 0, 7, 1, 1)
 
 
         self.gridLayout_4.addWidget(self.groupBox_6, 1, 0, 1, 1)
@@ -368,23 +394,37 @@ class Ui_MainWindow(object):
         self.comboBox_center_method.addItem("")
         self.comboBox_center_method.setObjectName(u"comboBox_center_method")
 
-        self.gridLayout_9.addWidget(self.comboBox_center_method, 0, 3, 1, 1)
+        self.gridLayout_9.addWidget(self.comboBox_center_method, 0, 4, 1, 1)
 
         self.pushButton_fit_pixel_size = QPushButton(self.groupBox_7)
         self.pushButton_fit_pixel_size.setObjectName(u"pushButton_fit_pixel_size")
 
-        self.gridLayout_9.addWidget(self.pushButton_fit_pixel_size, 0, 5, 1, 1)
+        self.gridLayout_9.addWidget(self.pushButton_fit_pixel_size, 0, 7, 1, 1)
+
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.gridLayout_9.addItem(self.horizontalSpacer, 0, 6, 1, 1)
 
         self.label_5 = QLabel(self.groupBox_7)
         self.label_5.setObjectName(u"label_5")
         sizePolicy2.setHeightForWidth(self.label_5.sizePolicy().hasHeightForWidth())
         self.label_5.setSizePolicy(sizePolicy2)
 
-        self.gridLayout_9.addWidget(self.label_5, 0, 2, 1, 1)
+        self.gridLayout_9.addWidget(self.label_5, 0, 3, 1, 1)
 
-        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.line_4 = QFrame(self.groupBox_7)
+        self.line_4.setObjectName(u"line_4")
+        self.line_4.setFrameShape(QFrame.Shape.VLine)
+        self.line_4.setFrameShadow(QFrame.Shadow.Sunken)
 
-        self.gridLayout_9.addItem(self.horizontalSpacer, 0, 4, 1, 1)
+        self.gridLayout_9.addWidget(self.line_4, 0, 2, 1, 1)
+
+        self.line_5 = QFrame(self.groupBox_7)
+        self.line_5.setObjectName(u"line_5")
+        self.line_5.setFrameShape(QFrame.Shape.VLine)
+        self.line_5.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.gridLayout_9.addWidget(self.line_5, 0, 5, 1, 1)
 
 
         self.gridLayout_10.addWidget(self.groupBox_7, 1, 0, 1, 1)
@@ -413,7 +453,7 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
         self.checkBox_autoupdate.toggled.connect(self.pushButton_fit_pixel_size.setDisabled)
 
-        self.tabWidget.setCurrentIndex(1)
+        self.tabWidget.setCurrentIndex(0)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -443,7 +483,7 @@ class Ui_MainWindow(object):
         self.pushButton_4.setText(QCoreApplication.translate("MainWindow", u"Save", None))
         self.pushButton_3.setText(QCoreApplication.translate("MainWindow", u"Load", None))
         self.groupBox_6.setTitle(QCoreApplication.translate("MainWindow", u"Process", None))
-        self.label_binpixel.setText(QCoreApplication.translate("MainWindow", u"Bin Pixel", None))
+        self.label_binpixel.setText(QCoreApplication.translate("MainWindow", u"Bin Pixel:", None))
         self.pushButton_process.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
         self.label_energy_interval.setText(QCoreApplication.translate("MainWindow", u"Energy Interval:", None))
         self.label_7.setText(QCoreApplication.translate("MainWindow", u"Error Model:", None))

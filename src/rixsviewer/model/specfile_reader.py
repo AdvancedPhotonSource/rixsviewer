@@ -546,8 +546,10 @@ class RixsScanTiffDataset:
         """
         self._data = self.read_data()
         num_frames = len(self._data)
-        if frame_index < 0:
+        if frame_index == -2:
             frame_index = num_frames // 2
+        elif frame_index == -1:
+            frame_index = num_frames - 1
         frame_index = max(0, min(frame_index, num_frames - 1))
 
         levels = percentile_clip(self._data[frame_index], percentile_cutoff)

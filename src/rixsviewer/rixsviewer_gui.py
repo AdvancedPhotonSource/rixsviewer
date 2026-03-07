@@ -303,10 +303,11 @@ class RixsViewerGUI(QMainWindow):
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
-        self.update_image(frame_index=-1)
+        self.update_image(frame_index=-2)
 
-    def update_image(self, frame_index=-1):
-        # frame_index = -1 will plot the middle frame
+    def update_image(self, frame_index=-2):
+        # frame_index = -2 will plot the middle frame
+        # frame_index = -1 will plot the last frame
         if self.current_rixs_dset is None:
             return
         percentile_cutoff = self.ui.doubleSpinBox_percentile_cutoff.value()
