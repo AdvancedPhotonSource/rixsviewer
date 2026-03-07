@@ -308,14 +308,14 @@ class RixsViewerGUI(QMainWindow):
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
-        self.update_image(move_to_middle=True)
+        self.update_image(frame_index=-1)
 
-    def update_image(self, move_to_middle=False):
+    def update_image(self, frame_index=-1):
+        # frame_index = -1 will plot the middle frame
+        if self.current_rixs_dset is None:
+            return
         percentile_cutoff = self.ui.doubleSpinBox_percentile_cutoff.value()
-        if not move_to_middle:
-            frame_index = self.ui.horizontalSlider_frame_index.value()
-        else:
-            frame_index = -1
+
         binning_kwargs = self.binning_model.get_kwargs()
 
         frame_info = self.current_rixs_dset.get_data_for_display(
@@ -331,7 +331,13 @@ class RixsViewerGUI(QMainWindow):
             frame_info["scan_index"],
             frame_info["frame_index"],
         )
-        self.ui.horizontalSlider_frame_index.setValue(frame_info["frame_index"])
+
+        # Update slider range and position without re-triggering valueChanged
+        slider = self.ui.horizontalSlider_frame_index
+        slider.blockSignals(True)
+        slider.setMaximum(frame_info["num_frames"] - 1)
+        slider.setValue(frame_info["frame_index"])
+        slider.blockSignals(False)
 
         meta_source = self.ui.comboBox_metasource.currentText()
         if meta_source == "SpecFile":
