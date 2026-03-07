@@ -194,6 +194,9 @@ class RixsViewerGUI(QMainWindow):
             )
             if reply == QMessageBox.Yes:
                 self._put_param(opt_target, ls["lns_value"])
+            if opt_target == "TiltAngle":
+                # update image to reflect the tilt angle change
+                self.update_image()
 
     def process_binning(self):
         if self.current_rixs_dset is None:

@@ -737,13 +737,13 @@ class RixsScanTiffDataset:
             # use least-squares fit to determine the reference pixel size
             lsq_value = fit_pixel_size(data, merixE, scan_type, **base_kwargs)
             # Step 2 – build the search grid
-            val_low = 0.25 * lsq_value
-            val_high = 1.25 * lsq_value
+            val_low = 0.5 * lsq_value
+            val_high = 1.5 * lsq_value
             val_list = np.linspace(val_low, val_high, n_steps)
         elif target == "TiltAngle":
             lsq_value = base_kwargs[target]
-            val_low = -5
-            val_high = 5
+            val_low = -8
+            val_high = 8
             val_list = np.linspace(val_low, val_high, n_steps)
 
         # Step 3 – sweep
@@ -816,8 +816,10 @@ class RixsScanTiffDataset:
             for fname in self.unloaded_filenames:
                 data.append(tifffile.imread(fname))
             data = np.array(data).astype(np.float32)
+            # deal with bad pixels;
             data[:, 101, 147] = 0
             data[:, 98, 170] = 0
+            data[:, 234, 156] = 0
             if self._data is None:
                 self._data = data
             else:

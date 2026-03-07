@@ -79,6 +79,20 @@ class RixsView:
     # Plotting / visualization
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _clear_plot(hdl):
+        """Remove the legend (if any) then clear all plot items.
+
+        ``PlotItem.clear()`` deliberately leaves the legend intact so that
+        subsequent ``plot(..., name=...)`` calls still register in it.  That
+        means repeated calls to ``addLegend`` stack up visually.  This helper
+        explicitly detaches the existing legend from the scene first.
+        """
+        if hdl.legend is not None:
+            hdl.legend.scene().removeItem(hdl.legend)
+            hdl.legend = None
+        hdl.clear()
+
     def plot_binned_data(self, result, show_rawdata=False, hdl_target="plot"):
         """Render binned RIXS data onto the plot widget.
 
@@ -131,7 +145,7 @@ class RixsView:
         best_deltad = ls["lns_value"]
         original_deltad = ls["org_value"]
         hdl = self.linesearch_hdl
-        hdl.clear()
+        self._clear_plot(hdl)
 
         if not linesearch_table:
             return
@@ -199,7 +213,7 @@ class RixsView:
         original_result = ls["org_result"]
         linesearch_result = ls["lns_result"]
         hdl = self.calib_hdl
-        hdl.clear()
+        self._clear_plot(hdl)
 
         # Legend must exist before plot() calls so named curves are registered
         legend = hdl.addLegend(offset=(10, 10))
