@@ -1,10 +1,11 @@
 import logging
 import warnings
 
-import numpy as np
-from scipy.signal import savgol_filter
-from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
+import numpy as np
+from scipy.ndimage import map_coordinates
+from scipy.optimize import curve_fit
+from scipy.signal import savgol_filter
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,66 @@ logger = logging.getLogger(__name__)
 def _gaussian(x_vals, amp, cen, sigma):
     """Normalised Gaussian: amp * exp(-0.5 * ((x - cen) / sigma)^2)."""
     return amp * np.exp(-0.5 * ((x_vals - cen) / sigma) ** 2)
+
+
+def apply_subpixel_shear_3d(arr3d, ylow, yhigh, theta_deg, order=1):
+    """
+    Applies subpixel shearing to a specific row range across all frames in a 3D array.
+
+    Parameters:
+    - arr3d: 3d numpy array (N_frames, height, width)
+    - ylow, yhigh: The range of rows to shear
+    - theta_deg: Angle in degrees
+    - order: Interpolation order (1 for linear, 3 for cubic)
+    """
+    logger.info(f"Applying subpixel shearing to rows {ylow} to {yhigh} with angle {theta_deg} degrees")
+    if abs(theta_deg) < 1e-3:
+        return arr3d
+    theta = np.deg2rad(theta_deg)
+
+    # result copy to keep original intact
+    result = arr3d.copy()
+
+    # Extract the volume of interest (VOI)
+    # Shape: (N_frames, rows_in_range, width)
+    voi = arr3d[:, ylow:yhigh, :]
+    n_frames, rows, cols = voi.shape
+
+    # Calculate the center row of the range
+    center_y = (ylow + yhigh - 1) / 2.0
+
+    # Create the coordinate grid for a single frame
+    # yy: (rows, cols), xx: (rows, cols)
+    yy, xx = np.indices((rows, cols), dtype=np.float64)
+
+    # Calculate shift based on the global row index (ylow + yy)
+    current_y_indices = ylow + yy
+    shift = np.sin(theta) * (current_y_indices - center_y)
+
+    # Prepare the 3D coordinates for map_coordinates
+    # We need three arrays of shape (N_frames, rows, cols)
+
+    # 1. Frame indices: each frame stays in its own plane
+    # np.arange(n_frames)[:, None, None] creates shape (N_frames, 1, 1)
+    # which broadcasts to (N_frames, rows, cols)
+    f_coords = np.arange(n_frames)[:, None, None] * np.ones((1, rows, cols))
+
+    # 2. Vertical indices: remain the same within the ROI
+    y_coords = np.broadcast_to(yy, (n_frames, rows, cols))
+
+    # 3. Horizontal indices: shifted by the calculated amount
+    x_coords = np.broadcast_to(xx - shift, (n_frames, rows, cols))
+
+    # Stack coordinates for map_coordinates: (3, N_frames, rows, cols)
+    coords = np.array([f_coords, y_coords, x_coords])
+
+    # Apply interpolation across the 3D volume
+    sheared_voi = map_coordinates(voi, coords, order=order, mode="constant", cval=0.0)
+
+    # Place back into the result array
+    result[:, ylow:yhigh, :] = sheared_voi
+
+    return result
 
 
 def plot_peak_debug(x, centers, num_samples=5, row_indices=None):
@@ -417,6 +478,8 @@ def bin_rixs_data(
     noise_model="poisson",
     bin_pixel=1,
     compute_fwhm=False,
+    TiltAngle=0,
+    TiltOrder=1,
     **kwargs,
 ):
     """Compute the binned RIXS spectrum from a TIFF image stack.
@@ -446,6 +509,8 @@ def bin_rixs_data(
     ``summed_data``, ``levels``.
     """
     merixE = np.asarray(merixE, dtype=float)
+
+    data = apply_subpixel_shear_3d(data, Ylow, Yhigh, TiltAngle, TiltOrder)
 
     data_2d, xaxis = _preprocess_frames(data, Ylow, Yhigh, RefL)
 

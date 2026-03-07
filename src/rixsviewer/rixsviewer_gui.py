@@ -45,7 +45,7 @@ class RixsViewerGUI(QMainWindow):
         self.ui.pushButton_load_scan.clicked.connect(self.setup_scan_table)
         self.view = RixsView(self.ui)
         self.ui.pushButton_process.clicked.connect(self.process_binning)
-        self.ui.pushButton_fit_pixel_size.clicked.connect(self.fit_effective_pixel_size)
+        self.ui.pushButton_fit_pixel_size.clicked.connect(self.calibrate_parameters)
         self.ui.comboBox_metasource.currentIndexChanged.connect(self.update_meta_source)
         self.ui.horizontalSlider_frame_index.valueChanged.connect(self.update_image)
 
@@ -149,7 +149,7 @@ class RixsViewerGUI(QMainWindow):
         elif meta_source in ("USER", "SpecFile"):
             return self.binning_model.get_kwargs()
 
-    def fit_effective_pixel_size(self):
+    def calibrate_parameters(self):
         if self.current_rixs_dset is None:
             return
         if self.current_rixs_dset.scan_info["scan_type"] != "EnergyScan":
@@ -158,53 +158,43 @@ class RixsViewerGUI(QMainWindow):
 
         meta_source = self.ui.comboBox_metasource.currentText()
         center_method = self.ui.comboBox_center_method.currentText()
+        opt_target = self.ui.comboBox_fit_target.currentText()
 
         binning_kwargs = self._get_binning_kwargs(meta_source)
 
         try:
-            (
-                linesearch_table,
-                linesearch_result,
-                linesearch_deltad,
-                original_deltad,
-                original_result,
-                lstsq_deltad,
-                lstsq_result,
-            ) = self.current_rixs_dset.linesearch_pixel_size(
+            ls = self.current_rixs_dset.linesearch_to_optimize_parameter(
+                target=opt_target,
                 metadata_source=meta_source,
                 center_method=center_method,
                 **binning_kwargs,
             )
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Pixel size line search failed:\n{e}")
+            QMessageBox.critical(self, "Error", f"Linesearch to optimize {opt_target} failed:\n{e}")
             traceback.print_exc()
             return
 
         # Plot the sweep curve with all three reference markers
-        self.view.plot_linesearch(
-            linesearch_table,
-            best_deltad=linesearch_deltad,
-            original_deltad=original_deltad,
-            lstsq_deltad=lstsq_deltad,
-        )
+        self.view.plot_linesearch(ls)
 
         # Overlay all three spectra on calib_hdl (left panel)
-        self.view.plot_calib_overlay(original_result, lstsq_result, linesearch_result)
+        self.view.plot_calib_overlay(ls)
 
-        if linesearch_deltad:
+        unit = "mm" if opt_target == "DeltaD" else "deg"
+        if ls["lns_value"]:
             reply = QMessageBox.question(
                 self,
-                "Update DeltaD Parameter",
+                f"Update {opt_target} Parameter",
                 (
-                    f"original  DeltaD : {original_deltad:.6f} mm\n"
-                    f"lstsq     DeltaD : {lstsq_deltad:.6f} mm\n"
-                    f"linesearch DeltaD: {linesearch_deltad:.6f} mm\n\n"
+                    f"original  {opt_target} : {ls['org_value']:.6f} {unit}\n"
+                    f"lstsq     {opt_target} : {ls['lsq_value']:.6f} {unit}\n"
+                    f"linesearch {opt_target}: {ls['lns_value']:.6f} {unit}\n\n"
                     "Apply the line-search best value?"
                 ),
                 QMessageBox.Yes | QMessageBox.No,
             )
             if reply == QMessageBox.Yes:
-                self._put_param("DeltaD", linesearch_deltad)
+                self._put_param(opt_target, ls["lns_value"])
 
     def process_binning(self):
         if self.current_rixs_dset is None:

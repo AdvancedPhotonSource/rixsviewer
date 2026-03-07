@@ -20,8 +20,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
     QDoubleSpinBox, QGridLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMainWindow,
     QMenu, QMenuBar, QPushButton, QSizePolicy,
-    QSlider, QSpinBox, QSplitter, QStatusBar,
-    QTabWidget, QTableView, QToolButton, QWidget)
+    QSlider, QSpacerItem, QSpinBox, QSplitter,
+    QStatusBar, QTabWidget, QTableView, QToolButton,
+    QWidget)
 
 from pyqtgraph import GraphicsLayoutWidget
 from pyqtgraph.parametertree import ParameterTree
@@ -279,7 +280,12 @@ class Ui_MainWindow(object):
         self.pushButton_process = QPushButton(self.groupBox_6)
         self.pushButton_process.setObjectName(u"pushButton_process")
 
-        self.gridLayout_7.addWidget(self.pushButton_process, 0, 7, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton_process, 0, 8, 1, 1)
+
+        self.label_energy_interval = QLabel(self.groupBox_6)
+        self.label_energy_interval.setObjectName(u"label_energy_interval")
+
+        self.gridLayout_7.addWidget(self.label_energy_interval, 0, 3, 1, 1)
 
         self.label_7 = QLabel(self.groupBox_6)
         self.label_7.setObjectName(u"label_7")
@@ -291,7 +297,7 @@ class Ui_MainWindow(object):
         self.pushButton = QPushButton(self.groupBox_6)
         self.pushButton.setObjectName(u"pushButton")
 
-        self.gridLayout_7.addWidget(self.pushButton, 0, 8, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton, 0, 9, 1, 1)
 
         self.comboBox = QComboBox(self.groupBox_6)
         self.comboBox.addItem("")
@@ -317,10 +323,9 @@ class Ui_MainWindow(object):
 
         self.gridLayout_7.addWidget(self.checkBox_show_rawdata, 0, 4, 1, 1)
 
-        self.label_energy_interval = QLabel(self.groupBox_6)
-        self.label_energy_interval.setObjectName(u"label_energy_interval")
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.gridLayout_7.addWidget(self.label_energy_interval, 0, 3, 1, 1)
+        self.gridLayout_7.addItem(self.horizontalSpacer_2, 0, 7, 1, 1)
 
 
         self.gridLayout_4.addWidget(self.groupBox_6, 1, 0, 1, 1)
@@ -348,12 +353,14 @@ class Ui_MainWindow(object):
         self.comboBox_fit_target.addItem("")
         self.comboBox_fit_target.setObjectName(u"comboBox_fit_target")
 
-        self.gridLayout_9.addWidget(self.comboBox_fit_target, 0, 3, 1, 1)
+        self.gridLayout_9.addWidget(self.comboBox_fit_target, 0, 1, 1, 1)
 
-        self.checkBox_fit_tilt_angle = QCheckBox(self.groupBox_7)
-        self.checkBox_fit_tilt_angle.setObjectName(u"checkBox_fit_tilt_angle")
+        self.label_8 = QLabel(self.groupBox_7)
+        self.label_8.setObjectName(u"label_8")
+        sizePolicy2.setHeightForWidth(self.label_8.sizePolicy().hasHeightForWidth())
+        self.label_8.setSizePolicy(sizePolicy2)
 
-        self.gridLayout_9.addWidget(self.checkBox_fit_tilt_angle, 0, 1, 1, 1)
+        self.gridLayout_9.addWidget(self.label_8, 0, 0, 1, 1)
 
         self.comboBox_center_method = QComboBox(self.groupBox_7)
         self.comboBox_center_method.addItem("")
@@ -361,27 +368,23 @@ class Ui_MainWindow(object):
         self.comboBox_center_method.addItem("")
         self.comboBox_center_method.setObjectName(u"comboBox_center_method")
 
-        self.gridLayout_9.addWidget(self.comboBox_center_method, 0, 5, 1, 1)
+        self.gridLayout_9.addWidget(self.comboBox_center_method, 0, 3, 1, 1)
 
         self.pushButton_fit_pixel_size = QPushButton(self.groupBox_7)
         self.pushButton_fit_pixel_size.setObjectName(u"pushButton_fit_pixel_size")
 
-        self.gridLayout_9.addWidget(self.pushButton_fit_pixel_size, 0, 6, 1, 1)
+        self.gridLayout_9.addWidget(self.pushButton_fit_pixel_size, 0, 5, 1, 1)
 
         self.label_5 = QLabel(self.groupBox_7)
         self.label_5.setObjectName(u"label_5")
+        sizePolicy2.setHeightForWidth(self.label_5.sizePolicy().hasHeightForWidth())
+        self.label_5.setSizePolicy(sizePolicy2)
 
-        self.gridLayout_9.addWidget(self.label_5, 0, 4, 1, 1)
+        self.gridLayout_9.addWidget(self.label_5, 0, 2, 1, 1)
 
-        self.label_8 = QLabel(self.groupBox_7)
-        self.label_8.setObjectName(u"label_8")
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.gridLayout_9.addWidget(self.label_8, 0, 2, 1, 1)
-
-        self.checkBox_fit_effective_pixel_size = QCheckBox(self.groupBox_7)
-        self.checkBox_fit_effective_pixel_size.setObjectName(u"checkBox_fit_effective_pixel_size")
-
-        self.gridLayout_9.addWidget(self.checkBox_fit_effective_pixel_size, 0, 0, 1, 1)
+        self.gridLayout_9.addItem(self.horizontalSpacer, 0, 4, 1, 1)
 
 
         self.gridLayout_10.addWidget(self.groupBox_7, 1, 0, 1, 1)
@@ -410,7 +413,7 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
         self.checkBox_autoupdate.toggled.connect(self.pushButton_fit_pixel_size.setDisabled)
 
-        self.tabWidget.setCurrentIndex(0)
+        self.tabWidget.setCurrentIndex(1)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -441,7 +444,8 @@ class Ui_MainWindow(object):
         self.pushButton_3.setText(QCoreApplication.translate("MainWindow", u"Load", None))
         self.groupBox_6.setTitle(QCoreApplication.translate("MainWindow", u"Process", None))
         self.label_binpixel.setText(QCoreApplication.translate("MainWindow", u"Bin Pixel", None))
-        self.pushButton_process.setText(QCoreApplication.translate("MainWindow", u"Process Binning", None))
+        self.pushButton_process.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
+        self.label_energy_interval.setText(QCoreApplication.translate("MainWindow", u"Energy Interval:", None))
         self.label_7.setText(QCoreApplication.translate("MainWindow", u"Error Model:", None))
         self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Export", None))
         self.comboBox.setItemText(0, QCoreApplication.translate("MainWindow", u"poisson", None))
@@ -449,21 +453,18 @@ class Ui_MainWindow(object):
         self.comboBox.setItemText(2, QCoreApplication.translate("MainWindow", u"none", None))
 
         self.checkBox_show_rawdata.setText(QCoreApplication.translate("MainWindow", u"Show RawData", None))
-        self.label_energy_interval.setText(QCoreApplication.translate("MainWindow", u"Energy Interval:", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"Process", None))
         self.groupBox_7.setTitle(QCoreApplication.translate("MainWindow", u"Settings", None))
-        self.comboBox_fit_target.setItemText(0, QCoreApplication.translate("MainWindow", u"AlignCenter", None))
-        self.comboBox_fit_target.setItemText(1, QCoreApplication.translate("MainWindow", u"MinimizeFWHM", None))
+        self.comboBox_fit_target.setItemText(0, QCoreApplication.translate("MainWindow", u"DeltaD", None))
+        self.comboBox_fit_target.setItemText(1, QCoreApplication.translate("MainWindow", u"TiltAngle", None))
 
-        self.checkBox_fit_tilt_angle.setText(QCoreApplication.translate("MainWindow", u"Tilt Angle", None))
+        self.label_8.setText(QCoreApplication.translate("MainWindow", u"OptimizeTarget:", None))
         self.comboBox_center_method.setItemText(0, QCoreApplication.translate("MainWindow", u"gaussian", None))
         self.comboBox_center_method.setItemText(1, QCoreApplication.translate("MainWindow", u"centroid", None))
         self.comboBox_center_method.setItemText(2, QCoreApplication.translate("MainWindow", u"argmax", None))
 
         self.pushButton_fit_pixel_size.setText(QCoreApplication.translate("MainWindow", u"Calibrate", None))
-        self.label_5.setText(QCoreApplication.translate("MainWindow", u"Center Model", None))
-        self.label_8.setText(QCoreApplication.translate("MainWindow", u"OptimizeTarget:", None))
-        self.checkBox_fit_effective_pixel_size.setText(QCoreApplication.translate("MainWindow", u"Effective Pixel Size", None))
+        self.label_5.setText(QCoreApplication.translate("MainWindow", u"Center Model:", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), QCoreApplication.translate("MainWindow", u"Calibration", None))
         self.menuFile.setTitle(QCoreApplication.translate("MainWindow", u"File", None))
     # retranslateUi

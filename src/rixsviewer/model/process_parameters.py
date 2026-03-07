@@ -90,4 +90,15 @@ params = [
         "step": 1e-6,
         "siPrefix": False,
     },
+    {
+        "name": "TiltAngle",
+        "type": "float",
+        "value": 0.0,
+        "suffix": " degree",
+        "tip": "Tilt angle of the detector",
+        "pv": "none",
+        "format": "{value:.3f} {suffix}",
+        "step": 1e-3,
+        "siPrefix": False,
+    },
 ]

@@ -116,29 +116,21 @@ class RixsView:
             self.img2d_hdl.setImage(result["summed_data"], levels=result["levels"])
         self.ui.label_energy_interval.setText(f"Energy interval: [{result['energy_resolution']:.3f} meV]")
 
-    def plot_linesearch(
-        self,
-        linesearch_table,
-        best_deltad=None,
-        original_deltad=None,
-        lstsq_deltad=None,
-    ):
+    def plot_linesearch(self, ls):
         """Render the DeltaD vs FWHM line-search curve on ``linesearch_hdl``.
 
         Parameters
         ----------
-        linesearch_table : list of (float, float)
-            Sequence of ``(DeltaD, FWHM)`` pairs as returned by
+        ls : dict
+            Result dict returned by
             :meth:`~specfile_reader.RixsScanTiffDataset.linesearch_pixel_size`.
-        best_deltad : float, optional
-            Sweep minimum — drawn as a red dashed vertical line.
-        original_deltad : float, optional
-            User's original DeltaD before any fitting — drawn as a grey
-            dashed vertical line.
-        lstsq_deltad : float, optional
-            Least-squares fitted DeltaD (centre of the sweep grid) — drawn
-            as an orange dashed vertical line.
+            Expected keys: ``lns_table``, ``lns_value``,
+            ``org_value``, ``lsq_value``.
         """
+        linesearch_table = ls["lns_table"]
+        best_deltad = ls["lns_value"]
+        original_deltad = ls["org_value"]
+        lstsq_deltad = ls["lsq_value"]
         hdl = self.linesearch_hdl
         hdl.clear()
 
@@ -191,12 +183,7 @@ class RixsView:
         hdl.setLabel("left", "FWHM (keV)")
         hdl.setTitle("Pixel-size line search")
 
-    def plot_calib_overlay(
-        self,
-        original_result,
-        lstsq_result,
-        linesearch_result,
-    ):
+    def plot_calib_overlay(self, ls):
         """Overlay three calibration spectra on ``calib_hdl``.
 
         Draws one binned line per result, colour-coded to match the vertical
@@ -208,13 +195,15 @@ class RixsView:
 
         Parameters
         ----------
-        original_result : dict or None
-            ``bin_data_wrap`` result at the user's original ``DeltaD``.
-        lstsq_result : dict or None
-            ``bin_data_wrap`` result at the least-squares fitted ``DeltaD``.
-        linesearch_result : dict or None
-            ``bin_data_wrap`` result at the line-search best ``DeltaD``.
+        ls : dict
+            Result dict returned by
+            :meth:`~specfile_reader.RixsScanTiffDataset.linesearch_pixel_size`.
+            Expected keys: ``org_result``, ``lsq_result``,
+            ``lns_result``.
         """
+        original_result = ls["org_result"]
+        lstsq_result = ls["lsq_result"]
+        linesearch_result = ls["lns_result"]
         hdl = self.calib_hdl
         hdl.clear()
 

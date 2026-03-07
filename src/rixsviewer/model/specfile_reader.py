@@ -9,7 +9,7 @@ import pandas as pd
 import tifffile
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
-from .utils import find_peaks, bin_rixs_data, percentile_clip, fit_pixel_size
+from .utils import find_peaks, bin_rixs_data, percentile_clip, fit_pixel_size, apply_subpixel_shear_3d
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +243,7 @@ def get_metadata_from_header(scan_comment_str) -> dict:
         "Yhigh": int(float(high_y_pixel.group(1))),
         "Acrystalsize": float(analyzer_crystal_size_mm.group(1)),
         "DeltaD": float(lambda_strip_size_mm.group(1)),
+        "TiltAngle": 0.0,
     }
 
     # Keep binning_range for backward compatibility
@@ -512,7 +513,14 @@ class RixsScanTiffDataset:
         }[col]
         return self.scan_info[key]
 
-    def get_data_for_display(self, frame_index=-1, percentile_cutoff=99.0, **kwargs):
+    def apply_tilt_angle(self, data, tilt_angle=0, tilt_order=1):
+        Ylow, Yhigh = self.scan_info["metadata"]["Ylow"], self.scan_info["metadata"]["Yhigh"]
+        if data.ndim == 2:
+            return apply_subpixel_shear_3d(data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order)[0]
+        else:
+            return apply_subpixel_shear_3d(data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order)
+
+    def get_data_for_display(self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs):
         """
         Load the TIFF stack and compute display intensity limits.
 
@@ -547,8 +555,12 @@ class RixsScanTiffDataset:
         frame_metadata = self.scan_info["metadata"].copy()
         frame_metadata["E"] = self.scan_info["scandata"]["merixE"][frame_index]
         frame_metadata["ThetaB"] = np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6  # micro-radian
+
+        frame = self._data[frame_index]
+        frame = self.apply_tilt_angle(frame, TiltAngle)
+
         return {
-            "data": self._data[frame_index],
+            "data": frame,
             "levels": levels,
             "num_frames": num_frames,
             "frame_metadata": frame_metadata,
@@ -676,8 +688,9 @@ class RixsScanTiffDataset:
         result = self.bin_data_wrap(metadata_source="USER", **merged_kwargs)
         return effective_pixel_size, result
 
-    def linesearch_pixel_size(
+    def linesearch_to_optimize_parameter(
         self,
+        target="DeltaD",
         metadata_source="SpecFile",
         n_steps=51,
         **kwargs,
@@ -714,50 +727,62 @@ class RixsScanTiffDataset:
             The ``DeltaD`` value that minimised the FWHM.
         """
         # Step 1 – resolve inputs once, then determine the reference pixel size
-        original_deltad = kwargs["DeltaD"]
+        org_value = kwargs[target]
+        logger.info(f"Linesearch to optimize {target}, org_value: {org_value}")
         data, merixE, scan_type, base_kwargs = self._prepare_inputs(metadata_source, kwargs)
-        lstsq_deltad = fit_pixel_size(data, merixE, scan_type, **base_kwargs)
 
-        # Step 2 – build the search grid
-        deltad_low = 0.25 * lstsq_deltad
-        deltad_high = 1.25 * lstsq_deltad
-        deltad_values = np.linspace(deltad_low, deltad_high, n_steps)
+        # Step 2 – determine line search grid
+        assert target in ("DeltaD", "TiltAngle")
+        if target == "DeltaD":
+            # use least-squares fit to determine the reference pixel size
+            lsq_value = fit_pixel_size(data, merixE, scan_type, **base_kwargs)
+            # Step 2 – build the search grid
+            val_low = 0.25 * lsq_value
+            val_high = 1.25 * lsq_value
+            val_list = np.linspace(val_low, val_high, n_steps)
+        elif target == "TiltAngle":
+            lsq_value = base_kwargs[target]
+            val_low = -5
+            val_high = 5
+            val_list = np.linspace(val_low, val_high, n_steps)
 
         # Step 3 – sweep
-        linesearch_table = []
+        lns_table = []
         best_fwhm = np.inf
-        linesearch_result = None
-        linesearch_deltad = lstsq_deltad
+        lns_result = None
+        lns_value = lsq_value
 
-        for deltad in deltad_values:
+        for val in val_list:
+            print(f"Sweeping {target} to {val}")
             sweep_kwargs = dict(base_kwargs)
-            sweep_kwargs["DeltaD"] = float(deltad)
+            sweep_kwargs[target] = float(val)
             result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **sweep_kwargs)
             fwhm = result.get("fwhm", np.nan)
-            linesearch_table.append((float(deltad), float(fwhm)))
+            lns_table.append((float(val), float(fwhm)))
             if np.isfinite(fwhm) and fwhm < best_fwhm:
                 best_fwhm = fwhm
-                linesearch_result = result
-                linesearch_deltad = float(deltad)
+                lns_result = result
+                lns_value = float(val)
 
         # Step 4 – binning at the two reference points for overlay comparison
         original_kwargs = dict(base_kwargs)
-        original_kwargs["DeltaD"] = float(original_deltad)
-        original_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **original_kwargs)
+        original_kwargs[target] = float(org_value)
+        org_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **original_kwargs)
 
         lstsq_kwargs = dict(base_kwargs)
-        lstsq_kwargs["DeltaD"] = float(lstsq_deltad)
-        lstsq_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **lstsq_kwargs)
+        lstsq_kwargs[target] = float(lsq_value)
+        lsq_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **lstsq_kwargs)
 
-        return (
-            linesearch_table,
-            linesearch_result,
-            linesearch_deltad,
-            original_deltad,
-            original_result,
-            lstsq_deltad,
-            lstsq_result,
-        )
+        return {
+            "target": target,
+            "lns_table": lns_table,
+            "lns_result": lns_result,
+            "lns_value": lns_value,
+            "org_value": org_value,
+            "org_result": org_result,
+            "lsq_value": lsq_value,
+            "lsq_result": lsq_result,
+        }
 
     def __len__(self):
         return len(self.fnames)
