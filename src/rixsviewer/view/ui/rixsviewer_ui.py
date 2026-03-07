@@ -56,50 +56,6 @@ class Ui_MainWindow(object):
         self.gridLayout = QGridLayout(self.groupBox)
         self.gridLayout.setObjectName(u"gridLayout")
         self.gridLayout.setContentsMargins(0, 0, 0, 0)
-        self.label = QLabel(self.groupBox)
-        self.label.setObjectName(u"label")
-        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        sizePolicy1.setHorizontalStretch(0)
-        sizePolicy1.setVerticalStretch(0)
-        sizePolicy1.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
-        self.label.setSizePolicy(sizePolicy1)
-
-        self.gridLayout.addWidget(self.label, 0, 0, 1, 1)
-
-        self.lineEdit_specfilename = QLineEdit(self.groupBox)
-        self.lineEdit_specfilename.setObjectName(u"lineEdit_specfilename")
-        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        sizePolicy2.setHorizontalStretch(0)
-        sizePolicy2.setVerticalStretch(0)
-        sizePolicy2.setHeightForWidth(self.lineEdit_specfilename.sizePolicy().hasHeightForWidth())
-        self.lineEdit_specfilename.setSizePolicy(sizePolicy2)
-
-        self.gridLayout.addWidget(self.lineEdit_specfilename, 0, 1, 1, 1)
-
-        self.toolButton_load_specfile = QToolButton(self.groupBox)
-        self.toolButton_load_specfile.setObjectName(u"toolButton_load_specfile")
-
-        self.gridLayout.addWidget(self.toolButton_load_specfile, 0, 2, 1, 1)
-
-        self.label_3 = QLabel(self.groupBox)
-        self.label_3.setObjectName(u"label_3")
-        sizePolicy1.setHeightForWidth(self.label_3.sizePolicy().hasHeightForWidth())
-        self.label_3.setSizePolicy(sizePolicy1)
-
-        self.gridLayout.addWidget(self.label_3, 1, 0, 1, 1)
-
-        self.lineEdit = QLineEdit(self.groupBox)
-        self.lineEdit.setObjectName(u"lineEdit")
-        sizePolicy2.setHeightForWidth(self.lineEdit.sizePolicy().hasHeightForWidth())
-        self.lineEdit.setSizePolicy(sizePolicy2)
-
-        self.gridLayout.addWidget(self.lineEdit, 1, 1, 1, 1)
-
-        self.toolButton_set_tifffolder = QToolButton(self.groupBox)
-        self.toolButton_set_tifffolder.setObjectName(u"toolButton_set_tifffolder")
-
-        self.gridLayout.addWidget(self.toolButton_set_tifffolder, 1, 2, 1, 1)
-
         self.tableView_scan = QTableView(self.groupBox)
         self.tableView_scan.setObjectName(u"tableView_scan")
         sizePolicy.setHeightForWidth(self.tableView_scan.sizePolicy().hasHeightForWidth())
@@ -113,8 +69,11 @@ class Ui_MainWindow(object):
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
         self.pushButton_load_scan = QPushButton(self.groupBox)
         self.pushButton_load_scan.setObjectName(u"pushButton_load_scan")
-        sizePolicy2.setHeightForWidth(self.pushButton_load_scan.sizePolicy().hasHeightForWidth())
-        self.pushButton_load_scan.setSizePolicy(sizePolicy2)
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        sizePolicy1.setHorizontalStretch(0)
+        sizePolicy1.setVerticalStretch(0)
+        sizePolicy1.setHeightForWidth(self.pushButton_load_scan.sizePolicy().hasHeightForWidth())
+        self.pushButton_load_scan.setSizePolicy(sizePolicy1)
         self.pushButton_load_scan.setMinimumSize(QSize(30, 0))
         self.pushButton_load_scan.setMaximumSize(QSize(16777215, 16777215))
 
@@ -127,6 +86,47 @@ class Ui_MainWindow(object):
 
 
         self.gridLayout.addLayout(self.horizontalLayout_2, 2, 0, 1, 3)
+
+        self.toolButton_set_tifffolder = QToolButton(self.groupBox)
+        self.toolButton_set_tifffolder.setObjectName(u"toolButton_set_tifffolder")
+
+        self.gridLayout.addWidget(self.toolButton_set_tifffolder, 1, 2, 1, 1)
+
+        self.lineEdit_specfilename = QLineEdit(self.groupBox)
+        self.lineEdit_specfilename.setObjectName(u"lineEdit_specfilename")
+        sizePolicy1.setHeightForWidth(self.lineEdit_specfilename.sizePolicy().hasHeightForWidth())
+        self.lineEdit_specfilename.setSizePolicy(sizePolicy1)
+
+        self.gridLayout.addWidget(self.lineEdit_specfilename, 0, 1, 1, 1)
+
+        self.label = QLabel(self.groupBox)
+        self.label.setObjectName(u"label")
+        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        sizePolicy2.setHorizontalStretch(0)
+        sizePolicy2.setVerticalStretch(0)
+        sizePolicy2.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
+        self.label.setSizePolicy(sizePolicy2)
+
+        self.gridLayout.addWidget(self.label, 0, 0, 1, 1)
+
+        self.lineEdit = QLineEdit(self.groupBox)
+        self.lineEdit.setObjectName(u"lineEdit")
+        sizePolicy1.setHeightForWidth(self.lineEdit.sizePolicy().hasHeightForWidth())
+        self.lineEdit.setSizePolicy(sizePolicy1)
+
+        self.gridLayout.addWidget(self.lineEdit, 1, 1, 1, 1)
+
+        self.label_3 = QLabel(self.groupBox)
+        self.label_3.setObjectName(u"label_3")
+        sizePolicy2.setHeightForWidth(self.label_3.sizePolicy().hasHeightForWidth())
+        self.label_3.setSizePolicy(sizePolicy2)
+
+        self.gridLayout.addWidget(self.label_3, 1, 0, 1, 1)
+
+        self.toolButton_load_specfile = QToolButton(self.groupBox)
+        self.toolButton_load_specfile.setObjectName(u"toolButton_load_specfile")
+
+        self.gridLayout.addWidget(self.toolButton_load_specfile, 0, 2, 1, 1)
 
         self.splitter_2.addWidget(self.groupBox)
         self.groupBox_2 = QGroupBox(self.splitter_2)
@@ -256,6 +256,7 @@ class Ui_MainWindow(object):
         self.tab_2.setObjectName(u"tab_2")
         self.gridLayout_4 = QGridLayout(self.tab_2)
         self.gridLayout_4.setObjectName(u"gridLayout_4")
+        self.gridLayout_4.setContentsMargins(1, 1, 1, 1)
         self.widget_binhdl = GraphicsLayoutWidget(self.tab_2)
         self.widget_binhdl.setObjectName(u"widget_binhdl")
         sizePolicy5.setHeightForWidth(self.widget_binhdl.sizePolicy().hasHeightForWidth())
@@ -270,8 +271,8 @@ class Ui_MainWindow(object):
         self.gridLayout_7.setContentsMargins(1, 1, 1, 1)
         self.label_7 = QLabel(self.groupBox_6)
         self.label_7.setObjectName(u"label_7")
-        sizePolicy1.setHeightForWidth(self.label_7.sizePolicy().hasHeightForWidth())
-        self.label_7.setSizePolicy(sizePolicy1)
+        sizePolicy2.setHeightForWidth(self.label_7.sizePolicy().hasHeightForWidth())
+        self.label_7.setSizePolicy(sizePolicy2)
 
         self.gridLayout_7.addWidget(self.label_7, 0, 2, 1, 1)
 
@@ -306,6 +307,7 @@ class Ui_MainWindow(object):
         self.tab.setObjectName(u"tab")
         self.gridLayout_10 = QGridLayout(self.tab)
         self.gridLayout_10.setObjectName(u"gridLayout_10")
+        self.gridLayout_10.setContentsMargins(1, 1, 1, 1)
         self.widget_calibhdl = GraphicsLayoutWidget(self.tab)
         self.widget_calibhdl.setObjectName(u"widget_calibhdl")
         sizePolicy5.setHeightForWidth(self.widget_calibhdl.sizePolicy().hasHeightForWidth())
@@ -338,11 +340,6 @@ class Ui_MainWindow(object):
 
         self.gridLayout_9.addWidget(self.comboBox_center_method, 0, 5, 1, 1)
 
-        self.checkBox_fit_effective_pixel_size = QCheckBox(self.groupBox_7)
-        self.checkBox_fit_effective_pixel_size.setObjectName(u"checkBox_fit_effective_pixel_size")
-
-        self.gridLayout_9.addWidget(self.checkBox_fit_effective_pixel_size, 0, 0, 1, 1)
-
         self.pushButton_fit_pixel_size = QPushButton(self.groupBox_7)
         self.pushButton_fit_pixel_size.setObjectName(u"pushButton_fit_pixel_size")
 
@@ -357,6 +354,11 @@ class Ui_MainWindow(object):
         self.label_8.setObjectName(u"label_8")
 
         self.gridLayout_9.addWidget(self.label_8, 0, 2, 1, 1)
+
+        self.checkBox_fit_effective_pixel_size = QCheckBox(self.groupBox_7)
+        self.checkBox_fit_effective_pixel_size.setObjectName(u"checkBox_fit_effective_pixel_size")
+
+        self.gridLayout_9.addWidget(self.checkBox_fit_effective_pixel_size, 0, 0, 1, 1)
 
 
         self.gridLayout_10.addWidget(self.groupBox_7, 1, 0, 1, 1)
@@ -396,12 +398,12 @@ class Ui_MainWindow(object):
         self.actionLoad_Spec_file.setText(QCoreApplication.translate("MainWindow", u"Load Spec file", None))
         self.actionSet_Tif_folder.setText(QCoreApplication.translate("MainWindow", u"Set Tif folder", None))
         self.groupBox.setTitle(QCoreApplication.translate("MainWindow", u"Scan List", None))
-        self.label.setText(QCoreApplication.translate("MainWindow", u"SpecFile:", None))
-        self.toolButton_load_specfile.setText(QCoreApplication.translate("MainWindow", u"...", None))
-        self.label_3.setText(QCoreApplication.translate("MainWindow", u"TiffFolder:", None))
-        self.toolButton_set_tifffolder.setText(QCoreApplication.translate("MainWindow", u"...", None))
         self.pushButton_load_scan.setText(QCoreApplication.translate("MainWindow", u"load", None))
         self.checkBox_autoupdate.setText(QCoreApplication.translate("MainWindow", u"AutoUpdate", None))
+        self.toolButton_set_tifffolder.setText(QCoreApplication.translate("MainWindow", u"...", None))
+        self.label.setText(QCoreApplication.translate("MainWindow", u"SpecFile:", None))
+        self.label_3.setText(QCoreApplication.translate("MainWindow", u"TiffFolder:", None))
+        self.toolButton_load_specfile.setText(QCoreApplication.translate("MainWindow", u"...", None))
         self.groupBox_2.setTitle(QCoreApplication.translate("MainWindow", u"Single Scan", None))
         self.groupBox_2d_scattering.setTitle(QCoreApplication.translate("MainWindow", u"2D Images", None))
         self.label_2.setText(QCoreApplication.translate("MainWindow", u"Percentile Enhancement", None))
@@ -410,7 +412,7 @@ class Ui_MainWindow(object):
         self.label_4.setText(QCoreApplication.translate("MainWindow", u"Source:", None))
         self.comboBox_metasource.setItemText(0, QCoreApplication.translate("MainWindow", u"SpecFile", None))
         self.comboBox_metasource.setItemText(1, QCoreApplication.translate("MainWindow", u"PV", None))
-        self.comboBox_metasource.setItemText(2, QCoreApplication.translate("MainWindow", u"GUI", None))
+        self.comboBox_metasource.setItemText(2, QCoreApplication.translate("MainWindow", u"USER", None))
 
         self.pushButton_4.setText(QCoreApplication.translate("MainWindow", u"Save", None))
         self.pushButton_3.setText(QCoreApplication.translate("MainWindow", u"Load", None))
@@ -433,10 +435,10 @@ class Ui_MainWindow(object):
         self.comboBox_center_method.setItemText(1, QCoreApplication.translate("MainWindow", u"centroid", None))
         self.comboBox_center_method.setItemText(2, QCoreApplication.translate("MainWindow", u"argmax", None))
 
-        self.checkBox_fit_effective_pixel_size.setText(QCoreApplication.translate("MainWindow", u"Effective Pixel Size", None))
         self.pushButton_fit_pixel_size.setText(QCoreApplication.translate("MainWindow", u"Calibrate", None))
         self.label_5.setText(QCoreApplication.translate("MainWindow", u"Center Model", None))
         self.label_8.setText(QCoreApplication.translate("MainWindow", u"OptimizeTarget:", None))
+        self.checkBox_fit_effective_pixel_size.setText(QCoreApplication.translate("MainWindow", u"Effective Pixel Size", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab), QCoreApplication.translate("MainWindow", u"Calibration", None))
         self.menuFile.setTitle(QCoreApplication.translate("MainWindow", u"File", None))
     # retranslateUi
