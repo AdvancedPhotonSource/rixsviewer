@@ -10,6 +10,32 @@ from scipy.signal import savgol_filter
 logger = logging.getLogger(__name__)
 
 
+def mask_bad_pixels(data, bad_pixels=None):
+    """Return a copy of *data* with known bad pixels zeroed out.
+
+    Parameters
+    ----------
+    data : ndarray, shape (n_frames, height, width)
+        Raw image stack.  The original array is **not** modified.
+    bad_pixels : list of (int, int) or None
+        Sequence of ``(row, col)`` pixel coordinates to zero out.
+        When *None* the global list in :mod:`bad_pixels` is used.
+
+    Returns
+    -------
+    ndarray
+        return *data* with the specified pixels set to zero.
+    """
+    if bad_pixels is None:
+        from .bad_pixels import BAD_PIXELS
+
+        bad_pixels = BAD_PIXELS
+    if bad_pixels:
+        rows, cols = zip(*bad_pixels)
+        data[:, rows, cols] = 0
+    return data
+
+
 def _gaussian(x_vals, amp, cen, sigma):
     """Normalised Gaussian: amp * exp(-0.5 * ((x - cen) / sigma)^2)."""
     return amp * np.exp(-0.5 * ((x_vals - cen) / sigma) ** 2)

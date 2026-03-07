@@ -9,7 +9,7 @@ import pandas as pd
 import tifffile
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
-from .utils import find_peaks, bin_rixs_data, percentile_clip, fit_pixel_size, apply_subpixel_shear_3d
+from .utils import find_peaks, bin_rixs_data, percentile_clip, fit_pixel_size, apply_subpixel_shear_3d, mask_bad_pixels
 
 logger = logging.getLogger(__name__)
 
@@ -801,8 +801,7 @@ class RixsScanTiffDataset:
         disk; previously loaded frames stored in :attr:`_data` are
         preserved and the new frames are concatenated.
 
-        Two known bad pixels are zeroed out after loading:
-        ``(101, 147)`` and ``(98, 170)``.
+        Bad pixels listed in :mod:`bad_pixels` are zeroed out after loading.
 
         Returns
         -------
@@ -816,10 +815,7 @@ class RixsScanTiffDataset:
             for fname in self.unloaded_filenames:
                 data.append(tifffile.imread(fname))
             data = np.array(data).astype(np.float32)
-            # deal with bad pixels;
-            data[:, 101, 147] = 0
-            data[:, 98, 170] = 0
-            data[:, 234, 156] = 0
+            data = mask_bad_pixels(data)
             if self._data is None:
                 self._data = data
             else:
