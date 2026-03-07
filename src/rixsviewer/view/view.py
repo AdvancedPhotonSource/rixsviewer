@@ -130,7 +130,6 @@ class RixsView:
         linesearch_table = ls["lns_table"]
         best_deltad = ls["lns_value"]
         original_deltad = ls["org_value"]
-        lstsq_deltad = ls["lsq_value"]
         hdl = self.linesearch_hdl
         hdl.clear()
 
@@ -173,9 +172,6 @@ class RixsView:
         if original_deltad is not None:
             _vline(original_deltad, (127, 127, 127), "original", 0.70)
 
-        if lstsq_deltad is not None:
-            _vline(lstsq_deltad, (255, 127, 14), "lstsq", 0.78)
-
         if best_deltad is not None:
             _vline(best_deltad, (214, 39, 40), "linesearch", 0.86)
 
@@ -198,11 +194,9 @@ class RixsView:
         ls : dict
             Result dict returned by
             :meth:`~specfile_reader.RixsScanTiffDataset.linesearch_pixel_size`.
-            Expected keys: ``org_result``, ``lsq_result``,
-            ``lns_result``.
+            Expected keys: ``org_result``, ``lns_result``.
         """
         original_result = ls["org_result"]
-        lstsq_result = ls["lsq_result"]
         linesearch_result = ls["lns_result"]
         hdl = self.calib_hdl
         hdl.clear()
@@ -213,7 +207,6 @@ class RixsView:
         # (color, result, label) — same palette as the linesearch markers
         layers = [
             ((127, 127, 127), original_result, "original"),
-            ((255, 127, 14), lstsq_result, "lstsq"),
             ((214, 39, 40), linesearch_result, "linesearch"),
         ]
 

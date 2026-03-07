@@ -753,7 +753,6 @@ class RixsScanTiffDataset:
         lns_value = lsq_value
 
         for val in val_list:
-            print(f"Sweeping {target} to {val}")
             sweep_kwargs = dict(base_kwargs)
             sweep_kwargs[target] = float(val)
             result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **sweep_kwargs)
@@ -764,14 +763,10 @@ class RixsScanTiffDataset:
                 lns_result = result
                 lns_value = float(val)
 
-        # Step 4 – binning at the two reference points for overlay comparison
+        # Step 4 – binning at the reference point for overlay comparison
         original_kwargs = dict(base_kwargs)
         original_kwargs[target] = float(org_value)
         org_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **original_kwargs)
-
-        lstsq_kwargs = dict(base_kwargs)
-        lstsq_kwargs[target] = float(lsq_value)
-        lsq_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **lstsq_kwargs)
 
         return {
             "target": target,
@@ -780,8 +775,6 @@ class RixsScanTiffDataset:
             "lns_value": lns_value,
             "org_value": org_value,
             "org_result": org_result,
-            "lsq_value": lsq_value,
-            "lsq_result": lsq_result,
         }
 
     def __len__(self):

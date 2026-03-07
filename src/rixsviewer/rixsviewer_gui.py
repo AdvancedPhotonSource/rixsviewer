@@ -186,9 +186,8 @@ class RixsViewerGUI(QMainWindow):
                 self,
                 f"Update {opt_target} Parameter",
                 (
-                    f"original  {opt_target} : {ls['org_value']:.6f} {unit}\n"
-                    f"lstsq     {opt_target} : {ls['lsq_value']:.6f} {unit}\n"
-                    f"linesearch {opt_target}: {ls['lns_value']:.6f} {unit}\n\n"
+                    f"original  {opt_target}: {ls['org_value']:.6f} {unit}\n"
+                    f"optimized {opt_target}: {ls['lns_value']:.6f} {unit}\n\n"
                     "Apply the line-search best value?"
                 ),
                 QMessageBox.Yes | QMessageBox.No,

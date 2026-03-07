@@ -25,7 +25,6 @@ def apply_subpixel_shear_3d(arr3d, ylow, yhigh, theta_deg, order=1):
     - theta_deg: Angle in degrees
     - order: Interpolation order (1 for linear, 3 for cubic)
     """
-    logger.info(f"Applying subpixel shearing to rows {ylow} to {yhigh} with angle {theta_deg} degrees")
     if abs(theta_deg) < 1e-3:
         return arr3d
     theta = np.deg2rad(theta_deg)
