@@ -214,3 +214,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Documentation build artifacts
+site/
+_build/
+docs/build/
+.doxygen/
