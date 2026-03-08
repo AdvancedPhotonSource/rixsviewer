@@ -45,11 +45,23 @@ def apply_subpixel_shear_3d(arr3d, ylow, yhigh, theta_deg, order=1):
     """
     Applies subpixel shearing to a specific row range across all frames in a 3D array.
 
-    Parameters:
-    - arr3d: 3d numpy array (N_frames, height, width)
-    - ylow, yhigh: The range of rows to shear
-    - theta_deg: Angle in degrees
-    - order: Interpolation order (1 for linear, 3 for cubic)
+    Parameters
+    ----------
+    arr3d : ndarray
+        3d numpy array (N_frames, height, width)
+    ylow : int
+        The lower bound of rows to shear
+    yhigh : int
+        The upper bound of rows to shear
+    theta_deg : float
+        Angle in degrees
+    order : int, optional
+        Interpolation order (1 for linear, 3 for cubic)
+
+    Returns
+    -------
+    ndarray
+        The sheared 3D array.
     """
     if abs(theta_deg) < 1e-3:
         return arr3d
@@ -104,11 +116,16 @@ def plot_peak_debug(x, centers, num_samples=5, row_indices=None):
     """
     Plots individual row profiles and marks the detected peak centers.
 
-    Parameters:
-    - x: The original 2D numpy array (m, n).
-    - centers: The 1D array of calculated centers (m,).
-    - num_samples: How many random rows to plot if row_indices is None.
-    - row_indices: A list of specific row indices to inspect (e.g., [0, 10, 50]).
+    Parameters
+    ----------
+    x : ndarray
+        The original 2D numpy array (m, n).
+    centers : ndarray
+        The 1D array of calculated centers (m,).
+    num_samples : int, optional
+        How many random rows to plot if row_indices is None.
+    row_indices : list of int, optional
+        A list of specific row indices to inspect (e.g., [0, 10, 50]).
     """
     m, n = x.shape
     indices = np.arange(n)
@@ -145,10 +162,23 @@ def find_peaks(x, method="centroid", smooth_window=None, poly_order=2):
     """
     Finds peak centers for each row in a 2D array.
 
-    Methods:
-    - 'argmax': Fast, integer precision.
-    - 'centroid': Sub-pixel precision, weighted average.
-    - 'gaussian': Highest precision, fits a curve (slowest).
+    Parameters
+    ----------
+    x : ndarray
+        The 2D array of data.
+    method : {'argmax', 'centroid', 'gaussian'}, optional
+        - 'argmax': Fast, integer precision.
+        - 'centroid': Sub-pixel precision, weighted average.
+        - 'gaussian': Highest precision, fits a curve (slowest).
+    smooth_window : int, optional
+        Window length for Savitzky-Golay filter.
+    poly_order : int, optional
+        Polynomial order for Savitzky-Golay filter.
+
+    Returns
+    -------
+    tuple of (ndarray, ndarray)
+        `centers` (1D array of centers) and `valid_mask` (boolean array of valid rows).
     """
     x = np.array(x).astype(np.float32)
     m, n = x.shape
@@ -235,13 +265,20 @@ def _preprocess_frames(data, Ylow, Yhigh, RefL):
     Parameters
     ----------
     data : ndarray, shape (n_frames, height, width)
-    Ylow, Yhigh : int  — inclusive/exclusive row bounds
-    RefL : int         — reference pixel (elastic peak channel)
+        Raw 3D image stack
+    Ylow : int
+        Inclusive lower row bound
+    Yhigh : int
+        Exclusive upper row bound
+    RefL : int
+        Reference pixel (elastic peak channel)
 
     Returns
     -------
     data_1d : ndarray, shape (n_frames, width)
-    xaxis : ndarray, shape (width,)  — pixel offset from elastic peak
+        ROI sum per frame
+    xaxis : ndarray, shape (width,)
+        Pixel offset from elastic peak
     """
     shape = data.shape
     assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, "check Ylow and Yhigh and detector shape"
@@ -275,15 +312,27 @@ def fit_pixel_size(
     Parameters
     ----------
     data : ndarray, shape (n_frames, height, width)
-    merixE : array-like, shape (n_frames,)  — incident energy per frame (keV)
+        The 3D data array.
+    merixE : array-like, shape (n_frames,)
+        Incident energy per frame (keV).
     scan_type : {'EnergyScan', 'SnapshotScan'}
-    DeltaD : float   — nominal pixel pitch (mm). Default ``0.022``.
-    RefL : int       — reference pixel (elastic peak). Default ``70``.
-    Eb : float       — backscattering energy (keV). Default ``10``.
-    rowland_radius : float  — Rowland radius (mm). Default ``1900``.
-    Ylow, Yhigh : int  — row-summation bounds. Default ``0``, ``256``.
-    center_method : str  — peak-finding method. Default ``'gaussian'``.
-    **kwargs : silently ignored (allows metadata dicts to be forwarded).
+        Type of scan.
+    DeltaD : float, optional
+        Nominal pixel pitch (mm). Default ``0.022``.
+    RefL : int, optional
+        Reference pixel (elastic peak). Default ``70``.
+    Eb : float, optional
+        Backscattering energy (keV). Default ``10``.
+    rowland_radius : float, optional
+        Rowland radius (mm). Default ``1900``.
+    Ylow : int, optional
+        Lower row-summation bound. Default ``0``.
+    Yhigh : int, optional
+        Upper row-summation bound. Default ``256``.
+    center_method : str, optional
+        Peak-finding method. Default ``'gaussian'``.
+    **kwargs
+        Silently ignored (allows metadata dicts to be forwarded).
 
     Returns
     -------
@@ -319,18 +368,28 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, 
     Parameters
     ----------
     data_2d : ndarray, shape (n_frames, width)
-    xaxis   : ndarray, shape (width,)
-    merixE  : ndarray, shape (n_frames,)  — incident energy per frame (keV)
-    Eb      : float  — analyser backscattering energy (keV)
-    rowland_radius : float  — Rowland circle radius (mm)
-    scan_type      : str   — ``'EnergyScan'`` or ``'SnapshotScan'``
-    DeltaD         : float — nominal pixel pitch (mm)
+        The 2D data summed along the ROI.
+    xaxis : ndarray, shape (width,)
+        Pixel offset axis.
+    merixE : ndarray, shape (n_frames,)
+        Incident energy per frame (keV).
+    Eb : float
+        Analyser backscattering energy (keV).
+    rowland_radius : float
+        Rowland circle radius (mm).
+    scan_type : str
+        ``'EnergyScan'`` or ``'SnapshotScan'``.
+    DeltaD : float
+        Nominal pixel pitch (mm).
 
     Returns
     -------
-    lines           : list of [ndarray, ndarray]  — per-frame [E, I] pairs
-    bin_energy_axis : ndarray  — common energy grid
-    bin_data        : ndarray, shape (n_frames, n_bins)
+    lines : list of [ndarray, ndarray]
+        Per-frame [E, I] pairs.
+    bin_energy_axis : ndarray
+        Common energy grid.
+    bin_data : ndarray, shape (n_frames, n_bins)
+        Binned intensity frame data.
     """
     n = data_2d.shape[0]
     assert merixE.shape[0] == n, "merixE and data must have the same number of frames"
@@ -528,20 +587,42 @@ def bin_rixs_data(
     Parameters
     ----------
     data : ndarray, shape (n_frames, height, width)
-    merixE : array-like, shape (n_frames,)  — incident energy per frame (keV)
+        The input 3D image stack.
+    merixE : array-like, shape (n_frames,)
+        Incident energy per frame (keV).
     scan_type : {'EnergyScan', 'SnapshotScan'}
-    DeltaD : float   — nominal pixel pitch (mm). Default ``0.022``.
-    RefL : int       — reference pixel (elastic peak). Default ``70``.
-    Eb : float       — backscattering energy (keV). Default ``10``.
-    rowland_radius : float  — Rowland radius (mm). Default ``1900``.
-    Ylow, Yhigh : int  — row-summation bounds. Default ``0``, ``256``.
-    noise_model : {'poisson', 'gaussian'}. Default ``'poisson'``.
-    **kwargs : silently ignored (allows metadata dicts to be forwarded).
+        Determine the type of scan.
+    DeltaD : float, optional
+        Nominal pixel pitch (mm). Default ``0.022``.
+    RefL : int, optional
+        Reference pixel (elastic peak). Default ``70``.
+    Eb : float, optional
+        Backscattering energy (keV). Default ``10``.
+    rowland_radius : float, optional
+        Rowland radius (mm). Default ``1900``.
+    Ylow : int, optional
+        Lower row-summation bounds. Default ``0``.
+    Yhigh : int, optional
+        Upper row-summation bounds. Default ``256``.
+    noise_model : {'poisson', 'gaussian'}, optional
+        Specify the noise model method. Default ``'poisson'``.
+    bin_pixel : int, optional
+        Number of pixels to bin.
+    compute_fwhm : bool, optional
+        Compute Full Width at Half Max.
+    TiltAngle : float, optional
+        Tilt angle. Default ``0``.
+    TiltOrder : int, optional
+        Tilt order. Default ``1``.
+    **kwargs
+        Silently ignored (allows metadata dicts to be forwarded).
 
     Returns
     -------
-    dict with keys ``rawdata_lines``, ``binned_line``, ``DeltaD``,
-    ``summed_data``, ``levels``.
+    dict
+        Dictionary containing keys: ``rawdata_lines``, ``binned_line``, ``DeltaD``,
+        ``summed_data``, ``levels``, ``fwhm``, ``center``, ``energy_resolution``,
+        ``tot_signal``, ``tot_counts``.
     """
     merixE = np.asarray(merixE, dtype=float)
 

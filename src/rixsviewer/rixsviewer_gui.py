@@ -21,7 +21,24 @@ logger = logging.getLogger(__name__)
 
 
 class RixsViewerGUI(QMainWindow):
+    """
+    Main GUI class for the RIXS Viewer application.
+
+    This class manages the main window, connects UI elements to actions,
+    and coordinates between the model and view.
+    """
+
     def __init__(self, spec_filename=None, tiff_folder=None):
+        """
+        Initialize the RixsViewerGUI.
+
+        Parameters
+        ----------
+        spec_filename : str, optional
+            Path to the initial SPEC file to load.
+        tiff_folder : str, optional
+            Path to the folder containing TIFF images.
+        """
         super().__init__()
 
         # Set up the UI
@@ -83,6 +100,11 @@ class RixsViewerGUI(QMainWindow):
         return
 
     def update_spec_record(self):
+        """
+        Check for updates in the spec file and process them.
+
+        This method is called periodically by the timer when auto-update is enabled.
+        """
         if self.scan_model is not None:
             self.scan_model.process_spec_file()
             self.process_binning()
@@ -118,17 +140,36 @@ class RixsViewerGUI(QMainWindow):
     # ------------------------------------------------------------------
 
     def _put_param(self, name, value):
-        """Update one parameter in the model and reflect the new value in the
-        parameter-tree widget.  This is the only place in the controller that
-        should write a single named value to both M and V."""
+        """
+        Update one parameter in the model and reflect the new value in the UI.
+
+        This is the only place in the controller that should write a single
+        named value to both the model and the parameter-tree widget.
+
+        Parameters
+        ----------
+        name : str
+            The name of the parameter to update.
+        value : any
+            The new value for the parameter.
+        """
         self.binning_model.put_single_parameter(name, value)
         param = self.params.child(name)
         if param is not None:
             param.setValue(value)
 
     def _put_params(self, kwargs):
-        """Bulk version of :meth:`_put_param` — update all key/value pairs in
-        *kwargs* in both the model and the parameter-tree widget."""
+        """
+        Bulk version of `_put_param` to update multiple parameters.
+
+        Updates all key/value pairs in `kwargs` in both the model and the
+        parameter-tree widget.
+
+        Parameters
+        ----------
+        kwargs : dict
+            A dictionary of parameter names and their new values.
+        """
         for name, value in kwargs.items():
             self._put_param(name, value)
 
@@ -152,6 +193,12 @@ class RixsViewerGUI(QMainWindow):
             return self.binning_model.get_kwargs()
 
     def calibrate_parameters(self):
+        """
+        Fit pixel size and optical parameters using a line search.
+
+        This method retrieves parameters, performs a line search to optimize them,
+        and plots the results. It requires the current scan to be an EnergyScan.
+        """
         if self.current_rixs_dset is None:
             return
         if self.current_rixs_dset.scan_info["scan_type"] != "EnergyScan":
@@ -207,11 +254,20 @@ class RixsViewerGUI(QMainWindow):
                 self.update_image()
 
     def save_bin_results(self):
+        """
+        Save the binned results to the specified save filename.
+        """
         if self.current_rixs_dset is None or self.current_rixs_dset.bin_result is None:
             return
         self.current_rixs_dset.save_to_file(self.save_filename)
 
     def process_binning(self):
+        """
+        Process the binning of the current dataset and display the result.
+
+        This method reads binning parameters, applies the binning logic,
+        and plots the resulting data.
+        """
         if self.current_rixs_dset is None:
             return
 
@@ -265,7 +321,9 @@ class RixsViewerGUI(QMainWindow):
             self.ui.lineEdit.setText(folder_path)
 
     def setup_scan_table(self):
-        """Set up the scan table with the RixsScanListTable model"""
+        """
+        Set up the scan table with the RixsSpecTable model.
+        """
         if self.tiff_folder is None or self.spec_filename is None:
             return
         if not Path(self.tiff_folder).is_dir:
@@ -326,6 +384,15 @@ class RixsViewerGUI(QMainWindow):
         self.update_image(frame_index=-2)
 
     def update_image(self, frame_index=-2):
+        """
+        Update the main image view with a specific frame.
+
+        Parameters
+        ----------
+        frame_index : int, optional
+            The index of the frame to display. Default is -2, which plots
+            the middle frame. Use -1 for the last frame.
+        """
         # frame_index = -2 will plot the middle frame
         # frame_index = -1 will plot the last frame
         if self.current_rixs_dset is None:
@@ -360,6 +427,14 @@ class RixsViewerGUI(QMainWindow):
             self._put_params(frame_info["frame_metadata"])
 
     def closeEvent(self, event):
+        """
+        Handle the close event.
+
+        Parameters
+        ----------
+        event : PySide6.QtGui.QCloseEvent
+            The close event object.
+        """
         self.timer.stop()
         return super().closeEvent(event)
 
