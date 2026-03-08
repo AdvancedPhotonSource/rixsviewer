@@ -1,3 +1,4 @@
+import numpy as np
 import pyqtgraph as pg
 from PySide6.QtWidgets import QMessageBox
 
@@ -40,27 +41,72 @@ class RixsView:
     # ------------------------------------------------------------------
 
     def setup_image_handler(self):
-        plot = self.ui.widget_img.addPlot(row=0, col=0)
-        plot.setLabel("bottom", "Energy bin")
-        plot.setLabel("left", "Position (pixel)")
-        # Optional: grid and aspect ratio
-        # plot.showGrid(x=True, y=True)
-        plot.getViewBox().setAspectLocked(False)
+        # ── left projection: horizontal sum → intensity vs row ─────────────
+        left = self.ui.widget_img.addPlot(row=0, col=0)
+        left.setMaximumWidth(120)
+        # left.setLabel("bottom", "Counts")
+        left.setLabel("left", "Position (pixel)")
+        left.invertY(True)  # row 0 at top, matching image orientation
+        left.showAxis("top")
+        left.showAxis("right")
+        left.getAxis("top").setStyle(showValues=False)
+        left.getAxis("right").setStyle(showValues=False)
+        left.getAxis("bottom").setStyle(showValues=False)
+        self._proj_right_hdl = left
+        self._proj_right_curve = left.plot(pen=pg.mkPen(color=(214, 39, 40), width=1))
+
+        # ── main image plot (row 0, col 1) ────────────────────────────────
+        plot = self.ui.widget_img.addPlot(row=0, col=1)
+        vb = plot.getViewBox()
+        vb.setAspectLocked(False)
+        vb.setDefaultPadding(0)  # no margin — image fills the plot area
         plot.invertY(True)  # row 0 at top; Y axis increases downward
+        plot.showAxis("top")
+        plot.showAxis("right")
+        plot.getAxis("bottom").setStyle(showValues=False)
+        plot.getAxis("left").setStyle(showValues=False)
+        plot.getAxis("top").setStyle(showValues=False)
+        plot.getAxis("right").setStyle(showValues=False)
         self._img_plot = plot
 
-        # --- Add the ImageItem ---
         self.img2d_hdl = pg.ImageItem(axisOrder="row-major")
         plot.addItem(self.img2d_hdl)
 
-        # Optional: colorbar
+        # ── colorbar histogram (row 0, col 2) ─────────────────────────────
         hist = pg.HistogramLUTItem()
         hist.setImageItem(self.img2d_hdl)
-        self.ui.widget_img.addItem(hist, row=0, col=1)
-        # Optional: apply a matplotlib colormap
+        self.ui.widget_img.addItem(hist, row=0, col=2, rowspan=2)
         cmap = pg.colormap.getFromMatplotlib("viridis")
         self.img2d_hdl.setLookupTable(cmap.getLookupTable())
         hist.gradient.setColorMap(cmap)
+
+        # ── bottom projection: vertical sum → intensity vs column ──────────
+        bot = self.ui.widget_img.addPlot(row=1, col=1)
+        bot.setMaximumHeight(120)
+        bot.setLabel("bottom", "Energy bin")
+        # bot.setLabel("left", "Counts")
+        bot.showAxis("top")
+        bot.showAxis("right")
+        bot.getAxis("top").setStyle(showValues=False)
+        bot.getAxis("right").setStyle(showValues=False)
+        bot.getAxis("left").setStyle(showValues=False)
+        bot.setXLink(plot)  # shares x-axis with image
+        self._proj_bot_hdl = bot
+        self._proj_bot_curve = bot.plot(pen=pg.mkPen(color=(31, 119, 180), width=1))
+
+        # link left-panel y-axis to image AFTER both plots exist
+        left.setYLink(plot)
+
+        # stretch factors: image column gets all available space
+        layout = self.ui.widget_img.ci.layout
+        layout.setColumnStretchFactor(0, 0)  # left proj
+        layout.setColumnStretchFactor(1, 1)  # image
+        layout.setColumnStretchFactor(2, 0)  # colorbar
+        layout.setRowStretchFactor(0, 1)
+        layout.setRowStretchFactor(1, 0)
+        # collapse all gaps between cells
+        layout.setSpacing(0)
+        layout.setContentsMargins(0, 0, 0, 0)
 
     def init_plot_hdl(self):
         self.plot_hdl = self.ui.widget_binhdl.addPlot()
@@ -142,8 +188,8 @@ class RixsView:
             ``org_value``, ``lsq_value``.
         """
         linesearch_table = ls["lns_table"]
-        best_deltad = ls["lns_value"]
-        original_deltad = ls["org_value"]
+        best_value = ls["lns_value"]
+        original_value = ls["org_value"]
         hdl = self.linesearch_hdl
         self._clear_plot(hdl)
 
@@ -183,15 +229,15 @@ class RixsView:
             swatch = pg.PlotDataItem(pen=pg.mkPen(color=color, width=2))
             legend.addItem(swatch, legend_label)
 
-        if original_deltad is not None:
-            _vline(original_deltad, (127, 127, 127), "original", 0.70)
+        if original_value is not None:
+            _vline(original_value, (127, 127, 127), "original", 0.70)
 
-        if best_deltad is not None:
-            _vline(best_deltad, (214, 39, 40), "linesearch", 0.86)
+        if best_value is not None:
+            _vline(best_value, (214, 39, 40), "linesearch", 0.86)
 
         hdl.setLabel("bottom", "DeltaD (mm)")
         hdl.setLabel("left", "FWHM (keV)")
-        hdl.setTitle("Pixel-size line search")
+        hdl.setTitle(f"{ls["target"]} line search")
 
     def plot_calib_overlay(self, ls):
         """Overlay three calibration spectra on ``calib_hdl``.
@@ -269,10 +315,30 @@ class RixsView:
         """
         self.ui.horizontalSlider_frame_index.setRange(0, num_frames - 1)
         self.img2d_hdl.setImage(data, levels=levels)
+        self._update_projections(data)
         self._update_roi(data.shape, binning_kwargs)
         self.ui.groupBox_2d_scattering.setTitle(
             f"2D Scattering: [Scan: {scan_index}, Frame: {frame_index+1}/{num_frames}]"
         )
+
+    def _update_projections(self, data):
+        """Replot the marginal-sum projections for *data* (2-D frame).
+
+        Parameters
+        ----------
+        data : ndarray, shape (rows, cols)
+            The currently displayed detector frame.
+        """
+        rows, cols = data.shape
+        col_indices = np.arange(cols)
+        row_indices = np.arange(rows)
+
+        col_sum = data.sum(axis=0)  # shape (cols,)  — vertical integration
+        row_sum = data.sum(axis=1)  # shape (rows,)  — horizontal integration
+
+        self._proj_bot_curve.setData(col_indices, col_sum)
+        # right panel: plot row_sum on x, row index on y to align with image
+        self._proj_right_curve.setData(row_sum, row_indices)
 
     # ------------------------------------------------------------------
     # ROI helpers
