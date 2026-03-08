@@ -33,6 +33,7 @@ class RixsViewerGUI(QMainWindow):
 
         self.tiff_folder = tiff_folder
         self.spec_filename = spec_filename
+        self.save_filename = None
 
         if tiff_folder:
             self.ui.lineEdit.setText(self.tiff_folder)
@@ -45,6 +46,7 @@ class RixsViewerGUI(QMainWindow):
         self.ui.pushButton_load_scan.clicked.connect(self.setup_scan_table)
         self.view = RixsView(self.ui)
         self.ui.pushButton_process.clicked.connect(self.process_binning)
+        self.ui.pushButton_save.clicked.connect(self.save_bin_results)
         self.ui.pushButton_fit_pixel_size.clicked.connect(self.calibrate_parameters)
         self.ui.comboBox_metasource.currentIndexChanged.connect(self.update_meta_source)
         self.ui.horizontalSlider_frame_index.valueChanged.connect(self.update_image)
@@ -193,17 +195,21 @@ class RixsViewerGUI(QMainWindow):
                 QMessageBox.Yes | QMessageBox.No,
             )
             meta_source = self.ui.comboBox_metasource.currentText()
-            if meta_source != "USER":
-                QMessageBox.critical(
-                    self, "Error", f"Overriding metadata entry [{opt_target}] only supported in `USER` mode."
-                )
-                return
-
             if reply == QMessageBox.Yes:
+                if meta_source != "USER":
+                    QMessageBox.critical(
+                        self, "Error", f"Overriding metadata entry [{opt_target}] only supported in `USER` mode."
+                    )
+                    return
                 self._put_param(opt_target, ls["lns_value"])
             if opt_target == "TiltAngle":
                 # update image to reflect the tilt angle change
                 self.update_image()
+
+    def save_bin_results(self):
+        if self.current_rixs_dset is None or self.current_rixs_dset.bin_result is None:
+            return
+        self.current_rixs_dset.save_to_file(self.save_filename)
 
     def process_binning(self):
         if self.current_rixs_dset is None:
@@ -271,7 +277,7 @@ class RixsViewerGUI(QMainWindow):
 
         logger.info(f"Loading spec and tiff: {self.spec_filename}, {self.tiff_folder}")
         try:
-            scan_model = RixsSpecTable(self.spec_filename, self.tiff_folder)
+            scan_model = RixsSpecTable(self.spec_filename, self.tiff_folder, self.save_filename)
         except Exception as e:
             traceback.print_exc()
             logger.error(f"Error loading SPEC file: {e}")
@@ -281,6 +287,10 @@ class RixsViewerGUI(QMainWindow):
                 f"Failed to load SPEC file:\n{e}",
             )
             return
+
+        p = Path(self.spec_filename)
+        self.save_filename = p.with_name(f"{p.stem}_bindata_rixsviewer.spec")
+        logger.info(f"saveing bined results to {self.save_filename}")
 
         # Connect the model to the tableView_scan
         self.ui.tableView_scan.setModel(scan_model)

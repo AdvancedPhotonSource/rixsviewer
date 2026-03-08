@@ -271,7 +271,7 @@ class RixsSpecTable(QAbstractTableModel):
         Parent object passed to :class:`QAbstractTableModel`.
     """
 
-    def __init__(self, fname, tif_folder, parent=None):
+    def __init__(self, fname, tif_folder, save_filename, parent=None):
         """
         Initialise the model and perform the first read of the SPEC file.
 
@@ -292,6 +292,7 @@ class RixsSpecTable(QAbstractTableModel):
         self._headers = ["Scan#", "Type", "SpecPoints", "TiffPoints"]
         self.record = {}
         self.last_scan_index = 0
+        self.save_filename = save_filename
         self.last_scan_dset = None
         self.process_spec_file()
 
@@ -345,7 +346,9 @@ class RixsSpecTable(QAbstractTableModel):
                     index_bottom_right = self.index(row, self.columnCount() - 1)
                     self.dataChanged.emit(index_top_left, index_bottom_right)
                 else:
-                    # new scan dataset
+                    # new scan dataset; save the previous scan
+                    if self.last_scan_dset is not None:
+                        self.last_scan_dset.save_to_file(self.save_filename)
                     row = len(self.record)
                     scan_dset = RixsScanTiffDataset(row, self.spec_fname, self.tif_folder, scan_number)
                     scan_dset.update_scan_info(scan_pack)
@@ -454,6 +457,8 @@ class RixsScanTiffDataset:
         self._data = None
         self.unloaded_filenames = []
         self.scan_info = None
+        self.bin_result = None
+        self.bin_kwargs = None
 
     def update_scan_info(self, scan_pack):
         """
@@ -650,7 +655,26 @@ class RixsScanTiffDataset:
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
         data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
-        return bin_rixs_data(data, merixE, scan_type, **merged_kwargs)
+        self.bin_result = bin_rixs_data(data, merixE, scan_type, **merged_kwargs)
+        return self.bin_result
+
+    def save_to_file(self, fname=None):
+        if self.bin_result is None:
+            return
+
+        if fname is None:
+            fname = "./test_rixsviewer_saving.spec"
+
+        res = self.bin_result
+        with open(fname, "a") as f:
+            f.write(f"\n#S {self.scan_index} {self.scan_info["scan_type"]}\n")
+            f.write(f"#D {np.datetime64('now')}\n")
+            f.write(f"#N {5}\n")
+            f.write(f"#L  Energy  Intensity  Error  Signal  Norm\n")
+
+            data = np.column_stack((*res["binned_line"], res["tot_signal"], res["tot_counts"]))
+            np.savetxt(f, data, fmt="%.6e")
+            f.write("\n")
 
     def fit_pixel_size_wrap(
         self,

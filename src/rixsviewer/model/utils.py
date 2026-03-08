@@ -318,7 +318,7 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, 
 
     Parameters
     ----------
-    data_1d : ndarray, shape (n_frames, width)
+    data_2d : ndarray, shape (n_frames, width)
     xaxis   : ndarray, shape (width,)
     merixE  : ndarray, shape (n_frames,)  — incident energy per frame (keV)
     Eb      : float  — analyser backscattering energy (keV)
@@ -363,12 +363,12 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, 
     return lines, bin_energy_axis, np.array(bin_data)
 
 
-def _reduce_frames(bin_energy_axis, bin_data, noise_model, bin_pixel=1):
+def _reduce_frames(energy_axis, bin_data, noise_model, bin_pixel=1):
     """Average aligned frames and estimate per-bin uncertainty.
 
     Parameters
     ----------
-    bin_energy_axis : ndarray, shape (n_bins,)
+    energy_axis : ndarray, shape (n_bins,)
         Energy axis for binning.
     bin_data : ndarray, shape (n_frames, n_bins)
         NaN marks bins with no coverage for a given frame.
@@ -383,28 +383,38 @@ def _reduce_frames(bin_energy_axis, bin_data, noise_model, bin_pixel=1):
     """
     assert noise_model in ("poisson", "gaussian"), "noise_model must be either 'poisson' or 'gaussian'"
 
-    count = np.sum(~np.isnan(bin_data), axis=0)
-    mean = np.nansum(bin_data, axis=0) / np.clip(count, a_min=1, a_max=None)
+    tot_counts = np.sum(~np.isnan(bin_data), axis=0)
+    tot_signal = np.nansum(bin_data, axis=0)
+    norm_data = tot_signal / np.clip(tot_counts, a_min=1, a_max=None)
 
     assert bin_pixel > 0 and isinstance(bin_pixel, int), "bin_pixel must be a positive integer"
     if bin_pixel > 1:
-        n = (len(mean) // bin_pixel) * bin_pixel
+        n = (len(norm_data) // bin_pixel) * bin_pixel
         # Reshape bin_data to (n_frames, n_superbins, bin_pixel) for both branches
         bin_data_3d = bin_data[:, :n].reshape(bin_data.shape[0], -1, bin_pixel)
-        mean = mean[:n].reshape(-1, bin_pixel).sum(axis=1)
-        count = count[:n].reshape(-1, bin_pixel).sum(axis=1)  # total samples per super-bin
-        bin_energy_axis = bin_energy_axis[:n].reshape(-1, bin_pixel).mean(axis=1)
+        norm_data = norm_data[:n].reshape(-1, bin_pixel).sum(axis=1)
+        bin_energy_axis = energy_axis[:n].reshape(-1, bin_pixel).mean(axis=1)
+        # need for mary's legacy code
+        tot_counts = tot_counts[:n].reshape(-1, bin_pixel).sum(axis=1)  # total samples per super-bin
+        tot_signal = tot_signal[:n].reshape(-1, bin_pixel).sum(axis=1)
     else:
         bin_data_3d = bin_data[:, :, np.newaxis]  # (n_frames, n_bins, 1) — trivially grouped
 
     if noise_model == "poisson":
-        err = np.sqrt(mean / np.clip(count, a_min=1, a_max=None))
+        err = np.sqrt(norm_data / np.clip(tot_counts, a_min=1, a_max=None))
     else:
         # Pool all (frame × bin_pixel) samples per super-bin, then standard error of the mean
-        pooled = bin_data_3d.reshape(-1, bin_data_3d.shape[1])  # (n_frames * bin_pixel, n_superbins)
-        err = np.nanstd(pooled, axis=0) / np.sqrt(np.clip(count, a_min=1, a_max=None))
+        # bin_data_3d shape: (n_frames, n_superbins, bin_pixel) → transpose to (n_superbins, n_frames * bin_pixel)
+        pooled = bin_data_3d.transpose(1, 0, 2).reshape(bin_data_3d.shape[1], -1)
+        err = np.nanstd(pooled, axis=1) / np.sqrt(np.clip(tot_counts, a_min=1, a_max=None))
 
-    return bin_energy_axis, mean, err
+    return (
+        energy_axis,
+        norm_data,
+        err,
+        tot_signal,
+        tot_counts,
+    )
 
 
 def _compute_fwhm_func(energy_axis, intensity, err=None):
@@ -549,10 +559,12 @@ def bin_rixs_data(
         DeltaD,
     )
 
-    bin_energy, bin_data_mean, bin_data_err = _reduce_frames(bin_energy, bin_data, noise_model, bin_pixel)
+    energy_axis, norm_data, norm_data_err, tot_signal, tot_counts = _reduce_frames(
+        bin_energy, bin_data, noise_model, bin_pixel
+    )
 
     if compute_fwhm:
-        fwhm, center = _compute_fwhm_func(bin_energy, bin_data_mean, bin_data_err)
+        fwhm, center = _compute_fwhm_func(energy_axis, norm_data, norm_data_err)
     else:
         fwhm, center = None, None
 
@@ -565,11 +577,12 @@ def bin_rixs_data(
 
     return {
         "rawdata_lines": lines,
-        "binned_line": (bin_energy, bin_data_mean, bin_data_err),
-        "DeltaD": DeltaD,
+        "binned_line": (energy_axis, norm_data, norm_data_err),
         "summed_data": summed_data,
         "levels": levels,
         "fwhm": fwhm,
         "center": center,
-        "energy_resolution": round((bin_energy[1] - bin_energy[0]) * 1e6, 3),
+        "energy_resolution": round((energy_axis[1] - energy_axis[0]) * 1e6, 3),
+        "tot_signal": tot_signal,
+        "tot_counts": tot_counts,
     }

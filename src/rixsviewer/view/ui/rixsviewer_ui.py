@@ -330,10 +330,10 @@ class Ui_MainWindow(object):
 
         self.gridLayout_7.addWidget(self.line_2, 0, 10, 1, 1)
 
-        self.pushButton = QPushButton(self.groupBox_6)
-        self.pushButton.setObjectName(u"pushButton")
+        self.pushButton_save = QPushButton(self.groupBox_6)
+        self.pushButton_save.setObjectName(u"pushButton_save")
 
-        self.gridLayout_7.addWidget(self.pushButton, 0, 18, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton_save, 0, 18, 1, 1)
 
         self.comboBox = QComboBox(self.groupBox_6)
         self.comboBox.addItem("")
@@ -494,7 +494,7 @@ class Ui_MainWindow(object):
         self.pushButton_process.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
         self.label_binpixel.setText(QCoreApplication.translate("MainWindow", u"Bin Pixel:", None))
         self.label_7.setText(QCoreApplication.translate("MainWindow", u"Error Model:", None))
-        self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Export", None))
+        self.pushButton_save.setText(QCoreApplication.translate("MainWindow", u"Export", None))
         self.comboBox.setItemText(0, QCoreApplication.translate("MainWindow", u"poisson", None))
         self.comboBox.setItemText(1, QCoreApplication.translate("MainWindow", u"gaussian", None))
         self.comboBox.setItemText(2, QCoreApplication.translate("MainWindow", u"none", None))
