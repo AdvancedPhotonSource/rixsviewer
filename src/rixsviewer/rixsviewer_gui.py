@@ -192,6 +192,13 @@ class RixsViewerGUI(QMainWindow):
                 ),
                 QMessageBox.Yes | QMessageBox.No,
             )
+            meta_source = self.ui.comboBox_metasource.currentText()
+            if meta_source != "USER":
+                QMessageBox.critical(
+                    self, "Error", f"Overriding metadata entry [{opt_target}] only supported in `USER` mode."
+                )
+                return
+
             if reply == QMessageBox.Yes:
                 self._put_param(opt_target, ls["lns_value"])
             if opt_target == "TiltAngle":
@@ -226,10 +233,11 @@ class RixsViewerGUI(QMainWindow):
     def on_load_specfile_clicked(self):
         """Handle the load spec file button click"""
         # Open file dialog to select a spec file
+        start_folder = "./" if self.spec_filename is None else str(Path(self.spec_filename).parent)
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open SPEC File",
-            str(Path(self.spec_filename).parent),
+            start_folder,
             "SPEC Files (*.spm3);;All Files (*)",
         )
 
@@ -252,6 +260,8 @@ class RixsViewerGUI(QMainWindow):
 
     def setup_scan_table(self):
         """Set up the scan table with the RixsScanListTable model"""
+        if self.tiff_folder is None or self.spec_filename is None:
+            return
         if not Path(self.tiff_folder).is_dir:
             logger.error(f"Check the tiff folder: {self.tiff_folder}")
             return
@@ -351,14 +361,12 @@ def main():
         description="RixsViewer - A tool for visualization and modeling of RIXS (Resonance Inelastic X-ray Scattering) data"
     )
     parser.add_argument(
-        "specfile",
+        "--specfile",
         nargs="?",
-        default="/home/beams/RIXS/Data/2026-1/slot4_rixsviewer/4March2026",
         help="Path to the SPEC file to load (default: %(default)s)",
     )
     parser.add_argument(
         "--tiff-folder",
-        default="/net/s27data/export/sector27/lambda/2026-1/slot4/cray_clean",
         help="Path to the TIFF folder (default: %(default)s)",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
