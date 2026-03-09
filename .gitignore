@@ -220,3 +220,4 @@ site/
 _build/
 docs/build/
 .doxygen/
+user_guide.pdf
