@@ -1,1 +1,0 @@
-use conda/python in /local/MQICHU/envs/l2510_rixs/bin/python
