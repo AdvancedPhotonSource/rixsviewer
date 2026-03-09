@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMainWindo
 from .model import RixsBinningModel, RixsSpecTable
 from .view import RixsView
 from .view.ui import Ui_MainWindow
+from . import __version__
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -72,6 +73,7 @@ class RixsViewerGUI(QMainWindow):
         # Set up the UI
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self.setWindowTitle(f"RixsViewer v{__version__}")
 
         self.scan_model = None
         self.current_rixs_dset = None
@@ -526,7 +528,7 @@ def main():
         "--tiff-folder",
         help="Path to the TIFF folder (default: %(default)s)",
     )
-    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     # Parse arguments (filter out Qt arguments)
     args, qt_args = parser.parse_known_args()
