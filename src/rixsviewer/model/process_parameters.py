@@ -102,3 +102,5 @@ params = [
         "siPrefix": False,
     },
 ]
+
+unit_map = {p["name"]: p.get("suffix", "") for p in params}

@@ -452,7 +452,7 @@ def _reduce_frames(energy_axis, bin_data, noise_model, bin_pixel=1):
         # Reshape bin_data to (n_frames, n_superbins, bin_pixel) for both branches
         bin_data_3d = bin_data[:, :n].reshape(bin_data.shape[0], -1, bin_pixel)
         norm_data = norm_data[:n].reshape(-1, bin_pixel).sum(axis=1)
-        bin_energy_axis = energy_axis[:n].reshape(-1, bin_pixel).mean(axis=1)
+        energy_axis = energy_axis[:n].reshape(-1, bin_pixel).mean(axis=1)
         # need for mary's legacy code
         tot_counts = tot_counts[:n].reshape(-1, bin_pixel).sum(axis=1)  # total samples per super-bin
         tot_signal = tot_signal[:n].reshape(-1, bin_pixel).sum(axis=1)
@@ -574,6 +574,7 @@ def bin_rixs_data(
     compute_fwhm=False,
     TiltAngle=0,
     TiltOrder=1,
+    progress_callback=None,
     **kwargs,
 ):
     """Compute the binned RIXS spectrum from a TIFF image stack.
@@ -625,10 +626,16 @@ def bin_rixs_data(
         ``tot_signal``, ``tot_counts``.
     """
     merixE = np.asarray(merixE, dtype=float)
+    if progress_callback:
+        progress_callback(5)
 
     data = apply_subpixel_shear_3d(data, Ylow, Yhigh, TiltAngle, TiltOrder)
+    if progress_callback:
+        progress_callback(30)
 
     data_2d, xaxis = _preprocess_frames(data, Ylow, Yhigh, RefL)
+    if progress_callback:
+        progress_callback(50)
 
     lines, bin_energy, bin_data = _compute_energy_axis(
         data_2d,
@@ -639,10 +646,14 @@ def bin_rixs_data(
         scan_type,
         DeltaD,
     )
+    if progress_callback:
+        progress_callback(80)
 
     energy_axis, norm_data, norm_data_err, tot_signal, tot_counts = _reduce_frames(
         bin_energy, bin_data, noise_model, bin_pixel
     )
+    if progress_callback:
+        progress_callback(90)
 
     if compute_fwhm:
         fwhm, center = _compute_fwhm_func(energy_axis, norm_data, norm_data_err)
@@ -655,6 +666,9 @@ def bin_rixs_data(
     else:
         summed_data = None
         levels = None
+
+    if progress_callback:
+        progress_callback(100)
 
     return {
         "rawdata_lines": lines,

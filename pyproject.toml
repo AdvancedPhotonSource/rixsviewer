@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "wheel", "setuptools_scm[toml]>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "rixsviewer"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A tool for visualization and modeling of RIXS (Resonance Inelastic X-ray Scattering) data"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -83,3 +83,5 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.setuptools_scm]

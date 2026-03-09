@@ -10,6 +10,8 @@ import tifffile
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
 from .utils import find_peaks, bin_rixs_data, percentile_clip, fit_pixel_size, apply_subpixel_shear_3d, mask_bad_pixels
+from .process_parameters import unit_map
+from .. import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -626,6 +628,7 @@ class RixsScanTiffDataset:
     def bin_data_wrap(
         self,
         metadata_source="SpecFile",
+        progress_callback=None,
         **kwargs,
     ):
         """High-level wrapper that delegates to :func:`~.utils.bin_rixs_data`.
@@ -655,7 +658,11 @@ class RixsScanTiffDataset:
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
         data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
-        self.bin_result = bin_rixs_data(data, merixE, scan_type, **merged_kwargs)
+        self.bin_result = bin_rixs_data(
+            data, merixE, scan_type, 
+            progress_callback=progress_callback, 
+            **merged_kwargs
+        )
         return self.bin_result
 
     def save_to_file(self, fname=None):
@@ -667,8 +674,12 @@ class RixsScanTiffDataset:
 
         res = self.bin_result
         with open(fname, "a") as f:
-            f.write(f"\n#S {self.scan_index} {self.scan_info["scan_type"]}\n")
+            f.write(f"\n#S {self.scan_index} {self.scan_info['scan_type']}\n")
             f.write(f"#D {np.datetime64('now')}\n")
+            f.write(f"#C RixsViewerVersion = {__version__}\n")
+            for key, value in self.scan_info["metadata"].items():
+                unit = unit_map.get(key, "")
+                f.write(f"#C {key} = {value}{unit}\n")
             f.write(f"#N {5}\n")
             f.write(f"#L  Energy  Intensity  Error  Signal  Norm\n")
 
@@ -719,6 +730,7 @@ class RixsScanTiffDataset:
         target="DeltaD",
         metadata_source="SpecFile",
         n_steps=51,
+        progress_callback=None,
         **kwargs,
     ):
         """Sweep ``DeltaD`` over ``[0.5, 1.5] × effective_pixel_size`` and collect FWHM.
@@ -778,7 +790,7 @@ class RixsScanTiffDataset:
         lns_result = None
         lns_value = lsq_value
 
-        for val in val_list:
+        for i, val in enumerate(val_list):
             sweep_kwargs = dict(base_kwargs)
             sweep_kwargs[target] = float(val)
             result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **sweep_kwargs)
@@ -788,6 +800,9 @@ class RixsScanTiffDataset:
                 best_fwhm = fwhm
                 lns_result = result
                 lns_value = float(val)
+
+            if progress_callback is not None:
+                progress_callback(int((i + 1) / n_steps * 100))
 
         # Step 4 – binning at the reference point for overlay comparison
         original_kwargs = dict(base_kwargs)
