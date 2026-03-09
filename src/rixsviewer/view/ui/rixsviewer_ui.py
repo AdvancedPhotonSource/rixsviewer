@@ -19,10 +19,10 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
     QDoubleSpinBox, QFrame, QGridLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QMainWindow, QMenu, QMenuBar, QPushButton,
-    QSizePolicy, QSlider, QSpacerItem, QSpinBox,
-    QSplitter, QStatusBar, QTabWidget, QTableView,
-    QToolButton, QWidget)
+    QMainWindow, QMenu, QMenuBar, QProgressBar,
+    QPushButton, QSizePolicy, QSlider, QSpacerItem,
+    QSpinBox, QSplitter, QStatusBar, QTabWidget,
+    QTableView, QToolButton, QWidget)
 
 from pyqtgraph import GraphicsLayoutWidget
 from pyqtgraph.parametertree import ParameterTree
@@ -292,7 +292,7 @@ class Ui_MainWindow(object):
         self.pushButton_process = QPushButton(self.groupBox_6)
         self.pushButton_process.setObjectName(u"pushButton_process")
 
-        self.gridLayout_7.addWidget(self.pushButton_process, 0, 17, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton_process, 0, 19, 1, 1)
 
         self.label_binpixel = QLabel(self.groupBox_6)
         self.label_binpixel.setObjectName(u"label_binpixel")
@@ -300,6 +300,13 @@ class Ui_MainWindow(object):
         self.label_binpixel.setSizePolicy(sizePolicy2)
 
         self.gridLayout_7.addWidget(self.label_binpixel, 0, 13, 1, 1)
+
+        self.line_3 = QFrame(self.groupBox_6)
+        self.line_3.setObjectName(u"line_3")
+        self.line_3.setFrameShape(QFrame.Shape.VLine)
+        self.line_3.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.gridLayout_7.addWidget(self.line_3, 0, 12, 1, 1)
 
         self.label_7 = QLabel(self.groupBox_6)
         self.label_7.setObjectName(u"label_7")
@@ -330,10 +337,16 @@ class Ui_MainWindow(object):
 
         self.gridLayout_7.addWidget(self.line_2, 0, 10, 1, 1)
 
+        self.progressBar_process = QProgressBar(self.groupBox_6)
+        self.progressBar_process.setObjectName(u"progressBar_process")
+        self.progressBar_process.setValue(0)
+
+        self.gridLayout_7.addWidget(self.progressBar_process, 0, 18, 1, 1)
+
         self.pushButton_save = QPushButton(self.groupBox_6)
         self.pushButton_save.setObjectName(u"pushButton_save")
 
-        self.gridLayout_7.addWidget(self.pushButton_save, 0, 18, 1, 1)
+        self.gridLayout_7.addWidget(self.pushButton_save, 0, 20, 1, 1)
 
         self.comboBox = QComboBox(self.groupBox_6)
         self.comboBox.addItem("")
@@ -353,12 +366,10 @@ class Ui_MainWindow(object):
 
         self.gridLayout_7.addWidget(self.label_energy_interval, 0, 15, 1, 1)
 
-        self.line_3 = QFrame(self.groupBox_6)
-        self.line_3.setObjectName(u"line_3")
-        self.line_3.setFrameShape(QFrame.Shape.VLine)
-        self.line_3.setFrameShadow(QFrame.Shadow.Sunken)
+        self.label_10 = QLabel(self.groupBox_6)
+        self.label_10.setObjectName(u"label_10")
 
-        self.gridLayout_7.addWidget(self.line_3, 0, 12, 1, 1)
+        self.gridLayout_7.addWidget(self.label_10, 0, 17, 1, 1)
 
 
         self.gridLayout_4.addWidget(self.groupBox_6, 1, 0, 1, 1)
@@ -388,6 +399,17 @@ class Ui_MainWindow(object):
 
         self.gridLayout_9.addWidget(self.comboBox_fit_target, 0, 1, 1, 1)
 
+        self.progressBar_calibrate = QProgressBar(self.groupBox_7)
+        self.progressBar_calibrate.setObjectName(u"progressBar_calibrate")
+        self.progressBar_calibrate.setValue(0)
+
+        self.gridLayout_9.addWidget(self.progressBar_calibrate, 0, 9, 1, 1)
+
+        self.label_9 = QLabel(self.groupBox_7)
+        self.label_9.setObjectName(u"label_9")
+
+        self.gridLayout_9.addWidget(self.label_9, 0, 8, 1, 1)
+
         self.label_8 = QLabel(self.groupBox_7)
         self.label_8.setObjectName(u"label_8")
         sizePolicy2.setHeightForWidth(self.label_8.sizePolicy().hasHeightForWidth())
@@ -406,11 +428,18 @@ class Ui_MainWindow(object):
         self.pushButton_fit_pixel_size = QPushButton(self.groupBox_7)
         self.pushButton_fit_pixel_size.setObjectName(u"pushButton_fit_pixel_size")
 
-        self.gridLayout_9.addWidget(self.pushButton_fit_pixel_size, 0, 7, 1, 1)
+        self.gridLayout_9.addWidget(self.pushButton_fit_pixel_size, 0, 10, 1, 1)
 
         self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.gridLayout_9.addItem(self.horizontalSpacer, 0, 6, 1, 1)
+
+        self.line_5 = QFrame(self.groupBox_7)
+        self.line_5.setObjectName(u"line_5")
+        self.line_5.setFrameShape(QFrame.Shape.VLine)
+        self.line_5.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.gridLayout_9.addWidget(self.line_5, 0, 5, 1, 1)
 
         self.label_5 = QLabel(self.groupBox_7)
         self.label_5.setObjectName(u"label_5")
@@ -426,12 +455,12 @@ class Ui_MainWindow(object):
 
         self.gridLayout_9.addWidget(self.line_4, 0, 2, 1, 1)
 
-        self.line_5 = QFrame(self.groupBox_7)
-        self.line_5.setObjectName(u"line_5")
-        self.line_5.setFrameShape(QFrame.Shape.VLine)
-        self.line_5.setFrameShadow(QFrame.Shadow.Sunken)
+        self.line_7 = QFrame(self.groupBox_7)
+        self.line_7.setObjectName(u"line_7")
+        self.line_7.setFrameShape(QFrame.Shape.VLine)
+        self.line_7.setFrameShadow(QFrame.Shadow.Sunken)
 
-        self.gridLayout_9.addWidget(self.line_5, 0, 5, 1, 1)
+        self.gridLayout_9.addWidget(self.line_7, 0, 7, 1, 1)
 
 
         self.gridLayout_10.addWidget(self.groupBox_7, 1, 0, 1, 1)
@@ -500,11 +529,13 @@ class Ui_MainWindow(object):
         self.comboBox.setItemText(2, QCoreApplication.translate("MainWindow", u"none", None))
 
         self.label_energy_interval.setText(QCoreApplication.translate("MainWindow", u"Energy Interval:", None))
+        self.label_10.setText(QCoreApplication.translate("MainWindow", u"Progress:", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"Process", None))
         self.groupBox_7.setTitle(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.comboBox_fit_target.setItemText(0, QCoreApplication.translate("MainWindow", u"DeltaD", None))
         self.comboBox_fit_target.setItemText(1, QCoreApplication.translate("MainWindow", u"TiltAngle", None))
 
+        self.label_9.setText(QCoreApplication.translate("MainWindow", u"Progress:", None))
         self.label_8.setText(QCoreApplication.translate("MainWindow", u"OptimizeTarget:", None))
         self.comboBox_center_method.setItemText(0, QCoreApplication.translate("MainWindow", u"gaussian", None))
         self.comboBox_center_method.setItemText(1, QCoreApplication.translate("MainWindow", u"centroid", None))

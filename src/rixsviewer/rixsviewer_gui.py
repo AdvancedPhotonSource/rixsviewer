@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, QRunnable, Slot, QThreadPool, QObject, Signal
 from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMainWindow, QMessageBox
 
 from .model import RixsBinningModel, RixsSpecTable
@@ -18,6 +18,34 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 
 logger = logging.getLogger(__name__)
+
+
+class WorkerSignals(QObject):
+    finished = Signal()
+    error = Signal(str)
+    result = Signal(object)
+    progress = Signal(int)
+
+
+class Worker(QRunnable):
+    def __init__(self, fn, *args, **kwargs):
+        super().__init__()
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = WorkerSignals()
+
+    @Slot()
+    def run(self):
+        try:
+            result = self.fn(*self.args, **self.kwargs)
+        except Exception as e:
+            traceback.print_exc()
+            self.signals.error.emit(str(e))
+        else:
+            self.signals.result.emit(result)
+        finally:
+            self.signals.finished.emit()
 
 
 class RixsViewerGUI(QMainWindow):
@@ -72,6 +100,8 @@ class RixsViewerGUI(QMainWindow):
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.update_spec_record)
         self.ui.checkBox_autoupdate.checkStateChanged.connect(self.start_stop_timer)
+
+        self.threadpool = QThreadPool()
 
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
@@ -205,53 +235,71 @@ class RixsViewerGUI(QMainWindow):
             QMessageBox.warning(self, "Warning", "Effective pixel size can only be fitted for EnergyScan")
             return
 
+        self.ui.pushButton_fit_pixel_size.setEnabled(False)
+
         meta_source = self.ui.comboBox_metasource.currentText()
         center_method = self.ui.comboBox_center_method.currentText()
         opt_target = self.ui.comboBox_fit_target.currentText()
 
         binning_kwargs = self._get_binning_kwargs(meta_source)
 
-        try:
-            ls = self.current_rixs_dset.linesearch_to_optimize_parameter(
+        def worker_fn():
+            return self.current_rixs_dset.linesearch_to_optimize_parameter(
                 target=opt_target,
                 metadata_source=meta_source,
                 center_method=center_method,
+                progress_callback=worker.signals.progress.emit,
                 **binning_kwargs,
             )
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Linesearch to optimize {opt_target} failed:\n{e}")
-            traceback.print_exc()
-            return
 
-        # Plot the sweep curve with all three reference markers
-        self.view.plot_linesearch(ls)
+        def on_error(err_str):
+            QMessageBox.critical(self, "Error", f"Linesearch to optimize {opt_target} failed:\n{err_str}")
 
-        # Overlay all three spectra on calib_hdl (left panel)
-        self.view.plot_calib_overlay(ls)
+        def on_result(ls):
+            # Plot the sweep curve with all three reference markers
+            self.view.plot_linesearch(ls)
 
-        unit = "mm" if opt_target == "DeltaD" else "deg"
-        if ls["lns_value"]:
-            reply = QMessageBox.question(
-                self,
-                f"Update {opt_target} Parameter",
-                (
-                    f"original  {opt_target}: {ls['org_value']:.6f} {unit}\n"
-                    f"optimized {opt_target}: {ls['lns_value']:.6f} {unit}\n\n"
-                    "Apply the line-search best value?"
-                ),
-                QMessageBox.Yes | QMessageBox.No,
-            )
-            meta_source = self.ui.comboBox_metasource.currentText()
-            if reply == QMessageBox.Yes:
-                if meta_source != "USER":
-                    QMessageBox.critical(
-                        self, "Error", f"Overriding metadata entry [{opt_target}] only supported in `USER` mode."
-                    )
-                    return
-                self._put_param(opt_target, ls["lns_value"])
-            if opt_target == "TiltAngle":
-                # update image to reflect the tilt angle change
-                self.update_image()
+            # Overlay all three spectra on calib_hdl (left panel)
+            self.view.plot_calib_overlay(ls)
+
+            unit = "mm" if opt_target == "DeltaD" else "deg"
+            if ls.get("lns_value"):
+                reply = QMessageBox.question(
+                    self,
+                    f"Update {opt_target} Parameter",
+                    (
+                        f"original  {opt_target}: {ls['org_value']:.6f} {unit}\n"
+                        f"optimized {opt_target}: {ls['lns_value']:.6f} {unit}\n\n"
+                        "Apply the line-search best value?"
+                    ),
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                current_meta_source = self.ui.comboBox_metasource.currentText()
+                if reply == QMessageBox.Yes:
+                    if current_meta_source != "USER":
+                        QMessageBox.critical(
+                            self, "Error", f"Overriding metadata entry [{opt_target}] only supported in `USER` mode."
+                        )
+                        return
+                    self._put_param(opt_target, ls["lns_value"])
+                if opt_target == "TiltAngle":
+                    self.update_image()
+
+        def on_finished():
+            if not self.ui.checkBox_autoupdate.isChecked():
+                self.ui.pushButton_fit_pixel_size.setEnabled(True)
+
+        worker = Worker(worker_fn)
+        self.calibrate_worker = worker  # Keep reference to prevent GC of signals
+        
+        if hasattr(self.ui, "progressBar_calibrate"):
+            self.ui.progressBar_calibrate.setValue(0)
+            worker.signals.progress.connect(self.ui.progressBar_calibrate.setValue)
+            
+        worker.signals.result.connect(on_result)
+        worker.signals.error.connect(on_error)
+        worker.signals.finished.connect(on_finished)
+        self.threadpool.start(worker)
 
     def save_bin_results(self):
         """
@@ -282,13 +330,37 @@ class RixsViewerGUI(QMainWindow):
             if self.ui.checkBox_autoupdate.isChecked():
                 return
 
-        result = self.current_rixs_dset.bin_data_wrap(
-            metadata_source=meta_source,
-            center_method=center_method,
-            bin_pixel=bin_pixel,
-            **binning_kwargs,
-        )
-        self.view.plot_binned_data(result, show_rawdata, hdl_target="plot")
+        self.ui.pushButton_process.setEnabled(False)
+
+        def worker_fn():
+            return self.current_rixs_dset.bin_data_wrap(
+                metadata_source=meta_source,
+                center_method=center_method,
+                bin_pixel=bin_pixel,
+                progress_callback=worker.signals.progress.emit,
+                **binning_kwargs,
+            )
+
+        def on_result(result):
+            self.view.plot_binned_data(result, show_rawdata, hdl_target="plot")
+
+        def on_error(err_str):
+            QMessageBox.critical(self, "Error", f"Processing binning failed:\n{err_str}")
+
+        def on_finished():
+            self.ui.pushButton_process.setEnabled(True)
+
+        worker = Worker(worker_fn)
+        self.binning_worker = worker  # Keep reference to prevent GC of signals
+        
+        if hasattr(self.ui, "progressBar_process"):
+            self.ui.progressBar_process.setValue(0)
+            worker.signals.progress.connect(self.ui.progressBar_process.setValue)
+
+        worker.signals.result.connect(on_result)
+        worker.signals.error.connect(on_error)
+        worker.signals.finished.connect(on_finished)
+        self.threadpool.start(worker)
 
     # plot_binned_data is handled by RixsView
 

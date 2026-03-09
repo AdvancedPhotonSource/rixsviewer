@@ -627,6 +627,7 @@ class RixsScanTiffDataset:
     def bin_data_wrap(
         self,
         metadata_source="SpecFile",
+        progress_callback=None,
         **kwargs,
     ):
         """High-level wrapper that delegates to :func:`~.utils.bin_rixs_data`.
@@ -656,7 +657,11 @@ class RixsScanTiffDataset:
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
         data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
-        self.bin_result = bin_rixs_data(data, merixE, scan_type, **merged_kwargs)
+        self.bin_result = bin_rixs_data(
+            data, merixE, scan_type, 
+            progress_callback=progress_callback, 
+            **merged_kwargs
+        )
         return self.bin_result
 
     def save_to_file(self, fname=None):
@@ -723,6 +728,7 @@ class RixsScanTiffDataset:
         target="DeltaD",
         metadata_source="SpecFile",
         n_steps=51,
+        progress_callback=None,
         **kwargs,
     ):
         """Sweep ``DeltaD`` over ``[0.5, 1.5] × effective_pixel_size`` and collect FWHM.
@@ -782,7 +788,7 @@ class RixsScanTiffDataset:
         lns_result = None
         lns_value = lsq_value
 
-        for val in val_list:
+        for i, val in enumerate(val_list):
             sweep_kwargs = dict(base_kwargs)
             sweep_kwargs[target] = float(val)
             result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **sweep_kwargs)
@@ -792,6 +798,9 @@ class RixsScanTiffDataset:
                 best_fwhm = fwhm
                 lns_result = result
                 lns_value = float(val)
+
+            if progress_callback is not None:
+                progress_callback(int((i + 1) / n_steps * 100))
 
         # Step 4 – binning at the reference point for overlay comparison
         original_kwargs = dict(base_kwargs)
