@@ -452,7 +452,7 @@ def _reduce_frames(energy_axis, bin_data, noise_model, bin_pixel=1):
         # Reshape bin_data to (n_frames, n_superbins, bin_pixel) for both branches
         bin_data_3d = bin_data[:, :n].reshape(bin_data.shape[0], -1, bin_pixel)
         norm_data = norm_data[:n].reshape(-1, bin_pixel).sum(axis=1)
-        bin_energy_axis = energy_axis[:n].reshape(-1, bin_pixel).mean(axis=1)
+        energy_axis = energy_axis[:n].reshape(-1, bin_pixel).mean(axis=1)
         # need for mary's legacy code
         tot_counts = tot_counts[:n].reshape(-1, bin_pixel).sum(axis=1)  # total samples per super-bin
         tot_signal = tot_signal[:n].reshape(-1, bin_pixel).sum(axis=1)
