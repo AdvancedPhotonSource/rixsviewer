@@ -104,6 +104,7 @@ class RixsViewerGUI(QMainWindow):
         self.ui.checkBox_autoupdate.checkStateChanged.connect(self.start_stop_timer)
 
         self.threadpool = QThreadPool()
+        self._binning_active = False
 
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
@@ -139,8 +140,8 @@ class RixsViewerGUI(QMainWindow):
         """
         if self.scan_model is not None:
             self.scan_model.process_spec_file()
-            self.process_binning()
             self.current_rixs_dset = self.scan_model.last_scan_dset
+            self.process_binning()
 
     def setup_parameter_tree(self):
         """Set up the parameter tree with RixsBinningModel parameters"""
@@ -321,6 +322,9 @@ class RixsViewerGUI(QMainWindow):
         if self.current_rixs_dset is None:
             return
 
+        if self._binning_active:
+            return
+
         show_rawdata = self.ui.checkBox_show_rawdata.isChecked()
         meta_source = self.ui.comboBox_metasource.currentText()
         center_method = self.ui.comboBox_center_method.currentText()
@@ -332,6 +336,7 @@ class RixsViewerGUI(QMainWindow):
             if self.ui.checkBox_autoupdate.isChecked():
                 return
 
+        self._binning_active = True
         self.ui.pushButton_process.setEnabled(False)
 
         def worker_fn():
@@ -350,7 +355,15 @@ class RixsViewerGUI(QMainWindow):
             QMessageBox.critical(self, "Error", f"Processing binning failed:\n{err_str}")
 
         def on_finished():
+            self._binning_active = False
             self.ui.pushButton_process.setEnabled(True)
+            if self.ui.checkBox_autoupdate.isChecked() and self.current_rixs_dset is not None:
+                self.update_image(frame_index=-1)
+                si = self.current_rixs_dset.scan_info
+                if (si and si["tiff_points"] > 0
+                        and si["tiff_points"] == si["spec_points"]
+                        and self.current_rixs_dset.bin_result is not None):
+                    self.current_rixs_dset.save_to_file(self.save_filename)
 
         worker = Worker(worker_fn)
         self.binning_worker = worker  # Keep reference to prevent GC of signals

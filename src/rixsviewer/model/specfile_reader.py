@@ -332,6 +332,7 @@ class RixsSpecTable(QAbstractTableModel):
         if not self.read_latest_spec_file():
             return
 
+        scan_dset = None
         for scan_pack in self.spec_container:
             scan_number = scan_pack.number
             # no need to re-process old scans
@@ -358,7 +359,8 @@ class RixsSpecTable(QAbstractTableModel):
                     self.record[scan_number] = scan_dset
                     self.endInsertRows()
                     self.last_scan_index = max(self.last_scan_index, scan_number)
-        self.last_scan_dset = scan_dset
+        if scan_dset is not None:
+            self.last_scan_dset = scan_dset
 
     def rowCount(self, parent=None):
         return len(self.record)
@@ -461,6 +463,7 @@ class RixsScanTiffDataset:
         self.scan_info = None
         self.bin_result = None
         self.bin_kwargs = None
+        self._saved = False
 
     def update_scan_info(self, scan_pack):
         """
@@ -666,8 +669,9 @@ class RixsScanTiffDataset:
         return self.bin_result
 
     def save_to_file(self, fname=None):
-        if self.bin_result is None:
+        if self.bin_result is None or self._saved:
             return
+        self._saved = True
 
         if fname is None:
             fname = "./test_rixsviewer_saving.spec"
