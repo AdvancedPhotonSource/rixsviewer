@@ -493,6 +493,12 @@ class RixsViewerGUI(QMainWindow):
             percentile_cutoff=percentile_cutoff,
             **binning_kwargs,
         )
+
+        # Scan may be empty (no TIFF frames or no scandata rows yet)
+        if frame_info is None:
+            logger.debug("update_image: no data available for scan %s yet.", self.current_rixs_dset.scan_index)
+            return
+
         self.view.update_image(
             frame_info["data"],
             frame_info["levels"],
