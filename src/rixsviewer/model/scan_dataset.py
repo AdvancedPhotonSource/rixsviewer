@@ -229,14 +229,12 @@ class RixsScanTiffDataset:
         data = self.read_data()
         if data is None or len(data) == 0:
             raise ValueError(
-                f"Scan {self.scan_index} has no TIFF frames loaded; "
-                "cannot run processing on an empty dataset."
+                f"Scan {self.scan_index} has no TIFF frames loaded; " "cannot run processing on an empty dataset."
             )
         scandata = self.scan_info["scandata"]
         if scandata.empty:
             raise ValueError(
-                f"Scan {self.scan_index} has no scandata rows; "
-                "cannot run processing on an empty dataset."
+                f"Scan {self.scan_index} has no scandata rows; " "cannot run processing on an empty dataset."
             )
         merixE = scandata["merixE"]
         scan_type = self.scan_info["scan_type"]
@@ -275,11 +273,7 @@ class RixsScanTiffDataset:
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
         data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
-        self.bin_result = bin_rixs_data(
-            data, merixE, scan_type,
-            progress_callback=progress_callback,
-            **merged_kwargs
-        )
+        self.bin_result = bin_rixs_data(data, merixE, scan_type, progress_callback=progress_callback, **merged_kwargs)
         return self.bin_result
 
     def save_to_file(self, fname=None):
@@ -450,6 +444,8 @@ class RixsScanTiffDataset:
         """
         if self._model is None:
             self._model = RixsScanImageTable(self.scan_info["filenames"])
+        else:
+            self._model.update_fnames(self.scan_info["filenames"])
         return self._model
 
     def read_data(self):
@@ -517,6 +513,12 @@ class RixsScanImageTable(QAbstractTableModel):
         # self.fnames = glob.glob(os.path.join(folder, f"*_scan{scan_index:d}_*.tif"))
         self.fnames = fnames
         self._headers = ["TIF filename"]
+
+    def update_fnames(self, fnames):
+        """Update the list of filenames and notify views."""
+        self.beginResetModel()
+        self.fnames = fnames
+        self.endResetModel()
 
     def rowCount(self, parent=None):
         return len(self.fnames)

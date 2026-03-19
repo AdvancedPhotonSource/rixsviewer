@@ -139,9 +139,14 @@ class RixsViewerGUI(QMainWindow):
         This method is called periodically by the timer when auto-update is enabled.
         """
         if self.scan_model is not None:
-            self.scan_model.process_spec_file()
+            has_updates = self.scan_model.process_spec_file()
             self.current_rixs_dset = self.scan_model.last_scan_dset
-            self.process_binning()
+            
+            if has_updates:
+                self.process_binning()
+                self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
+                header = self.ui.tableView_image.horizontalHeader()
+                header.setSectionResizeMode(QHeaderView.Stretch)
 
     def setup_parameter_tree(self):
         """Set up the parameter tree with RixsBinningModel parameters"""
@@ -294,11 +299,11 @@ class RixsViewerGUI(QMainWindow):
 
         worker = Worker(worker_fn)
         self.calibrate_worker = worker  # Keep reference to prevent GC of signals
-        
+
         if hasattr(self.ui, "progressBar_calibrate"):
             self.ui.progressBar_calibrate.setValue(0)
             worker.signals.progress.connect(self.ui.progressBar_calibrate.setValue)
-            
+
         worker.signals.result.connect(on_result)
         worker.signals.error.connect(on_error)
         worker.signals.finished.connect(on_finished)
@@ -360,14 +365,17 @@ class RixsViewerGUI(QMainWindow):
             if self.ui.checkBox_autoupdate.isChecked() and self.current_rixs_dset is not None:
                 self.update_image(frame_index=-1)
                 si = self.current_rixs_dset.scan_info
-                if (si and si["tiff_points"] > 0
-                        and si["tiff_points"] == si["spec_points"]
-                        and self.current_rixs_dset.bin_result is not None):
+                if (
+                    si
+                    and si["tiff_points"] > 0
+                    and si["tiff_points"] == si["spec_points"]
+                    and self.current_rixs_dset.bin_result is not None
+                ):
                     self.current_rixs_dset.save_to_file(self.save_filename)
 
         worker = Worker(worker_fn)
         self.binning_worker = worker  # Keep reference to prevent GC of signals
-        
+
         if hasattr(self.ui, "progressBar_process"):
             self.ui.progressBar_process.setValue(0)
             worker.signals.progress.connect(self.ui.progressBar_process.setValue)

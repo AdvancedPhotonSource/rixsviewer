@@ -86,8 +86,9 @@ class RixsSpecTable(QAbstractTableModel):
         via ``beginInsertRows`` / ``endInsertRows``.
         """
         if not self.read_latest_spec_file():
-            return
+            return False
 
+        has_updates = False
         scan_dset = None
         for scan_pack in self.spec_container:
             scan_number = scan_pack.number
@@ -98,13 +99,17 @@ class RixsSpecTable(QAbstractTableModel):
             if get_scan_type(scan_pack)[0] in ["EnergyScan", "SnapshotScan"]:
                 if scan_number in self.record:
                     scan_dset = self.record[scan_number]
+                    prev_tiff = scan_dset.scan_info["tiff_points"] if scan_dset.scan_info else -1
                     scan_dset.update_scan_info(scan_pack)
-                    # update the view for this row
-                    row = scan_dset.row_position
-                    index_top_left = self.index(row, 0)
-                    index_bottom_right = self.index(row, self.columnCount() - 1)
-                    self.dataChanged.emit(index_top_left, index_bottom_right)
+                    if scan_dset.scan_info["tiff_points"] != prev_tiff:
+                        has_updates = True
+                        # update the view for this row
+                        row = scan_dset.row_position
+                        index_top_left = self.index(row, 0)
+                        index_bottom_right = self.index(row, self.columnCount() - 1)
+                        self.dataChanged.emit(index_top_left, index_bottom_right)
                 else:
+                    has_updates = True
                     # new scan dataset; save the previous scan
                     if self.last_scan_dset is not None:
                         self.last_scan_dset.save_to_file(self.save_filename)
@@ -117,6 +122,7 @@ class RixsSpecTable(QAbstractTableModel):
                     self.last_scan_index = max(self.last_scan_index, scan_number)
         if scan_dset is not None:
             self.last_scan_dset = scan_dset
+        return has_updates
 
     def rowCount(self, parent=None):
         return len(self.record)
