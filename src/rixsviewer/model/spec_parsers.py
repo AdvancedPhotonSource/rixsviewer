@@ -42,8 +42,8 @@ def get_scan_type(scan):
     #     return scan_type
     # else:
     #    for on-going scans; the #Y line doesn't seem to be recognized correctly;
-    scan_type, steps = get_scan_type_from_scanstring(scan.scan_header_dict["S"])
-    return scan_type, steps
+    scan_type, steps, exposure_time = get_scan_type_from_scanstring(scan.scan_header_dict["S"])
+    return scan_type, steps, exposure_time
 
 
 def get_scan_type_from_scanstring(text, tol=1e-6):
@@ -89,18 +89,19 @@ def get_scan_type_from_scanstring(text, tol=1e-6):
     )
     m = pattern.search(text)
     if not m:
-        return "Unknown", 0
+        return "Unknown", 0, 0
 
     start = float(m.group(3))
     end = float(m.group(4))
     steps = int(m.group(5)) + 1
+    exposure_time = float(m.group(6))
 
     if math.isclose(start, end, rel_tol=0, abs_tol=tol):
         scan_type = "SnapshotScan"
     else:
         scan_type = "EnergyScan"
 
-    return scan_type, steps
+    return scan_type, steps, exposure_time
 
 
 def parse_single_scan(scan, spec_fname, tif_folder):
@@ -141,7 +142,7 @@ def parse_single_scan(scan, spec_fname, tif_folder):
     scan_number = scan.number
     scandata = get_scandata_information(scan)
     filenames = get_linked_tiff_filenames(spec_fname, tif_folder, scan_number)
-    scan_type, scan_points = get_scan_type(scan)
+    scan_type, scan_points, exposure_time = get_scan_type(scan)
     info = {
         "scan_number": scan_number,
         "scan_type": scan_type,
@@ -150,6 +151,7 @@ def parse_single_scan(scan, spec_fname, tif_folder):
         "metadata": get_metadata_from_header(scan.scan_header_dict["B"]),
         "scandata": scandata,
         "filenames": filenames,
+        "exposure_time": exposure_time,
     }
     return info
 
@@ -207,8 +209,7 @@ def get_scandata_information(scan):
     # with the correct column schema instead of crashing.
     if scandata.shape[0] == 0:
         logger.debug(
-            "Skipping empty scan (no data rows); returning empty DataFrame "
-            "with %d columns: %s",
+            "Skipping empty scan (no data rows); returning empty DataFrame " "with %d columns: %s",
             len(header),
             header,
         )

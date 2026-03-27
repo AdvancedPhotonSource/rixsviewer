@@ -139,7 +139,7 @@ class RixsView:
             hdl.legend = None
         hdl.clear()
 
-    def plot_binned_data(self, result, show_rawdata=False, hdl_target="plot"):
+    def plot_binned_data(self, result, show_rawdata=False, plot_target="intensity", hdl_target="plot"):
         """Render binned RIXS data onto the plot widget.
 
         Parameters
@@ -154,24 +154,33 @@ class RixsView:
         """
         hdl = self.plot_hdl if hdl_target == "plot" else self.calib_hdl
         hdl.clear()
-        if show_rawdata:
-            for i, (x, y) in enumerate(result["rawdata_lines"]):
-                color = self._LINE_COLORS[i % len(self._LINE_COLORS)]
-                pen = pg.mkPen(color=color, width=1)
-                hdl.plot(x, y, pen=pen)
+        assert plot_target in result, f"plot_target {plot_target} not found in result {list(result.keys())}"
 
-        # Plot the binned line with error bars
-        x, y, err = result["binned_line"]
-        pen = pg.mkPen(color=(0, 0, 255), width=1)
-        hdl.plot(x, y, pen=pen)
-
-        # --- Error bar item ---
-        err_plot = pg.ErrorBarItem(x=x, y=y, top=err, bottom=err, beam=0.00001)
-        hdl.addItem(err_plot)
-
-        hdl.setLabel("left", "Intensity")
         hdl.setLabel("bottom", "Energy (keV)")
+        pen = pg.mkPen(color=(0, 0, 255), width=1)
+        energy_axis = result["energy_axis"]
+        y_data = result[plot_target]
 
+        hdl.plot(energy_axis, y_data, pen=pen)
+        if plot_target == "intensity_norm":
+            err = result["intensity_norm_err"]
+            # --- Error bar item ---
+            err_plot = pg.ErrorBarItem(x=energy_axis, y=y_data, top=err, bottom=err, beam=0.00001)
+            hdl.addItem(err_plot)
+            hdl.setLabel("left", "Intensity")
+            if show_rawdata:
+                for i, (x, y) in enumerate(result["rawdata_lines"]):
+                    color = self._LINE_COLORS[i % len(self._LINE_COLORS)]
+                    pen = pg.mkPen(color=color, width=1)
+                    hdl.plot(x, y, pen=pen)
+        elif plot_target == "intensity_raw":
+            hdl.setLabel("left", "Raw Intensity")
+        elif plot_target == "pseudo_cps":
+            hdl.setLabel("left", "Counts/second")
+        else:
+            hdl.setLabel("left", plot_target)
+
+        hdl.enableAutoRange()
         if result["summed_data"] is not None:
             self.img2d_hdl.setImage(result["summed_data"], levels=result["levels"])
         self.ui.label_energy_interval.setText(f"Energy interval: [{result['energy_resolution']:.3f} meV]")
@@ -273,7 +282,9 @@ class RixsView:
         for color, result, label in layers:
             if result is None:
                 continue
-            x, y, err = result["binned_line"]
+            x = result["energy_axis"]
+            y = result["intensity_norm"]
+            err = result["intensity_norm_err"]
             fwhm_val = result.get("fwhm")
             fwhm_str = f"{fwhm_val * 1e6:.1f} meV" if fwhm_val is not None else "N/A"
             legend_name = f"{label} (FWHM={fwhm_str})"

@@ -141,7 +141,7 @@ class RixsViewerGUI(QMainWindow):
         if self.scan_model is not None:
             has_updates = self.scan_model.process_spec_file()
             self.current_rixs_dset = self.scan_model.last_scan_dset
-            
+
             if has_updates:
                 self.process_binning()
                 self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
@@ -334,6 +334,7 @@ class RixsViewerGUI(QMainWindow):
         meta_source = self.ui.comboBox_metasource.currentText()
         center_method = self.ui.comboBox_center_method.currentText()
         bin_pixel = self.ui.spinBox_binpixel.value()
+        plot_target = self.ui.comboBox_plottarget.currentText()
 
         binning_kwargs = self._get_binning_kwargs(meta_source)
 
@@ -354,7 +355,7 @@ class RixsViewerGUI(QMainWindow):
             )
 
         def on_result(result):
-            self.view.plot_binned_data(result, show_rawdata, hdl_target="plot")
+            self.view.plot_binned_data(result, show_rawdata, plot_target=plot_target, hdl_target="plot")
 
         def on_error(err_str):
             QMessageBox.critical(self, "Error", f"Processing binning failed:\n{err_str}")

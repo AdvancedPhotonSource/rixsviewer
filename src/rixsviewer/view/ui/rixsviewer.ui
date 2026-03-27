@@ -444,33 +444,6 @@
                </property>
               </widget>
              </item>
-             <item row="0" column="11">
-              <widget class="QCheckBox" name="checkBox_show_rawdata">
-               <property name="text">
-                <string>Show RawData</string>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="19">
-              <widget class="QPushButton" name="pushButton_process">
-               <property name="text">
-                <string>Apply</string>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="13">
-              <widget class="QLabel" name="label_binpixel">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="text">
-                <string>Bin Pixel:</string>
-               </property>
-              </widget>
-             </item>
              <item row="0" column="12">
               <widget class="Line" name="line_3">
                <property name="orientation">
@@ -491,50 +464,16 @@
                </property>
               </widget>
              </item>
-             <item row="0" column="16">
-              <spacer name="horizontalSpacer_2">
-               <property name="orientation">
-                <enum>Qt::Orientation::Horizontal</enum>
-               </property>
-               <property name="sizeHint" stdset="0">
-                <size>
-                 <width>40</width>
-                 <height>20</height>
-                </size>
-               </property>
-              </spacer>
-             </item>
-             <item row="0" column="14">
-              <widget class="QSpinBox" name="spinBox_binpixel">
+             <item row="0" column="15">
+              <widget class="QLabel" name="label_energy_interval">
                <property name="sizePolicy">
-                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
                  <horstretch>0</horstretch>
                  <verstretch>0</verstretch>
                 </sizepolicy>
                </property>
-               <property name="minimum">
-                <number>1</number>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="10">
-              <widget class="Line" name="line_2">
-               <property name="orientation">
-                <enum>Qt::Orientation::Vertical</enum>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="18">
-              <widget class="QProgressBar" name="progressBar_process">
-               <property name="value">
-                <number>0</number>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="20">
-              <widget class="QPushButton" name="pushButton_save">
                <property name="text">
-                <string>Export</string>
+                <string>Energy Interval:</string>
                </property>
               </widget>
              </item>
@@ -557,23 +496,150 @@
                </item>
               </widget>
              </item>
-             <item row="0" column="15">
-              <widget class="QLabel" name="label_energy_interval">
+             <item row="0" column="17">
+              <widget class="QLabel" name="label_10">
+               <property name="text">
+                <string>Progress:</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="23">
+              <widget class="QPushButton" name="pushButton_process">
+               <property name="text">
+                <string>Apply</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="24">
+              <widget class="QPushButton" name="pushButton_save">
+               <property name="text">
+                <string>Export</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="11">
+              <widget class="QCheckBox" name="checkBox_show_rawdata">
+               <property name="text">
+                <string>Show RawData</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="20">
+              <widget class="QLabel" name="label_11">
+               <property name="text">
+                <string>Plot</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="13">
+              <widget class="QLabel" name="label_binpixel">
                <property name="sizePolicy">
-                <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
                  <horstretch>0</horstretch>
                  <verstretch>0</verstretch>
                 </sizepolicy>
                </property>
                <property name="text">
-                <string>Energy Interval:</string>
+                <string>Bin Pixel:</string>
                </property>
               </widget>
              </item>
-             <item row="0" column="17">
-              <widget class="QLabel" name="label_10">
-               <property name="text">
-                <string>Progress:</string>
+             <item row="0" column="14">
+              <widget class="QSpinBox" name="spinBox_binpixel">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimum">
+                <number>1</number>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="18">
+              <widget class="QProgressBar" name="progressBar_process">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                 <horstretch>2</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="value">
+                <number>0</number>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="10">
+              <widget class="Line" name="line_2">
+               <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="22">
+              <widget class="Line" name="line_9">
+               <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="21">
+              <widget class="QComboBox" name="comboBox_plottarget">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                 <horstretch>1</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <item>
+                <property name="text">
+                 <string>intensity_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>intensity_raw</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>pseudo_cps</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>i0</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>i2</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>mmepin1</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>mmepin2</string>
+                </property>
+               </item>
+              </widget>
+             </item>
+             <item row="0" column="16">
+              <widget class="Line" name="line_8">
+               <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="19">
+              <widget class="Line" name="line_10">
+               <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
                </property>
               </widget>
              </item>

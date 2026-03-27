@@ -422,7 +422,7 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, 
     return lines, bin_energy_axis, np.array(bin_data)
 
 
-def _reduce_frames(energy_axis, bin_data, noise_model, bin_pixel=1):
+def _reduce_frames(energy_axis, bin_data, scan_data, exposure_time=1.0, noise_model="poisson", bin_pixel=1):
     """Average aligned frames and estimate per-bin uncertainty.
 
     Parameters
@@ -431,7 +431,7 @@ def _reduce_frames(energy_axis, bin_data, noise_model, bin_pixel=1):
         Energy axis for binning.
     bin_data : ndarray, shape (n_frames, n_bins)
         NaN marks bins with no coverage for a given frame.
-    noise_model : {'poisson', 'gaussian'}
+    noise_model : {'poisson'}
     bin_pixel : int
         Number of pixels to bin together.
     Returns
@@ -440,40 +440,50 @@ def _reduce_frames(energy_axis, bin_data, noise_model, bin_pixel=1):
     mean : ndarray, shape (n_bins,)
     err  : ndarray, shape (n_bins,)
     """
-    assert noise_model in ("poisson", "gaussian"), "noise_model must be either 'poisson' or 'gaussian'"
-
-    tot_counts = np.sum(~np.isnan(bin_data), axis=0)
-    tot_signal = np.nansum(bin_data, axis=0)
-    norm_data = tot_signal / np.clip(tot_counts, a_min=1, a_max=None)
-
+    # assert noise_model in ("poisson", "gaussian"), "noise_model must be either 'poisson' or 'gaussian'"
+    assert noise_model in ("poisson"), "noise_model only supports 'poisson' for now"
     assert bin_pixel > 0 and isinstance(bin_pixel, int), "bin_pixel must be a positive integer"
+
+    num_bins = len(energy_axis)
+    nan_mask_2d = np.isnan(bin_data)  # (n_frames, n_bins)
+
+    results = {
+        "intensity": np.nansum(bin_data, axis=0),
+        "sample": np.sum(~np.isnan(bin_data), axis=0),  # (n_bins,)
+    }
+
+    for key in ("i2", "i0", "mmepin1", "mmepin2"):
+        full_data = np.tile(scan_data[key].values[:, np.newaxis], (1, num_bins)).astype(np.float64)
+        full_data[nan_mask_2d] = np.nan
+        results[key] = np.nansum(full_data, axis=0)
+
     if bin_pixel > 1:
-        n = (len(norm_data) // bin_pixel) * bin_pixel
-        # Reshape bin_data to (n_frames, n_superbins, bin_pixel) for both branches
-        bin_data_3d = bin_data[:, :n].reshape(bin_data.shape[0], -1, bin_pixel)
-        norm_data = norm_data[:n].reshape(-1, bin_pixel).sum(axis=1)
-        energy_axis = energy_axis[:n].reshape(-1, bin_pixel).mean(axis=1)
-        # need for mary's legacy code
-        tot_counts = tot_counts[:n].reshape(-1, bin_pixel).sum(axis=1)  # total samples per super-bin
-        tot_signal = tot_signal[:n].reshape(-1, bin_pixel).sum(axis=1)
+        rounded_num_bins = (num_bins // bin_pixel) * bin_pixel
+        for key, val in results.items():
+            results[key] = val[:rounded_num_bins].reshape(-1, bin_pixel).sum(axis=1)
+        # use mean (not sum) for energy axis
+        results["energy_axis"] = energy_axis[:rounded_num_bins].reshape(-1, bin_pixel).mean(axis=1)
     else:
-        bin_data_3d = bin_data[:, :, np.newaxis]  # (n_frames, n_bins, 1) — trivially grouped
+        results["energy_axis"] = energy_axis
+
+    norm_factor = np.clip(results["i2"], a_min=1, a_max=None)
+
+    results["intensity_norm"] = results["intensity"] / norm_factor
+    # make it compatible with the GUI input
+    results["intensity_raw"] = results["intensity"]
+
+    # pseudo counts per second
+    results["pseudo_cps"] = results["intensity_norm"] * np.mean(results["i2"]) / exposure_time
 
     if noise_model == "poisson":
-        err = np.sqrt(norm_data / np.clip(tot_counts, a_min=1, a_max=None))
-    else:
-        # Pool all (frame × bin_pixel) samples per super-bin, then standard error of the mean
-        # bin_data_3d shape: (n_frames, n_superbins, bin_pixel) → transpose to (n_superbins, n_frames * bin_pixel)
-        pooled = bin_data_3d.transpose(1, 0, 2).reshape(bin_data_3d.shape[1], -1)
-        err = np.nanstd(pooled, axis=1) / np.sqrt(np.clip(tot_counts, a_min=1, a_max=None))
+        results["intensity_norm_err"] = np.sqrt(results["intensity"]) / norm_factor
 
-    return (
-        energy_axis,
-        norm_data,
-        err,
-        tot_signal,
-        tot_counts,
-    )
+    # apply number_of_sample normalization;
+    for key in ("i2", "i0", "mmepin1", "mmepin2"):
+        results[key] = results[key] / results["sample"]
+    results["energy_resolution"] = round((energy_axis[1] - energy_axis[0]) * 1e6, 3)
+
+    return results
 
 
 def _compute_fwhm_func(energy_axis, intensity, err=None):
@@ -561,8 +571,7 @@ def _compute_fwhm_func(energy_axis, intensity, err=None):
 
 def bin_rixs_data(
     data,
-    merixE,
-    scan_type,
+    scan_info,
     DeltaD=0.022,
     RefL=70,
     Eb=10,
@@ -589,10 +598,8 @@ def bin_rixs_data(
     ----------
     data : ndarray, shape (n_frames, height, width)
         The input 3D image stack.
-    merixE : array-like, shape (n_frames,)
-        Incident energy per frame (keV).
-    scan_type : {'EnergyScan', 'SnapshotScan'}
-        Determine the type of scan.
+    scan_info : dict
+        Dictionary containing scan information.
     DeltaD : float, optional
         Nominal pixel pitch (mm). Default ``0.022``.
     RefL : int, optional
@@ -625,7 +632,8 @@ def bin_rixs_data(
         ``summed_data``, ``levels``, ``fwhm``, ``center``, ``energy_resolution``,
         ``tot_signal``, ``tot_counts``.
     """
-    merixE = np.asarray(merixE, dtype=float)
+    merixE = np.asarray(scan_info["scandata"]["merixE"], dtype=float)
+    scan_type = scan_info["scan_type"]
     if progress_callback:
         progress_callback(5)
 
@@ -637,26 +645,26 @@ def bin_rixs_data(
     if progress_callback:
         progress_callback(50)
 
-    lines, bin_energy, bin_data = _compute_energy_axis(
-        data_2d,
-        xaxis,
-        merixE,
-        Eb,
-        rowland_radius,
-        scan_type,
-        DeltaD,
-    )
+    lines, bin_energy, bin_data = _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, DeltaD)
     if progress_callback:
         progress_callback(80)
 
-    energy_axis, norm_data, norm_data_err, tot_signal, tot_counts = _reduce_frames(
-        bin_energy, bin_data, noise_model, bin_pixel
+    results = _reduce_frames(
+        bin_energy,
+        bin_data,
+        scan_info["scandata"],
+        exposure_time=scan_info["exposure_time"],
+        noise_model=noise_model,
+        bin_pixel=bin_pixel,
     )
+    energy_axis = results["energy_axis"]
+
     if progress_callback:
         progress_callback(90)
 
     if compute_fwhm:
-        fwhm, center = _compute_fwhm_func(energy_axis, norm_data, norm_data_err)
+        # use the
+        fwhm, center = _compute_fwhm_func(energy_axis, results["intensity_norm"])
     else:
         fwhm, center = None, None
 
@@ -670,14 +678,13 @@ def bin_rixs_data(
     if progress_callback:
         progress_callback(100)
 
-    return {
+    all_result = {
         "rawdata_lines": lines,
-        "binned_line": (energy_axis, norm_data, norm_data_err),
         "summed_data": summed_data,
         "levels": levels,
         "fwhm": fwhm,
         "center": center,
-        "energy_resolution": round((energy_axis[1] - energy_axis[0]) * 1e6, 3),
-        "tot_signal": tot_signal,
-        "tot_counts": tot_counts,
     }
+    all_result.update(results)
+
+    return all_result

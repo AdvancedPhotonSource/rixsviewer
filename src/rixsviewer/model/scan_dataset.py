@@ -58,6 +58,17 @@ class RixsScanTiffDataset:
         self.bin_result = None
         self.bin_kwargs = None
         self._saved = False
+        self.file_save_keys = {
+            "energy_axis": "Energy",
+            "intensity_norm": "Intensity_norm",
+            "intensity_norm_err": "Intensity_norm_err",
+            "intensity_raw": "Intensity_raw",
+            "sample": "A",
+            "i2": "i2",
+            "i0": "i0",
+            "mmepin1": "mmepin1",
+            "mmepin2": "mmepin2",
+        }
 
     def update_scan_info(self, scan_pack):
         """
@@ -209,10 +220,6 @@ class RixsScanTiffDataset:
         -------
         data : numpy.ndarray
             Full TIFF image stack.
-        merixE : array-like
-            Per-frame incident energies.
-        scan_type : str
-            Type of scan ('EnergyScan', 'SnapshotScan', etc.).
         merged_kwargs : dict
             A new dict containing *kwargs* merged with SpecFile metadata
             (when applicable). The caller's original dict is not modified.
@@ -236,9 +243,7 @@ class RixsScanTiffDataset:
             raise ValueError(
                 f"Scan {self.scan_index} has no scandata rows; " "cannot run processing on an empty dataset."
             )
-        merixE = scandata["merixE"]
-        scan_type = self.scan_info["scan_type"]
-        return data, merixE, scan_type, merged_kwargs
+        return data, merged_kwargs
 
     def bin_data_wrap(
         self,
@@ -272,8 +277,9 @@ class RixsScanTiffDataset:
         dict
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
-        data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
-        self.bin_result = bin_rixs_data(data, merixE, scan_type, progress_callback=progress_callback, **merged_kwargs)
+        data, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        self.bin_result = bin_rixs_data(data, self.scan_info, progress_callback=progress_callback, **merged_kwargs)
+
         return self.bin_result
 
     def save_to_file(self, fname=None):
@@ -285,6 +291,7 @@ class RixsScanTiffDataset:
             fname = "./test_rixsviewer_saving.spec"
 
         res = self.bin_result
+
         with open(fname, "a") as f:
             f.write(f"\n#S {self.scan_index} {self.scan_info['scan_type']}\n")
             f.write(f"#D {np.datetime64('now')}\n")
@@ -293,10 +300,10 @@ class RixsScanTiffDataset:
                 unit = unit_map.get(key, "")
                 f.write(f"#C {key} = {value}{unit}\n")
             f.write(f"#N {5}\n")
-            f.write(f"#L  Energy  Intensity  Error  Signal  Norm\n")
-
-            data = np.column_stack((*res["binned_line"], res["tot_signal"], res["tot_counts"]))
-            np.savetxt(f, data, fmt="%.6e")
+            header = "#L  " + "  ".join(list(self.file_save_keys.values()))
+            f.write(header + "\n")
+            data = np.column_stack([res[key] for key in self.file_save_keys.keys()])
+            np.savetxt(f, data, fmt="%.18e")
             f.write("\n")
 
     def fit_pixel_size_wrap(
@@ -330,7 +337,9 @@ class RixsScanTiffDataset:
         float
             Effective pixel size in mm.
         """
-        data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        data, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        merixE = np.asarray(self.scan_info["scandata"]["merixE"], dtype=float)
+        scan_type = self.scan_info["scan_type"]
 
         effective_pixel_size = fit_pixel_size(data, merixE, scan_type, **merged_kwargs)
         merged_kwargs["DeltaD"] = effective_pixel_size
@@ -379,7 +388,9 @@ class RixsScanTiffDataset:
         # Step 1 – resolve inputs once, then determine the reference pixel size
         org_value = kwargs[target]
         logger.info(f"Linesearch to optimize {target}, org_value: {org_value}")
-        data, merixE, scan_type, base_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        data, base_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        merixE = np.asarray(self.scan_info["scandata"]["merixE"], dtype=float)
+        scan_type = self.scan_info["scan_type"]
 
         # Step 2 – determine line search grid
         assert target in ("DeltaD", "TiltAngle")
@@ -405,7 +416,7 @@ class RixsScanTiffDataset:
         for i, val in enumerate(val_list):
             sweep_kwargs = dict(base_kwargs)
             sweep_kwargs[target] = float(val)
-            result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **sweep_kwargs)
+            result = bin_rixs_data(data, self.scan_info, compute_fwhm=True, **sweep_kwargs)
             fwhm = result.get("fwhm", np.nan)
             lns_table.append((float(val), float(fwhm)))
             if np.isfinite(fwhm) and fwhm < best_fwhm:
@@ -419,7 +430,7 @@ class RixsScanTiffDataset:
         # Step 4 – binning at the reference point for overlay comparison
         original_kwargs = dict(base_kwargs)
         original_kwargs[target] = float(org_value)
-        org_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **original_kwargs)
+        org_result = bin_rixs_data(data, self.scan_info, compute_fwhm=True, **original_kwargs)
 
         return {
             "target": target,
