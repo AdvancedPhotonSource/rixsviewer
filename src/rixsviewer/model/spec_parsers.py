@@ -200,20 +200,6 @@ def get_scandata_information(scan):
     """
     header = scan.scan_header_dict["L"].split()
     scandata = scan.data.T
-
-    # Guard against empty scans (num_rows == 0): scan.data will have shape
-    # (num_columns, 0), so after .T it becomes (0, 0), which causes a pandas
-    # shape-mismatch when column names are supplied.  Return an empty DataFrame
-    # with the correct column schema instead of crashing.
-    if scandata.shape[0] == 0:
-        logger.debug(
-            "Skipping empty scan (no data rows); returning empty DataFrame "
-            "with %d columns: %s",
-            len(header),
-            header,
-        )
-        return pd.DataFrame(columns=header)
-
     scandata = pd.DataFrame(scandata, columns=header)
     return scandata
 

@@ -149,15 +149,6 @@ class RixsScanTiffDataset:
             ``frame_index``   — resolved (non-negative) frame index.
         """
         self._data = self.read_data()
-        if self._data is None or len(self._data) == 0:
-            logger.debug("Scan %d has no TIFF frames yet; skipping display.", self.scan_index)
-            return None
-
-        scandata = self.scan_info["scandata"]
-        if scandata.empty:
-            logger.debug("Scan %d has no scandata rows yet; skipping display.", self.scan_index)
-            return None
-
         num_frames = len(self._data)
         if frame_index == -2:
             frame_index = num_frames // 2
@@ -168,7 +159,7 @@ class RixsScanTiffDataset:
         levels = percentile_clip(self._data[frame_index], percentile_cutoff)
 
         frame_metadata = self.scan_info["metadata"].copy()
-        frame_metadata["E"] = scandata["merixE"].iloc[frame_index]
+        frame_metadata["E"] = self.scan_info["scandata"]["merixE"][frame_index]
         frame_metadata["ThetaB"] = np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6  # micro-radian
 
         frame = self._data[frame_index]
@@ -227,18 +218,7 @@ class RixsScanTiffDataset:
 
         # Resolve self-dependent context and pass as plain data
         data = self.read_data()
-        if data is None or len(data) == 0:
-            raise ValueError(
-                f"Scan {self.scan_index} has no TIFF frames loaded; "
-                "cannot run processing on an empty dataset."
-            )
-        scandata = self.scan_info["scandata"]
-        if scandata.empty:
-            raise ValueError(
-                f"Scan {self.scan_index} has no scandata rows; "
-                "cannot run processing on an empty dataset."
-            )
-        merixE = scandata["merixE"]
+        merixE = self.scan_info["scandata"]["merixE"]
         scan_type = self.scan_info["scan_type"]
         return data, merixE, scan_type, merged_kwargs
 
