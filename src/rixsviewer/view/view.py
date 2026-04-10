@@ -161,7 +161,15 @@ class RixsView:
         energy_axis = result["energy_axis"]
         y_data = result[plot_target]
 
-        hdl.plot(energy_axis, y_data, pen=pen)
+        hdl.plot(
+            energy_axis,
+            y_data,
+            pen=pen,
+            symbol="o",
+            symbolSize=5,
+            symbolPen=pg.mkPen(color=(0, 0, 255), width=1),
+            symbolBrush=None,
+        )
         if plot_target == "intensity_norm":
             err = result["intensity_norm_err"]
             # --- Error bar item ---
@@ -172,7 +180,15 @@ class RixsView:
                 for i, (x, y) in enumerate(result["rawdata_lines"]):
                     color = self._LINE_COLORS[i % len(self._LINE_COLORS)]
                     pen = pg.mkPen(color=color, width=1)
-                    hdl.plot(x, y, pen=pen)
+                    hdl.plot(
+                        x,
+                        y,
+                        pen=pen,
+                        symbol="o",
+                        symbolSize=4,
+                        symbolPen=pg.mkPen(color=color, width=1),
+                        symbolBrush=None,
+                    )
         elif plot_target == "intensity_raw":
             hdl.setLabel("left", "Raw Intensity")
         elif plot_target == "pseudo_cps":
@@ -355,7 +371,7 @@ class RixsView:
     # ROI helpers
     # ------------------------------------------------------------------
 
-    def _update_roi(self, image_shape, binning_kwargs):
+    def _update_roi(self, image_shape, binning_kwargs, bin_result=None):
         """Create (first call) or reposition (subsequent calls) the ROI overlay.
 
         With ``invertY(True)`` on the plot, display coordinates match data
@@ -368,15 +384,23 @@ class RixsView:
             ``(rows, cols)`` of the data array (used for default fallbacks).
         binning_kwargs : dict
             Must contain ``"Ylow"``, ``"Yhigh"``, and ``"RefL"``.
+        bin_result : dict, optional
+            When provided the ``"roi"`` key (set by :func:`~.utils.bin_rixs_data`)
+            is used directly, which accounts for detector-edge clamping and
+            avoids recomputing the geometry here.
         """
-        ylow = binning_kwargs.get("Ylow", 0)
-        yhigh = binning_kwargs.get("Yhigh", image_shape[0])
-        refl = binning_kwargs.get("RefL", image_shape[1] // 2)
-
-        roi_x = 0
-        roi_y = ylow
-        roi_w = 2 * refl
-        roi_h = yhigh - ylow  # always >= 0
+        if bin_result is not None and "roi" in bin_result:
+            roi = bin_result["roi"]
+            roi_x, roi_y, roi_w, roi_h = roi["x"], roi["y"], roi["w"], roi["h"]
+        else:
+            ylow = binning_kwargs.get("Ylow", 0)
+            yhigh = binning_kwargs.get("Yhigh", image_shape[0])
+            refl = binning_kwargs.get("RefL", image_shape[1] // 2)
+            xsize = int(binning_kwargs.get("Acrystalsize", 1.3) / binning_kwargs.get("DeltaD", 0.02))
+            roi_x = max(0, refl - xsize)
+            roi_y = ylow
+            roi_w = max(0, 2 * xsize + 1)
+            roi_h = max(0, yhigh - ylow)
 
         if self._roi_rect is None:
             # Create once; make it non-interactive (display-only)
@@ -390,7 +414,7 @@ class RixsView:
             # Remove the scale handle that RectROI adds by default
             self._roi_rect.removeHandle(0)
             self._img_plot.addItem(self._roi_rect)
-        elif self._roi_parameters != (ylow, yhigh, refl):
-            self._roi_parameters = (ylow, yhigh, refl)
+        elif self._roi_parameters != (roi_x, roi_y, roi_w, roi_h):
+            self._roi_parameters = (roi_x, roi_y, roi_w, roi_h)
             self._roi_rect.setPos([roi_x, roi_y], finish=False)
             self._roi_rect.setSize([roi_w, roi_h], finish=False)

@@ -259,7 +259,7 @@ def percentile_clip(data, threshold=99):
     return (0, vmax)
 
 
-def _preprocess_frames(data, Ylow, Yhigh, RefL):
+def _preprocess_frames(data, Ylow, Yhigh, RefL, Xsize):
     """Sum detector rows in the ROI, pad the reflectivity tail, build xaxis.
 
     Parameters
@@ -272,24 +272,31 @@ def _preprocess_frames(data, Ylow, Yhigh, RefL):
         Exclusive upper row bound
     RefL : int
         Reference pixel (elastic peak channel)
-
+    Xsize : int
+        Number of pixels to include in the spectra in each direction
     Returns
     -------
     data_1d : ndarray, shape (n_frames, width)
         ROI sum per frame
     xaxis : ndarray, shape (width,)
         Pixel offset from elastic peak
+    h_start : int
+        Actual (clamped) left column of the horizontal ROI.
+    h_stop : int
+        Actual (clamped) right column of the horizontal ROI (exclusive).
     """
     shape = data.shape
     assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, "check Ylow and Yhigh and detector shape"
 
-    data_2d = np.sum(data[:, Ylow:Yhigh, :], axis=1)
+    h_start = max(0, RefL - Xsize)
+    h_stop = min(shape[2], RefL + Xsize + 1)
+    hslice = slice(h_start, h_stop)
+    vslice = slice(Ylow, Yhigh)
 
-    if 2 * RefL < shape[2]:  # pad reflectivity tail beyond 2*RefL
-        data_2d[:, 2 * RefL :] = np.mean(data_2d[:, 2 * RefL])
+    data_2d = np.sum(data[:, vslice, hslice], axis=1)
+    xaxis = np.arange(h_start, h_stop) - RefL
 
-    xaxis = np.arange(shape[2]) - RefL
-    return data_2d, xaxis
+    return data_2d, xaxis, h_start, h_stop
 
 
 def fit_pixel_size(
@@ -297,6 +304,7 @@ def fit_pixel_size(
     merixE,
     scan_type,
     DeltaD=0.022,
+    Acrystalsize=1.3,
     RefL=70,
     Eb=10,
     rowland_radius=1900,
@@ -319,6 +327,8 @@ def fit_pixel_size(
         Type of scan.
     DeltaD : float, optional
         Nominal pixel pitch (mm). Default ``0.022``.
+    Acrystalsize : float, optional
+        Dice size of analyzer in mm. Default ``1.3``.
     RefL : int, optional
         Reference pixel (elastic peak). Default ``70``.
     Eb : float, optional
@@ -345,7 +355,10 @@ def fit_pixel_size(
         logger.warning("fit_pixel_size is not implemented for SnapshotScan")
         return float(DeltaD)
 
-    data_1d, _ = _preprocess_frames(data, Ylow, Yhigh, RefL)
+    xsize = int(Acrystalsize / DeltaD)
+    if xsize <= 0:
+        raise ValueError(f"xsize must be positive, check Acrystalsize {Acrystalsize} and DeltaD {DeltaD}")
+    data_1d, _, _h_start, _h_stop = _preprocess_frames(data, Ylow, Yhigh, RefL, xsize)
 
     n = data_1d.shape[0]
     theta_b = np.arcsin(Eb / merixE)
@@ -480,7 +493,9 @@ def _reduce_frames(energy_axis, bin_data, scan_data, exposure_time=1.0, noise_mo
 
     # apply number_of_sample normalization;
     for key in ("i2", "i0", "mmepin1", "mmepin2"):
-        results[key] = results[key] / results["sample"]
+        results[key + "_norm"] = results[key] / results["sample"]
+    results["A"] = results["sample"]
+
     results["energy_resolution"] = round((energy_axis[1] - energy_axis[0]) * 1e6, 3)
 
     return results
@@ -578,6 +593,7 @@ def bin_rixs_data(
     rowland_radius=1900,
     Ylow=0,
     Yhigh=256,
+    Acrystalsize=1.3,
     noise_model="poisson",
     bin_pixel=1,
     compute_fwhm=False,
@@ -612,6 +628,8 @@ def bin_rixs_data(
         Lower row-summation bounds. Default ``0``.
     Yhigh : int, optional
         Upper row-summation bounds. Default ``256``.
+    Acrystalsize : float, optional
+        Dice size of analyzer in mm. Default ``1.3``.
     noise_model : {'poisson', 'gaussian'}, optional
         Specify the noise model method. Default ``'poisson'``.
     bin_pixel : int, optional
@@ -641,7 +659,8 @@ def bin_rixs_data(
     if progress_callback:
         progress_callback(30)
 
-    data_2d, xaxis = _preprocess_frames(data, Ylow, Yhigh, RefL)
+    xsize = int(Acrystalsize / DeltaD)
+    data_2d, xaxis, h_start, h_stop = _preprocess_frames(data, Ylow, Yhigh, RefL, xsize)
     if progress_callback:
         progress_callback(50)
 
@@ -684,6 +703,12 @@ def bin_rixs_data(
         "levels": levels,
         "fwhm": fwhm,
         "center": center,
+        "roi": {
+            "x": h_start,
+            "y": Ylow,
+            "w": h_stop - h_start,
+            "h": Yhigh - Ylow,
+        },
     }
     all_result.update(results)
 

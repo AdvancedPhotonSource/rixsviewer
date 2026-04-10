@@ -587,14 +587,45 @@
              <item row="0" column="21">
               <widget class="QComboBox" name="comboBox_plottarget">
                <property name="sizePolicy">
-                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                 <horstretch>1</horstretch>
+                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                 <horstretch>2</horstretch>
                  <verstretch>0</verstretch>
                 </sizepolicy>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>120</width>
+                 <height>0</height>
+                </size>
                </property>
                <item>
                 <property name="text">
                  <string>intensity_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>i0_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>i2_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>mmepin1_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>mmepin2_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>pseudo_cps</string>
                 </property>
                </item>
                <item>
@@ -604,7 +635,7 @@
                </item>
                <item>
                 <property name="text">
-                 <string>pseudo_cps</string>
+                 <string>A</string>
                 </property>
                </item>
                <item>
