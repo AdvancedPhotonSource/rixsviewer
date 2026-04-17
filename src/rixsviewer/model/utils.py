@@ -307,7 +307,7 @@ def fit_pixel_size(
     Acrystalsize=1.3,
     RefL=70,
     Eb=10,
-    rowland_radius=1900,
+    Ra=1900,
     Ylow=0,
     Yhigh=256,
     center_method="gaussian",
@@ -333,7 +333,7 @@ def fit_pixel_size(
         Reference pixel (elastic peak). Default ``70``.
     Eb : float, optional
         Backscattering energy (keV). Default ``10``.
-    rowland_radius : float, optional
+    Ra : float, optional
         Rowland radius (mm). Default ``1900``.
     Ylow : int, optional
         Lower row-summation bound. Default ``0``.
@@ -363,7 +363,7 @@ def fit_pixel_size(
     n = data_1d.shape[0]
     theta_b = np.arcsin(Eb / merixE)
     energy_cen = merixE.reshape(-1, 1)
-    scale = Eb / (2 * rowland_radius) / np.tan(theta_b)
+    scale = Eb / (2 * Ra) / np.tan(theta_b)
 
     com_pixel, valid_mask = find_peaks(data_1d, method=center_method, smooth_window=3, poly_order=2)
     a_mat = (com_pixel * scale).reshape(n, 1)
@@ -374,7 +374,7 @@ def fit_pixel_size(
     return effective_pixel_size
 
 
-def _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, DeltaD):
+def _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD):
     """Build per-pixel energy axes via Rowland geometry and align all
     frames onto a common energy grid.
 
@@ -388,7 +388,7 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, 
         Incident energy per frame (keV).
     Eb : float
         Analyser backscattering energy (keV).
-    rowland_radius : float
+    Ra : float
         Rowland circle radius (mm).
     scan_type : str
         ``'EnergyScan'`` or ``'SnapshotScan'``.
@@ -409,7 +409,7 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, 
 
     theta_b = np.arcsin(Eb / merixE)
     energy_cen = merixE.reshape(-1, 1)
-    scale = Eb / (2 * rowland_radius) / np.tan(theta_b)
+    scale = Eb / (2 * Ra) / np.tan(theta_b)
 
     energy_axis = energy_cen - np.outer(scale, xaxis) * DeltaD
 
@@ -590,7 +590,7 @@ def bin_rixs_data(
     DeltaD=0.022,
     RefL=70,
     Eb=10,
-    rowland_radius=1900,
+    Ra=1900,
     Ylow=0,
     Yhigh=256,
     Acrystalsize=1.3,
@@ -622,7 +622,7 @@ def bin_rixs_data(
         Reference pixel (elastic peak). Default ``70``.
     Eb : float, optional
         Backscattering energy (keV). Default ``10``.
-    rowland_radius : float, optional
+    Ra : float, optional
         Rowland radius (mm). Default ``1900``.
     Ylow : int, optional
         Lower row-summation bounds. Default ``0``.
@@ -664,7 +664,7 @@ def bin_rixs_data(
     if progress_callback:
         progress_callback(50)
 
-    lines, bin_energy, bin_data = _compute_energy_axis(data_2d, xaxis, merixE, Eb, rowland_radius, scan_type, DeltaD)
+    lines, bin_energy, bin_data = _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD)
     if progress_callback:
         progress_callback(80)
 
