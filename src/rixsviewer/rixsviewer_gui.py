@@ -8,6 +8,7 @@ from pathlib import Path
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
 from PySide6.QtCore import QTimer, QRunnable, Slot, QThreadPool, QObject, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMainWindow, QMessageBox
 
 from .model import RixsBinningModel, RixsSpecTable
@@ -569,6 +570,10 @@ def main():
 
     # Create QApplication with remaining arguments
     app = QApplication([sys.argv[0]] + qt_args)
+
+    icon_path = Path(__file__).parent / "assets" / "icon.png"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     # Configure pyqtgraph after QApplication is created to avoid Qt
     # "unique connections require a pointer to member function" warnings

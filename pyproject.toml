@@ -58,7 +58,7 @@ Repository = "https://github.com/yourusername/rixsviewer"
 where = ["src"]
 
 [tool.setuptools.package-data]
-rixsviewer = ["*.ui"]
+rixsviewer = ["*.ui", "assets/*.png"]
 
 [tool.black]
 line-length = 120
