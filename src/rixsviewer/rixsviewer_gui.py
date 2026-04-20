@@ -262,7 +262,10 @@ class RixsViewerGUI(QMainWindow):
             )
 
         def on_error(err_str):
-            QMessageBox.critical(self, "Error", f"Linesearch to optimize {opt_target} failed:\n{err_str}")
+            if err_str.startswith("No frames"):
+                self.statusBar().showMessage(f"Warning: {err_str}", 5000)
+            else:
+                QMessageBox.critical(self, "Error", f"Linesearch to optimize {opt_target} failed:\n{err_str}")
 
         def on_result(ls):
             # Plot the sweep curve with all three reference markers
@@ -357,9 +360,14 @@ class RixsViewerGUI(QMainWindow):
 
         def on_result(result):
             self.view.plot_binned_data(result, show_rawdata, plot_target=plot_target, hdl_target="plot")
+            if result.get("warning"):
+                self.statusBar().showMessage(f"Warning: {result['warning']}", 5000)
 
         def on_error(err_str):
-            QMessageBox.critical(self, "Error", f"Processing binning failed:\n{err_str}")
+            if err_str.startswith("No frames"):
+                self.statusBar().showMessage(f"Warning: {err_str}", 5000)
+            else:
+                QMessageBox.critical(self, "Error", f"Processing binning failed:\n{err_str}")
 
         def on_finished():
             self._binning_active = False

@@ -404,8 +404,16 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD):
     bin_data : ndarray, shape (n_frames, n_bins)
         Binned intensity frame data.
     """
-    n = data_2d.shape[0]
-    assert merixE.shape[0] == n, "merixE and data must have the same number of frames"
+    n = min(data_2d.shape[0], merixE.shape[0])
+    if data_2d.shape[0] != merixE.shape[0]:
+        logger.warning(
+            "Frame count mismatch: merixE has %d frames, data has %d; trimming to %d",
+            merixE.shape[0], data_2d.shape[0], n,
+        )
+        data_2d = data_2d[:n]
+        merixE = merixE[:n]
+    if n == 0:
+        raise ValueError("No frames to process: merixE and data are both empty")
 
     theta_b = np.arcsin(Eb / merixE)
     energy_cen = merixE.reshape(-1, 1)
@@ -664,6 +672,14 @@ def bin_rixs_data(
     if progress_callback:
         progress_callback(50)
 
+    warning_msg = None
+    if data_2d.shape[0] != merixE.shape[0]:
+        n = min(data_2d.shape[0], merixE.shape[0])
+        warning_msg = (
+            f"Frame count mismatch: merixE has {merixE.shape[0]} frames, "
+            f"data has {data_2d.shape[0]}; trimming to {n}"
+        )
+
     lines, bin_energy, bin_data = _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD)
     if progress_callback:
         progress_callback(80)
@@ -703,6 +719,7 @@ def bin_rixs_data(
         "levels": levels,
         "fwhm": fwhm,
         "center": center,
+        "warning": warning_msg,
         "roi": {
             "x": h_start,
             "y": Ylow,
