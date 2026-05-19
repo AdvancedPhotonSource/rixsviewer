@@ -6,7 +6,13 @@ import tifffile
 from PySide6.QtCore import QAbstractTableModel, Qt
 
 from .spec_parsers import parse_single_scan
-from .utils import bin_rixs_data, percentile_clip, fit_pixel_size, apply_subpixel_shear_3d, mask_bad_pixels
+from .utils import (
+    bin_rixs_data,
+    percentile_clip,
+    fit_pixel_size,
+    apply_subpixel_shear_3d,
+    fix_bad_pixels,
+)
 from .process_parameters import unit_map
 from .. import __version__
 
@@ -89,9 +95,16 @@ class RixsScanTiffDataset:
             self.spec_fname,
             self.tif_folder,
         )
-        if self.scan_info is None or self.scan_info["tiff_points"] != scan_info["tiff_points"]:
-            prev_filenames = [] if self.scan_info is None else self.scan_info["filenames"]
-            unloaded_filenames = [fn for fn in scan_info["filenames"] if fn not in prev_filenames]
+        if (
+            self.scan_info is None
+            or self.scan_info["tiff_points"] != scan_info["tiff_points"]
+        ):
+            prev_filenames = (
+                [] if self.scan_info is None else self.scan_info["filenames"]
+            )
+            unloaded_filenames = [
+                fn for fn in scan_info["filenames"] if fn not in prev_filenames
+            ]
             self.unloaded_filenames = unloaded_filenames
             self.scan_info = scan_info
 
@@ -129,13 +142,22 @@ class RixsScanTiffDataset:
         return self.scan_info[key]
 
     def apply_tilt_angle(self, data, tilt_angle=0, tilt_order=1):
-        Ylow, Yhigh = self.scan_info["metadata"]["Ylow"], self.scan_info["metadata"]["Yhigh"]
+        Ylow, Yhigh = (
+            self.scan_info["metadata"]["Ylow"],
+            self.scan_info["metadata"]["Yhigh"],
+        )
         if data.ndim == 2:
-            return apply_subpixel_shear_3d(data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order)[0]
+            return apply_subpixel_shear_3d(
+                data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order
+            )[0]
         else:
-            return apply_subpixel_shear_3d(data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order)
+            return apply_subpixel_shear_3d(
+                data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order
+            )
 
-    def get_data_for_display(self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs):
+    def get_data_for_display(
+        self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs
+    ):
         """
         Load the TIFF stack and compute display intensity limits.
 
@@ -161,12 +183,16 @@ class RixsScanTiffDataset:
         """
         self._data = self.read_data()
         if self._data is None or len(self._data) == 0:
-            logger.debug("Scan %d has no TIFF frames yet; skipping display.", self.scan_index)
+            logger.debug(
+                "Scan %d has no TIFF frames yet; skipping display.", self.scan_index
+            )
             return None
 
         scandata = self.scan_info["scandata"]
         if scandata.empty:
-            logger.debug("Scan %d has no scandata rows yet; skipping display.", self.scan_index)
+            logger.debug(
+                "Scan %d has no scandata rows yet; skipping display.", self.scan_index
+            )
             return None
 
         num_frames = len(self._data)
@@ -180,7 +206,9 @@ class RixsScanTiffDataset:
 
         frame_metadata = self.scan_info["metadata"].copy()
         frame_metadata["E"] = scandata["merixE"].iloc[frame_index]
-        frame_metadata["ThetaB"] = np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6  # micro-radian
+        frame_metadata["ThetaB"] = (
+            np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6
+        )  # micro-radian
 
         frame = self._data[frame_index]
         frame = self.apply_tilt_angle(frame, TiltAngle)
@@ -224,7 +252,9 @@ class RixsScanTiffDataset:
             A new dict containing *kwargs* merged with SpecFile metadata
             (when applicable). The caller's original dict is not modified.
         """
-        assert metadata_source in ["SpecFile", "PV", "USER"], "metadata_source not supported."
+        assert metadata_source in ["SpecFile", "PV", "USER"], (
+            "metadata_source not supported."
+        )
 
         # Build a merged copy so the caller's dict is never mutated
         merged_kwargs = dict(kwargs)
@@ -236,12 +266,14 @@ class RixsScanTiffDataset:
         data = self.read_data()
         if data is None or len(data) == 0:
             raise ValueError(
-                f"Scan {self.scan_index} has no TIFF frames loaded; " "cannot run processing on an empty dataset."
+                f"Scan {self.scan_index} has no TIFF frames loaded; "
+                "cannot run processing on an empty dataset."
             )
         scandata = self.scan_info["scandata"]
         if scandata.empty:
             raise ValueError(
-                f"Scan {self.scan_index} has no scandata rows; " "cannot run processing on an empty dataset."
+                f"Scan {self.scan_index} has no scandata rows; "
+                "cannot run processing on an empty dataset."
             )
         return data, merged_kwargs
 
@@ -278,7 +310,9 @@ class RixsScanTiffDataset:
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
         data, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
-        self.bin_result = bin_rixs_data(data, self.scan_info, progress_callback=progress_callback, **merged_kwargs)
+        self.bin_result = bin_rixs_data(
+            data, self.scan_info, progress_callback=progress_callback, **merged_kwargs
+        )
 
         return self.bin_result
 
@@ -416,7 +450,9 @@ class RixsScanTiffDataset:
         for i, val in enumerate(val_list):
             sweep_kwargs = dict(base_kwargs)
             sweep_kwargs[target] = float(val)
-            result = bin_rixs_data(data, self.scan_info, compute_fwhm=True, **sweep_kwargs)
+            result = bin_rixs_data(
+                data, self.scan_info, compute_fwhm=True, **sweep_kwargs
+            )
             fwhm = result.get("fwhm", np.nan)
             lns_table.append((float(val), float(fwhm)))
             if np.isfinite(fwhm) and fwhm < best_fwhm:
@@ -430,7 +466,9 @@ class RixsScanTiffDataset:
         # Step 4 – binning at the reference point for overlay comparison
         original_kwargs = dict(base_kwargs)
         original_kwargs[target] = float(org_value)
-        org_result = bin_rixs_data(data, self.scan_info, compute_fwhm=True, **original_kwargs)
+        org_result = bin_rixs_data(
+            data, self.scan_info, compute_fwhm=True, **original_kwargs
+        )
 
         return {
             "target": target,
@@ -481,7 +519,7 @@ class RixsScanTiffDataset:
             for fname in self.unloaded_filenames:
                 data.append(tifffile.imread(fname))
             data = np.array(data).astype(np.float32)
-            data = mask_bad_pixels(data)
+            data = fix_bad_pixels(data)
             if self._data is None:
                 self._data = data
             else:

@@ -1,3 +1,4 @@
+import functools
 import logging
 import warnings
 
@@ -10,29 +11,91 @@ from scipy.signal import savgol_filter
 logger = logging.getLogger(__name__)
 
 
-def mask_bad_pixels(data, bad_pixels=None):
-    """Return a copy of *data* with known bad pixels zeroed out.
+@functools.lru_cache(maxsize=8)
+def _build_neighbour_index(bad_pixels_tuple, height, width):
+    """Pre-build stacked index arrays for a single vectorised gather at call time.
+
+    Returns
+    -------
+    bad_rows, bad_cols : ndarray, shape (n_bad,)
+    nbr_rows, nbr_cols : ndarray, shape (total_nbrs,)
+        All neighbour coordinates concatenated across every bad pixel.
+    reduceat_idx : ndarray, shape (n_bad,)
+        Segment-start indices for ``np.add.reduceat``.
+    counts : ndarray, shape (n_bad,)
+        Number of valid neighbours per bad pixel (used for the mean).
+    """
+    offsets = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
+    bad_set = set(bad_pixels_tuple)
+
+    bad_rows, bad_cols = [], []
+    nbr_rows, nbr_cols = [], []
+    counts = []
+
+    for row, col in bad_pixels_tuple:
+        nbrs = [
+            (row + dr, col + dc)
+            for dr, dc in offsets
+            if 0 <= row + dr < height
+            and 0 <= col + dc < width
+            and (row + dr, col + dc) not in bad_set
+        ]
+        bad_rows.append(row)
+        bad_cols.append(col)
+        nbr_rows.extend(r for r, c in nbrs)
+        nbr_cols.extend(c for r, c in nbrs)
+        counts.append(len(nbrs))
+
+    counts = np.array(counts, dtype=np.intp)
+    reduceat_idx = np.concatenate([[0], np.cumsum(counts[:-1])]).astype(np.intp)
+
+    return (
+        np.array(bad_rows, dtype=np.intp),
+        np.array(bad_cols, dtype=np.intp),
+        np.array(nbr_rows, dtype=np.intp),
+        np.array(nbr_cols, dtype=np.intp),
+        reduceat_idx,
+        counts,
+    )
+
+
+def fix_bad_pixels(data, bad_pixels=None):
+    """Replace known bad pixels with the mean of their 8-connected good neighbours.
 
     Parameters
     ----------
     data : ndarray, shape (n_frames, height, width)
-        Raw image stack.  The original array is **not** modified.
+        Raw image stack, modified in place.
     bad_pixels : list of (int, int) or None
-        Sequence of ``(row, col)`` pixel coordinates to zero out.
+        Sequence of ``(row, col)`` pixel coordinates to fix.
         When *None* the global list in :mod:`bad_pixels` is used.
 
     Returns
     -------
     ndarray
-        return *data* with the specified pixels set to zero.
+        *data* with bad pixels replaced by the 8-connected neighbour mean.
     """
     if bad_pixels is None:
         from .bad_pixels import BAD_PIXELS
 
         bad_pixels = BAD_PIXELS
-    if bad_pixels:
-        rows, cols = zip(*bad_pixels)
-        data[:, rows, cols] = 0
+    if not bad_pixels:
+        return data
+
+    height, width = data.shape[1], data.shape[2]
+    bad_rows, bad_cols, nbr_rows, nbr_cols, reduceat_idx, counts = (
+        _build_neighbour_index(tuple(bad_pixels), height, width)
+    )
+
+    # Single gather: (n_frames, total_nbrs) — one C-level fancy-index call
+    all_nbr_vals = data[:, nbr_rows, nbr_cols]
+
+    # Sum per bad-pixel segment, then divide by count — no Python loop
+    nbr_sums = np.add.reduceat(all_nbr_vals, reduceat_idx, axis=1)  # (n_frames, n_bad)
+    means = np.where(counts > 0, nbr_sums / np.maximum(counts, 1), 0)
+
+    data[:, bad_rows, bad_cols] = means
+
     return data
 
 
@@ -138,12 +201,19 @@ def plot_peak_debug(x, centers, num_samples=5, row_indices=None):
         plt.subplot(len(row_indices), 1, i + 1)
 
         # Plot the raw data
-        plt.plot(indices, x[row_idx], label=f"Row {row_idx}", color="steelblue", alpha=0.8)
+        plt.plot(
+            indices, x[row_idx], label=f"Row {row_idx}", color="steelblue", alpha=0.8
+        )
 
         # Mark the detected center with a vertical line
         center_val = centers[row_idx]
         if not np.isnan(center_val):
-            plt.axvline(x=center_val, color="red", linestyle="--", label=f"Center: {center_val:.2f}")
+            plt.axvline(
+                x=center_val,
+                color="red",
+                linestyle="--",
+                label=f"Center: {center_val:.2f}",
+            )
             # Add a point on the curve for visual confirmation
             # We use np.interp to find the height if the center is sub-pixel
             peak_height = np.interp(center_val, indices, x[row_idx])
@@ -207,7 +277,12 @@ def find_peaks(x, method="centroid", smooth_window=None, poly_order=2):
     elif method == "centroid":
         row_sums = x_clean.sum(axis=1)
         # Avoid division by zero for flat rows
-        centers = np.divide(np.sum(x_clean * indices, axis=1), row_sums, out=np.zeros(m), where=row_sums != 0)
+        centers = np.divide(
+            np.sum(x_clean * indices, axis=1),
+            row_sums,
+            out=np.zeros(m),
+            where=row_sums != 0,
+        )
 
     elif method == "gaussian":
         for i in range(m):
@@ -286,7 +361,9 @@ def _preprocess_frames(data, Ylow, Yhigh, RefL, Xsize):
         Actual (clamped) right column of the horizontal ROI (exclusive).
     """
     shape = data.shape
-    assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, "check Ylow and Yhigh and detector shape"
+    assert Ylow >= 0 and Yhigh <= shape[1] and Ylow < Yhigh, (
+        "check Ylow and Yhigh and detector shape"
+    )
 
     h_start = max(0, RefL - Xsize)
     h_stop = min(shape[2], RefL + Xsize + 1)
@@ -357,7 +434,9 @@ def fit_pixel_size(
 
     xsize = int(Acrystalsize / DeltaD)
     if xsize <= 0:
-        raise ValueError(f"xsize must be positive, check Acrystalsize {Acrystalsize} and DeltaD {DeltaD}")
+        raise ValueError(
+            f"xsize must be positive, check Acrystalsize {Acrystalsize} and DeltaD {DeltaD}"
+        )
     data_1d, _, _h_start, _h_stop = _preprocess_frames(data, Ylow, Yhigh, RefL, xsize)
 
     n = data_1d.shape[0]
@@ -365,10 +444,14 @@ def fit_pixel_size(
     energy_cen = merixE.reshape(-1, 1)
     scale = Eb / (2 * Ra) / np.tan(theta_b)
 
-    com_pixel, valid_mask = find_peaks(data_1d, method=center_method, smooth_window=3, poly_order=2)
+    com_pixel, valid_mask = find_peaks(
+        data_1d, method=center_method, smooth_window=3, poly_order=2
+    )
     a_mat = (com_pixel * scale).reshape(n, 1)
     a_mat = np.hstack([a_mat, np.ones_like(a_mat)])
-    effective_pixel_size, _ = np.linalg.lstsq(a_mat[valid_mask], energy_cen[valid_mask])[0]
+    effective_pixel_size, _ = np.linalg.lstsq(
+        a_mat[valid_mask], energy_cen[valid_mask]
+    )[0]
     effective_pixel_size = float(effective_pixel_size)
     logger.info(f"Fitted effective pixel size: {effective_pixel_size} mm")
     return effective_pixel_size
@@ -408,7 +491,9 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD):
     if data_2d.shape[0] != merixE.shape[0]:
         logger.warning(
             "Frame count mismatch: merixE has %d frames, data has %d; trimming to %d",
-            merixE.shape[0], data_2d.shape[0], n,
+            merixE.shape[0],
+            data_2d.shape[0],
+            n,
         )
         data_2d = data_2d[:n]
         merixE = merixE[:n]
@@ -437,13 +522,29 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD):
 
         bin_energy_axis = np.linspace(e_min, e_max, step)
         bin_data = np.array(
-            [np.interp(bin_energy_axis, energy_axis[i], data_2d[i], left=np.nan, right=np.nan) for i in range(n)]
+            [
+                np.interp(
+                    bin_energy_axis,
+                    energy_axis[i],
+                    data_2d[i],
+                    left=np.nan,
+                    right=np.nan,
+                )
+                for i in range(n)
+            ]
         )
 
     return lines, bin_energy_axis, np.array(bin_data)
 
 
-def _reduce_frames(energy_axis, bin_data, scan_data, exposure_time=1.0, noise_model="poisson", bin_pixel=1):
+def _reduce_frames(
+    energy_axis,
+    bin_data,
+    scan_data,
+    exposure_time=1.0,
+    noise_model="poisson",
+    bin_pixel=1,
+):
     """Average aligned frames and estimate per-bin uncertainty.
 
     Parameters
@@ -463,7 +564,9 @@ def _reduce_frames(energy_axis, bin_data, scan_data, exposure_time=1.0, noise_mo
     """
     # assert noise_model in ("poisson", "gaussian"), "noise_model must be either 'poisson' or 'gaussian'"
     assert noise_model in ("poisson"), "noise_model only supports 'poisson' for now"
-    assert bin_pixel > 0 and isinstance(bin_pixel, int), "bin_pixel must be a positive integer"
+    assert bin_pixel > 0 and isinstance(bin_pixel, int), (
+        "bin_pixel must be a positive integer"
+    )
 
     num_bins = len(energy_axis)
     nan_mask_2d = np.isnan(bin_data)  # (n_frames, n_bins)
@@ -472,10 +575,27 @@ def _reduce_frames(energy_axis, bin_data, scan_data, exposure_time=1.0, noise_mo
         "intensity": np.nansum(bin_data, axis=0),
         "sample": np.sum(~np.isnan(bin_data), axis=0),  # (n_bins,)
     }
+    # import matplotlib.pyplot as plt
+
+    # plt.imshow(~np.isnan(bin_data), aspect="auto", interpolation="none")
+    # plt.savefig("valid_mask.png", dpi=300)
+
+    # print("bin_data.shape", bin_data.shape)
+    # print("valid_pts", np.sum(~nan_mask_2d, axis=1))
+    # print("num_bins", num_bins)
+    # print("i2 shape", scan_data["i2"].shape)
+    # print("i2 values", scan_data["i2"].values)
 
     for key in ("i2", "i0", "mmepin1", "mmepin2"):
-        full_data = np.tile(scan_data[key].values[:, np.newaxis], (1, num_bins)).astype(np.float64)
+        full_data = np.tile(scan_data[key].values[:, np.newaxis], (1, num_bins)).astype(
+            np.float64
+        )
         full_data[nan_mask_2d] = np.nan
+        # if key == "i2":
+        #     print(f"full_data for {key} shape: {full_data.shape}")
+        #     print(f"full_data for {key} sample values:\n{full_data[:5, :5]}")
+        #     print(full_data)
+        #     full_data[~nan_mask_2d] = 1.0
         results[key] = np.nansum(full_data, axis=0)
 
     if bin_pixel > 1:
@@ -483,21 +603,29 @@ def _reduce_frames(energy_axis, bin_data, scan_data, exposure_time=1.0, noise_mo
         for key, val in results.items():
             results[key] = val[:rounded_num_bins].reshape(-1, bin_pixel).sum(axis=1)
         # use mean (not sum) for energy axis
-        results["energy_axis"] = energy_axis[:rounded_num_bins].reshape(-1, bin_pixel).mean(axis=1)
+        results["energy_axis"] = (
+            energy_axis[:rounded_num_bins].reshape(-1, bin_pixel).mean(axis=1)
+        )
     else:
         results["energy_axis"] = energy_axis
 
-    norm_factor = np.clip(results["i2"], a_min=1, a_max=None)
+    # norm_factor = np.clip(results["i2"], a_min=1, a_max=None)
+    norm_factor = np.clip(results["sample"], a_min=1, a_max=None)
 
     results["intensity_norm"] = results["intensity"] / norm_factor
     # make it compatible with the GUI input
     results["intensity_raw"] = results["intensity"]
 
     # pseudo counts per second
-    results["pseudo_cps"] = results["intensity_norm"] * np.mean(results["i2"]) / exposure_time
+    results["pseudo_cps"] = (
+        results["intensity_norm"] * np.mean(results["i2"]) / exposure_time
+    )
 
+    results["intensity_norm_err"] = None
     if noise_model == "poisson":
-        results["intensity_norm_err"] = np.sqrt(results["intensity"]) / norm_factor
+        # results["intensity_norm_err"] = np.sqrt(results["intensity"]) / norm_factor
+        # place holder
+        results["intensity_norm_err"] = np.sqrt(results["intensity"]) * 0
 
     # apply number_of_sample normalization;
     for key in ("i2", "i0", "mmepin1", "mmepin2"):
@@ -559,8 +687,12 @@ def _compute_fwhm_func(energy_axis, intensity, err=None):
 
     try:
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")  # suppress OptimizeWarning and numpy warnings
-            popt, _ = curve_fit(_gaussian, x, y, p0=p0, sigma=sigma_w, absolute_sigma=True, maxfev=2000)
+            warnings.simplefilter(
+                "ignore"
+            )  # suppress OptimizeWarning and numpy warnings
+            popt, _ = curve_fit(
+                _gaussian, x, y, p0=p0, sigma=sigma_w, absolute_sigma=True, maxfev=2000
+            )
         fwhm = 2.0 * np.sqrt(2.0 * np.log(2.0)) * abs(popt[2])
         center = float(popt[1])
         # logger.info(f"FWHM (Gaussian fit): {fwhm:.6f} keV  center: {center:.6f} keV")
@@ -680,7 +812,9 @@ def bin_rixs_data(
             f"data has {data_2d.shape[0]}; trimming to {n}"
         )
 
-    lines, bin_energy, bin_data = _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD)
+    lines, bin_energy, bin_data = _compute_energy_axis(
+        data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD
+    )
     if progress_callback:
         progress_callback(80)
 
