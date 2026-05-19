@@ -9,14 +9,22 @@ import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
 from PySide6.QtCore import QTimer, QRunnable, Slot, QThreadPool, QObject, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMainWindow, QMessageBox
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QHeaderView,
+    QMainWindow,
+    QMessageBox,
+)
 
 from .model import RixsBinningModel, RixsSpecTable
 from .view import RixsView
 from .view.ui import Ui_MainWindow
 from . import __version__
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 logger = logging.getLogger(__name__)
@@ -90,7 +98,9 @@ class RixsViewerGUI(QMainWindow):
 
         # Connect signals
         self.ui.toolButton_load_specfile.clicked.connect(self.on_load_specfile_clicked)
-        self.ui.toolButton_set_tifffolder.clicked.connect(self.on_set_tifffolder_clicked)
+        self.ui.toolButton_set_tifffolder.clicked.connect(
+            self.on_set_tifffolder_clicked
+        )
         self.ui.pushButton_load_scan.clicked.connect(self.setup_scan_table)
         self.view = RixsView(self.ui)
         self.ui.pushButton_process.clicked.connect(self.process_binning)
@@ -145,7 +155,9 @@ class RixsViewerGUI(QMainWindow):
 
             if has_updates:
                 self.process_binning()
-                self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
+                self.ui.tableView_image.setModel(
+                    self.current_rixs_dset.get_table_model()
+                )
                 header = self.ui.tableView_image.horizontalHeader()
                 header.setSectionResizeMode(QHeaderView.Stretch)
 
@@ -241,7 +253,11 @@ class RixsViewerGUI(QMainWindow):
         if self.current_rixs_dset is None:
             return
         if self.current_rixs_dset.scan_info["scan_type"] != "EnergyScan":
-            QMessageBox.warning(self, "Warning", "Effective pixel size can only be fitted for EnergyScan")
+            QMessageBox.warning(
+                self,
+                "Warning",
+                "Effective pixel size can only be fitted for EnergyScan",
+            )
             return
 
         self.ui.pushButton_fit_pixel_size.setEnabled(False)
@@ -265,7 +281,11 @@ class RixsViewerGUI(QMainWindow):
             if err_str.startswith("No frames"):
                 self.statusBar().showMessage(f"Warning: {err_str}", 5000)
             else:
-                QMessageBox.critical(self, "Error", f"Linesearch to optimize {opt_target} failed:\n{err_str}")
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Linesearch to optimize {opt_target} failed:\n{err_str}",
+                )
 
         def on_result(ls):
             # Plot the sweep curve with all three reference markers
@@ -290,7 +310,9 @@ class RixsViewerGUI(QMainWindow):
                 if reply == QMessageBox.Yes:
                     if current_meta_source != "USER":
                         QMessageBox.critical(
-                            self, "Error", f"Overriding metadata entry [{opt_target}] only supported in `USER` mode."
+                            self,
+                            "Error",
+                            f"Overriding metadata entry [{opt_target}] only supported in `USER` mode.",
                         )
                         return
                     self._put_param(opt_target, ls["lns_value"])
@@ -315,11 +337,29 @@ class RixsViewerGUI(QMainWindow):
 
     def save_bin_results(self):
         """
-        Save the binned results to the specified save filename.
+        Save the binned results to a user-chosen file.
         """
         if self.current_rixs_dset is None or self.current_rixs_dset.bin_result is None:
             return
-        self.current_rixs_dset.save_to_file(self.save_filename)
+
+        default = str(self.save_filename) if self.save_filename else ""
+        dialog = QFileDialog(
+            self, "Save binned results", default, "SPEC files (*.spec);;All files (*)"
+        )
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dialog.setOption(QFileDialog.Option.DontConfirmOverwrite, True)
+        if not dialog.exec():
+            return
+        fname = dialog.selectedFiles()[0]
+
+        try:
+            self.current_rixs_dset.save_to_file(fname)
+        except Exception as e:
+            QMessageBox.critical(self, "Save failed", f"Could not save file:\n{e}")
+            return
+
+        self.save_filename = Path(fname)
+        QMessageBox.information(self, "Saved", f"Results saved to:\n{fname}")
 
     def process_binning(self):
         """
@@ -359,7 +399,9 @@ class RixsViewerGUI(QMainWindow):
             )
 
         def on_result(result):
-            self.view.plot_binned_data(result, show_rawdata, plot_target=plot_target, hdl_target="plot")
+            self.view.plot_binned_data(
+                result, show_rawdata, plot_target=plot_target, hdl_target="plot"
+            )
             if result.get("warning"):
                 self.statusBar().showMessage(f"Warning: {result['warning']}", 5000)
 
@@ -367,12 +409,17 @@ class RixsViewerGUI(QMainWindow):
             if err_str.startswith("No frames"):
                 self.statusBar().showMessage(f"Warning: {err_str}", 5000)
             else:
-                QMessageBox.critical(self, "Error", f"Processing binning failed:\n{err_str}")
+                QMessageBox.critical(
+                    self, "Error", f"Processing binning failed:\n{err_str}"
+                )
 
         def on_finished():
             self._binning_active = False
             self.ui.pushButton_process.setEnabled(True)
-            if self.ui.checkBox_autoupdate.isChecked() and self.current_rixs_dset is not None:
+            if (
+                self.ui.checkBox_autoupdate.isChecked()
+                and self.current_rixs_dset is not None
+            ):
                 self.update_image(frame_index=-1)
                 si = self.current_rixs_dset.scan_info
                 if (
@@ -400,7 +447,9 @@ class RixsViewerGUI(QMainWindow):
     def on_load_specfile_clicked(self):
         """Handle the load spec file button click"""
         # Open file dialog to select a spec file
-        start_folder = "./" if self.spec_filename is None else str(Path(self.spec_filename).parent)
+        start_folder = (
+            "./" if self.spec_filename is None else str(Path(self.spec_filename).parent)
+        )
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open SPEC File",
@@ -440,7 +489,9 @@ class RixsViewerGUI(QMainWindow):
 
         logger.info(f"Loading spec and tiff: {self.spec_filename}, {self.tiff_folder}")
         try:
-            scan_model = RixsSpecTable(self.spec_filename, self.tiff_folder, self.save_filename)
+            scan_model = RixsSpecTable(
+                self.spec_filename, self.tiff_folder, self.save_filename
+            )
         except Exception as e:
             traceback.print_exc()
             logger.error(f"Error loading SPEC file: {e}")
@@ -464,7 +515,9 @@ class RixsViewerGUI(QMainWindow):
 
         # Connect click signal to handler
         # self.ui.tableView_scan.clicked.connect(self.on_scan_table_clicked)
-        self.ui.tableView_scan.selectionModel().selectionChanged.connect(self.on_selection_changed)
+        self.ui.tableView_scan.selectionModel().selectionChanged.connect(
+            self.on_selection_changed
+        )
         self.scan_model = scan_model
         return
 
@@ -476,7 +529,9 @@ class RixsViewerGUI(QMainWindow):
         selected_indexes = self.ui.tableView_scan.selectionModel().selectedIndexes()
         row = [index.row() for index in selected_indexes][0]
         if self.ui.checkBox_autoupdate.isChecked():
-            row = self.scan_model.rowCount() - 1  # choose the last row in auto-update mode
+            row = (
+                self.scan_model.rowCount() - 1
+            )  # choose the last row in auto-update mode
 
         dset = self.scan_model.get_selected_dataset(row)
         if dset is None:
@@ -514,7 +569,10 @@ class RixsViewerGUI(QMainWindow):
 
         # Scan may be empty (no TIFF frames or no scandata rows yet)
         if frame_info is None:
-            logger.debug("update_image: no data available for scan %s yet.", self.current_rixs_dset.scan_index)
+            logger.debug(
+                "update_image: no data available for scan %s yet.",
+                self.current_rixs_dset.scan_index,
+            )
             return
 
         self.view.update_image(
@@ -565,7 +623,9 @@ def main():
         "--tiff-folder",
         help="Path to the TIFF folder (default: %(default)s)",
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
 
     # Parse arguments (filter out Qt arguments)
     args, qt_args = parser.parse_known_args()

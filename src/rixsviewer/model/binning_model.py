@@ -1,6 +1,4 @@
-import numpy as np
-import tifffile
-from epics import caget, caget_many
+from epics import caget_many
 
 from .process_parameters import params
 

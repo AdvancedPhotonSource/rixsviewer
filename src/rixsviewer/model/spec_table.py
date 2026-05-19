@@ -4,8 +4,8 @@ import os
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
 
-from .spec_parsers import get_scan_type, parse_single_scan
 from .scan_dataset import RixsScanTiffDataset
+from .spec_parsers import get_scan_type
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,11 @@ class RixsSpecTable(QAbstractTableModel):
             if get_scan_type(scan_pack)[0] in ["EnergyScan", "SnapshotScan"]:
                 if scan_number in self.record:
                     scan_dset = self.record[scan_number]
-                    prev_tiff = scan_dset.scan_info["tiff_points"] if scan_dset.scan_info else -1
+                    prev_tiff = (
+                        scan_dset.scan_info["tiff_points"]
+                        if scan_dset.scan_info
+                        else -1
+                    )
                     scan_dset.update_scan_info(scan_pack)
                     if scan_dset.scan_info["tiff_points"] != prev_tiff:
                         has_updates = True
@@ -114,7 +118,9 @@ class RixsSpecTable(QAbstractTableModel):
                     if self.last_scan_dset is not None:
                         self.last_scan_dset.save_to_file(self.save_filename)
                     row = len(self.record)
-                    scan_dset = RixsScanTiffDataset(row, self.spec_fname, self.tif_folder, scan_number)
+                    scan_dset = RixsScanTiffDataset(
+                        row, self.spec_fname, self.tif_folder, scan_number
+                    )
                     scan_dset.update_scan_info(scan_pack)
                     self.beginInsertRows(QModelIndex(), row, row)
                     self.record[scan_number] = scan_dset

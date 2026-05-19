@@ -5,7 +5,6 @@ import os
 import re
 
 import pandas as pd
-from silx.io.specfile import SpecFile
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,9 @@ def get_scan_type(scan):
     #     return scan_type
     # else:
     #    for on-going scans; the #Y line doesn't seem to be recognized correctly;
-    scan_type, steps, exposure_time = get_scan_type_from_scanstring(scan.scan_header_dict["S"])
+    scan_type, steps, exposure_time = get_scan_type_from_scanstring(
+        scan.scan_header_dict["S"]
+    )
     return scan_type, steps, exposure_time
 
 
@@ -178,7 +179,9 @@ def get_linked_tiff_filenames(spec_fname, tif_folder, scan_number):
         Sorted list of absolute TIFF file paths.
     """
     basename = os.path.basename(spec_fname)
-    fnames = glob.glob(os.path.join(tif_folder, f"{basename}_scan{scan_number}_point*.tif"))
+    fnames = glob.glob(
+        os.path.join(tif_folder, f"{basename}_scan{scan_number}_point*.tif")
+    )
     fnames.sort()
     return fnames
 
@@ -209,7 +212,8 @@ def get_scandata_information(scan):
     # with the correct column schema instead of crashing.
     if scandata.shape[0] == 0:
         logger.debug(
-            "Skipping empty scan (no data rows); returning empty DataFrame " "with %d columns: %s",
+            "Skipping empty scan (no data rows); returning empty DataFrame "
+            "with %d columns: %s",
             len(header),
             header,
         )
@@ -242,7 +246,9 @@ def get_metadata_from_header(scan_comment_str) -> dict:
     center_x_pixel = re.search(r"Center_x_pixel\s*=\s*([\d.]+)", text)
     low_y_pixel = re.search(r"Low_y_pixel\s*=\s*([\d.]+)", text)
     high_y_pixel = re.search(r"High_y_pixel\s*=\s*([\d.]+)", text)
-    analyzer_crystal_size_mm = re.search(r"Analyzer_Crystal_Size_mm\s*=\s*([\d.]+)", text)
+    analyzer_crystal_size_mm = re.search(
+        r"Analyzer_Crystal_Size_mm\s*=\s*([\d.]+)", text
+    )
     lambda_strip_size_mm = re.search(r"Lambda_Strip_Size_mm\s*=\s*([\d.]+)", text)
 
     # Build result dictionary
