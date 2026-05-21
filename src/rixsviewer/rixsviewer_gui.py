@@ -359,7 +359,6 @@ class RixsViewerGUI(QMainWindow):
             return
 
         self.save_filename = Path(fname)
-        QMessageBox.information(self, "Saved", f"Results saved to:\n{fname}")
 
     def process_binning(self):
         """
