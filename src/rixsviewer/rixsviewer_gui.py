@@ -604,8 +604,18 @@ class RixsViewerGUI(QMainWindow):
         event : PySide6.QtGui.QCloseEvent
             The close event object.
         """
-        self.timer.stop()
-        return super().closeEvent(event)
+        reply = QMessageBox.question(
+            self,
+            "Confirm Exit",
+            "Are you sure you want to close RIXSviewer?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.timer.stop()
+            super().closeEvent(event)
+        else:
+            event.ignore()
 
 
 def main():
