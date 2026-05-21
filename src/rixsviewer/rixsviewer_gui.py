@@ -359,6 +359,7 @@ class RixsViewerGUI(QMainWindow):
             return
 
         self.save_filename = Path(fname)
+        self.statusBar().showMessage(f"Results saved to: {fname}", 5000)
 
     def process_binning(self):
         """
