@@ -387,6 +387,7 @@ def fit_pixel_size(
     Ra=1900,
     Ylow=0,
     Yhigh=256,
+    delta_energy_eV=None,
     center_method="gaussian",
     **kwargs,
 ):
@@ -457,7 +458,9 @@ def fit_pixel_size(
     return effective_pixel_size
 
 
-def _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD):
+def _compute_energy_axis(
+    data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD, delta_energy_eV=None
+):
     """Build per-pixel energy axes via Rowland geometry and align all
     frames onto a common energy grid.
 
@@ -506,7 +509,7 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD):
 
     energy_axis = energy_cen - np.outer(scale, xaxis) * DeltaD
 
-    if scan_type == "SnapshotScan":
+    if scan_type == "SnapshotScan" and delta_energy_eV is None:
         bin_energy_axis = energy_axis[0]
         bin_data = data_2d.copy()
         lines = [[bin_energy_axis, data_2d[i]] for i in range(n)]
@@ -518,9 +521,13 @@ def _compute_energy_axis(data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD):
 
         lines = [[energy_axis[i], data_2d[i]] for i in range(n)]
         e_min, e_max = np.min(energy_axis), np.max(energy_axis)
-        step = int((e_max - e_min) / np.mean(np.abs(np.diff(energy_axis, axis=1))))
 
-        bin_energy_axis = np.linspace(e_min, e_max, step)
+        if delta_energy_eV is None:
+            delta_energy_eV = np.mean(np.abs(np.diff(energy_axis, axis=1)))
+        logger.info(f"Using delta_energy_eV = {delta_energy_eV:.6f} eV for binning")
+        steps = int((e_max - e_min) / delta_energy_eV) + 1
+        bin_energy_axis = np.linspace(e_min, e_max, steps)
+
         bin_data = np.array(
             [
                 np.interp(
@@ -739,6 +746,7 @@ def bin_rixs_data(
     compute_fwhm=False,
     TiltAngle=0,
     TiltOrder=1,
+    delta_energy_eV=None,
     progress_callback=None,
     **kwargs,
 ):
@@ -813,7 +821,14 @@ def bin_rixs_data(
         )
 
     lines, bin_energy, bin_data = _compute_energy_axis(
-        data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD
+        data_2d,
+        xaxis,
+        merixE,
+        Eb,
+        Ra,
+        scan_type,
+        DeltaD,
+        delta_energy_eV=delta_energy_eV,
     )
     if progress_callback:
         progress_callback(80)

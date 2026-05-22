@@ -82,7 +82,7 @@ class RixsScanTiffDataset:
 
         If the TIFF point count has changed since the last update,
         :attr:`unloaded_filenames` is populated with the filenames not
-        yet present in the cached data so that :meth:`read_data` can
+        yet present in the cached data so that :meth:`read_tiff_data` can
         load only the new frames.
 
         Parameters
@@ -181,7 +181,7 @@ class RixsScanTiffDataset:
             ``scan_index``    — scan number.
             ``frame_index``   — resolved (non-negative) frame index.
         """
-        self._data = self.read_data()
+        self._data = self.read_tiff_data()
         if self._data is None or len(self._data) == 0:
             logger.debug(
                 "Scan %d has no TIFF frames yet; skipping display.", self.scan_index
@@ -262,8 +262,14 @@ class RixsScanTiffDataset:
             # SpecFile metadata wins over caller kwargs
             merged_kwargs.update(self.scan_info["metadata"])
 
+        # Convert NEnergyBins → delta_energy_eV so bin_rixs_data receives the right kwarg
+        n_bins = merged_kwargs.pop("NEnergyBins", None)
+        if n_bins and n_bins > 1:
+            energy_range = abs(self.scan_info["end"] - self.scan_info["start"])
+            merged_kwargs.setdefault("delta_energy_eV", energy_range / n_bins)
+
         # Resolve self-dependent context and pass as plain data
-        data = self.read_data()
+        data = self.read_tiff_data()
         if data is None or len(data) == 0:
             raise ValueError(
                 f"Scan {self.scan_index} has no TIFF frames loaded; "
@@ -497,7 +503,7 @@ class RixsScanTiffDataset:
             self._model.update_fnames(self.scan_info["filenames"])
         return self._model
 
-    def read_data(self):
+    def read_tiff_data(self):
         """
         Load any pending TIFF files and return the complete image stack.
 

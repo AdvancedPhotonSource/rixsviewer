@@ -205,9 +205,10 @@ class RixsViewerGUI(QMainWindow):
             The new value for the parameter.
         """
         self.binning_model.put_single_parameter(name, value)
-        param = self.params.child(name)
-        if param is not None:
-            param.setValue(value)
+        try:
+            self.params.child(name).setValue(value)
+        except KeyError:
+            pass
 
     def _put_params(self, kwargs):
         """

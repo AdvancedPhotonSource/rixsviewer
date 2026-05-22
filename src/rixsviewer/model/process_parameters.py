@@ -101,6 +101,17 @@ params = [
         "step": 1e-3,
         "siPrefix": False,
     },
+    {
+        "name": "NEnergyBins",
+        "type": "int",
+        "value": 0,
+        "suffix": " bins",
+        "tip": "Number of bins for binning the spectra",
+        "pv": "27idmot1:BinNumber.VAL",
+        "format": "{value:d} {suffix}",
+        "step": 1,
+        "siPrefix": False,
+    },
 ]
 
 unit_map = {p["name"]: p.get("suffix", "") for p in params}

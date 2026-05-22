@@ -5,7 +5,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
 
 from .scan_dataset import RixsScanTiffDataset
-from .spec_parsers import get_scan_type
+from .spec_parsers import get_scan_header
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class RixsSpecTable(QAbstractTableModel):
             if scan_number < self.last_scan_index:
                 continue
 
-            if get_scan_type(scan_pack)[0] in ["EnergyScan", "SnapshotScan"]:
+            if get_scan_header(scan_pack)["scan_type"] in ["EnergyScan", "SnapshotScan"]:
                 if scan_number in self.record:
                     scan_dset = self.record[scan_number]
                     prev_tiff = (
