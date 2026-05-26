@@ -262,12 +262,6 @@ class RixsScanTiffDataset:
             # SpecFile metadata wins over caller kwargs
             merged_kwargs.update(self.scan_info["metadata"])
 
-        # Convert NEnergyBins → delta_energy_eV so bin_rixs_data receives the right kwarg
-        n_bins = merged_kwargs.pop("NEnergyBins", None)
-        if n_bins and n_bins > 1:
-            energy_range = abs(self.scan_info["end"] - self.scan_info["start"])
-            merged_kwargs.setdefault("delta_energy_eV", energy_range / n_bins)
-
         # Resolve self-dependent context and pass as plain data
         data = self.read_tiff_data()
         if data is None or len(data) == 0:
