@@ -116,6 +116,7 @@ class RixsViewerGUI(QMainWindow):
 
         self.threadpool = QThreadPool()
         self._binning_active = False
+        self._updating_params = False
 
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
@@ -139,9 +140,14 @@ class RixsViewerGUI(QMainWindow):
         if meta_source == "PV":
             logger.info("Using PVs for binning parameters")
             kwargs = self.binning_model.get_kwargs_from_pv()
-            self._put_params(kwargs)  # reflect PV values in the param-tree widget
+            self._put_params(kwargs)
+        elif meta_source == "SpecFile" and self.current_rixs_dset is not None:
+            logger.info("Using SpecFile metadata for binning parameters")
+            spec_meta = self.current_rixs_dset.scan_info.get("metadata", {})
+            self._put_params(spec_meta)
 
-        return
+        if self.current_rixs_dset is not None:
+            self.process_binning()
 
     def update_spec_record(self):
         """
@@ -182,9 +188,15 @@ class RixsViewerGUI(QMainWindow):
     def on_parameter_changed(self, param, changes):
         """Handle parameter tree changes and sync with binning model"""
         meta_source = self.ui.comboBox_metasource.currentText()
-        # Parameters are only editable when meta source is set to 'USER'
-        if meta_source == "USER":
-            self.binning_model.update_from_parameter(param, changes)
+        if meta_source != "USER" and not self._updating_params:
+            QMessageBox.warning(
+                self,
+                "Parameter edit blocked",
+                f"Parameters are read-only in '{meta_source}' mode.\n"
+                "Switch the metadata source to 'USER' to edit them.",
+            )
+            return
+        self.binning_model.update_from_parameter(param, changes)
 
     # ------------------------------------------------------------------
     # Controller helpers: keep model and param-tree widget in sync
@@ -222,8 +234,10 @@ class RixsViewerGUI(QMainWindow):
         kwargs : dict
             A dictionary of parameter names and their new values.
         """
+        self._updating_params = True
         for name, value in kwargs.items():
             self._put_param(name, value)
+        self._updating_params = False
 
     def _get_binning_kwargs(self, meta_source):
         """

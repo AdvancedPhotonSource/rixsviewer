@@ -261,6 +261,8 @@ class RixsScanTiffDataset:
         if metadata_source == "SpecFile":
             # SpecFile metadata wins over caller kwargs
             merged_kwargs.update(self.scan_info["metadata"])
+        merged_kwargs.setdefault("start", self.scan_info.get("start"))
+        merged_kwargs.setdefault("end", self.scan_info.get("end"))
 
         # Resolve self-dependent context and pass as plain data
         data = self.read_tiff_data()

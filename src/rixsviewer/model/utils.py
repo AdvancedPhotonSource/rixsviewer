@@ -392,7 +392,6 @@ def fit_pixel_size(
     Ra=1900,
     Ylow=0,
     Yhigh=256,
-    delta_energy_eV=None,
     center_method="gaussian",
     **kwargs,
 ):
@@ -443,7 +442,7 @@ def fit_pixel_size(
         raise ValueError(
             f"xsize must be positive, check Acrystalsize {Acrystalsize} and DeltaD {DeltaD}"
         )
-    data_1d, _, _h_start, _h_stop = _preprocess_frames(data, Ylow, Yhigh, RefL, xsize)
+    data_1d = _preprocess_frames(data, Ylow, Yhigh, RefL, xsize)[0]
 
     n = data_1d.shape[0]
     theta_b = np.arcsin(Eb / merixE)
@@ -464,7 +463,7 @@ def fit_pixel_size(
 
 
 def _compute_energy_axis(
-    data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD, delta_energy_eV=None
+    data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD, start, end, NEnergyBins=None
 ):
     """Build per-pixel energy axes via Rowland geometry and align all
     frames onto a common energy grid.
@@ -495,6 +494,9 @@ def _compute_energy_axis(
     bin_data : ndarray, shape (n_frames, n_bins)
         Binned intensity frame data.
     """
+    if not NEnergyBins or NEnergyBins <= 0:
+        NEnergyBins = 0
+
     n = min(data_2d.shape[0], merixE.shape[0])
     if data_2d.shape[0] != merixE.shape[0]:
         logger.warning(
@@ -514,20 +516,28 @@ def _compute_energy_axis(
 
     energy_axis = energy_cen - np.outer(scale, xaxis) * DeltaD
 
-    if scan_type == "SnapshotScan" and delta_energy_eV is None:
+    if scan_type == "SnapshotScan" and NEnergyBins == 0:
         bin_energy_axis = energy_axis[0]
         bin_data = data_2d.copy()
         lines = [[bin_energy_axis, data_2d[i]] for i in range(n)]
+        logger.info("SnapshotScan: using native pixel axis, no energy rebinning")
     else:
+        # sort each frame by energy to ensure monotonicity for interpolation;
         for i in range(n):
             idx = np.argsort(energy_axis[i])
             energy_axis[i] = energy_axis[i][idx]
             data_2d[i] = data_2d[i][idx]
 
-        lines = [[energy_axis[i], data_2d[i]] for i in range(n)]
-        e_min, e_max = np.min(energy_axis), np.max(energy_axis)
+        if start is not None and end is not None and scan_type != "SnapshotScan":
+            e_min, e_max = min(start, end), max(start, end)
+        else:
+            e_min, e_max = np.min(energy_axis), np.max(energy_axis)
 
-        if delta_energy_eV is None:
+        lines = [[energy_axis[i], data_2d[i]] for i in range(n)]
+
+        if NEnergyBins > 1:
+            delta_energy_eV = (e_max - e_min) / NEnergyBins
+        else:
             delta_energy_eV = np.mean(np.abs(np.diff(energy_axis, axis=1)))
         logger.info(f"Using delta_energy_eV = {delta_energy_eV:.6f} eV for binning")
         steps = int((e_max - e_min) / delta_energy_eV) + 1
@@ -751,7 +761,9 @@ def bin_rixs_data(
     compute_fwhm=False,
     TiltAngle=0,
     TiltOrder=1,
-    delta_energy_eV=None,
+    NEnergyBins=None,
+    start=None,
+    end=None,
     progress_callback=None,
     **kwargs,
 ):
@@ -833,7 +845,9 @@ def bin_rixs_data(
         Ra,
         scan_type,
         DeltaD,
-        delta_energy_eV=delta_energy_eV,
+        start,
+        end,
+        NEnergyBins=NEnergyBins,
     )
     if progress_callback:
         progress_callback(80)
