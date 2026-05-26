@@ -326,11 +326,16 @@ def percentile_clip(data, threshold=99):
     if data.size == 0:
         return (0, 0)
     if data.ndim == 2:
-        mask = data > 0
-        vmax = np.percentile(data[mask], threshold)
+        arr = data
     elif data.ndim == 3:
-        mask = data[0] > 0
-        vmax = np.percentile(data[0][mask], threshold)
+        arr = data[0]
+    else:
+        return (0, 0)
+    valid = arr[arr > 0]
+    valid = valid[np.isfinite(valid)]
+    if valid.size == 0:
+        return (0, float(np.nanmax(arr)) if np.any(np.isfinite(arr)) else 0)
+    vmax = np.percentile(valid, threshold)
     return (0, vmax)
 
 
