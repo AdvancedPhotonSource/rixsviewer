@@ -6,7 +6,13 @@ import tifffile
 from PySide6.QtCore import QAbstractTableModel, Qt
 
 from .spec_parsers import parse_single_scan
-from .utils import bin_rixs_data, percentile_clip, fit_pixel_size, apply_subpixel_shear_3d, mask_bad_pixels
+from .utils import (
+    bin_rixs_data,
+    percentile_clip,
+    fit_pixel_size,
+    apply_subpixel_shear_3d,
+    fix_bad_pixels,
+)
 from .process_parameters import unit_map
 from .. import __version__
 
@@ -58,6 +64,17 @@ class RixsScanTiffDataset:
         self.bin_result = None
         self.bin_kwargs = None
         self._saved = False
+        self.file_save_keys = {
+            "energy_axis": "Energy",
+            "intensity_norm": "Intensity_norm",
+            "intensity_norm_err": "Intensity_norm_err",
+            "intensity_raw": "Intensity_raw",
+            "sample": "A",
+            "i2": "i2",
+            "i0": "i0",
+            "mmepin1": "mmepin1",
+            "mmepin2": "mmepin2",
+        }
 
     def update_scan_info(self, scan_pack):
         """
@@ -65,7 +82,7 @@ class RixsScanTiffDataset:
 
         If the TIFF point count has changed since the last update,
         :attr:`unloaded_filenames` is populated with the filenames not
-        yet present in the cached data so that :meth:`read_data` can
+        yet present in the cached data so that :meth:`read_tiff_data` can
         load only the new frames.
 
         Parameters
@@ -78,9 +95,16 @@ class RixsScanTiffDataset:
             self.spec_fname,
             self.tif_folder,
         )
-        if self.scan_info is None or self.scan_info["tiff_points"] != scan_info["tiff_points"]:
-            prev_filenames = [] if self.scan_info is None else self.scan_info["filenames"]
-            unloaded_filenames = [fn for fn in scan_info["filenames"] if fn not in prev_filenames]
+        if (
+            self.scan_info is None
+            or self.scan_info["tiff_points"] != scan_info["tiff_points"]
+        ):
+            prev_filenames = (
+                [] if self.scan_info is None else self.scan_info["filenames"]
+            )
+            unloaded_filenames = [
+                fn for fn in scan_info["filenames"] if fn not in prev_filenames
+            ]
             self.unloaded_filenames = unloaded_filenames
             self.scan_info = scan_info
 
@@ -118,13 +142,22 @@ class RixsScanTiffDataset:
         return self.scan_info[key]
 
     def apply_tilt_angle(self, data, tilt_angle=0, tilt_order=1):
-        Ylow, Yhigh = self.scan_info["metadata"]["Ylow"], self.scan_info["metadata"]["Yhigh"]
+        Ylow, Yhigh = (
+            self.scan_info["metadata"]["Ylow"],
+            self.scan_info["metadata"]["Yhigh"],
+        )
         if data.ndim == 2:
-            return apply_subpixel_shear_3d(data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order)[0]
+            return apply_subpixel_shear_3d(
+                data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order
+            )[0]
         else:
-            return apply_subpixel_shear_3d(data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order)
+            return apply_subpixel_shear_3d(
+                data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order
+            )
 
-    def get_data_for_display(self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs):
+    def get_data_for_display(
+        self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs
+    ):
         """
         Load the TIFF stack and compute display intensity limits.
 
@@ -148,7 +181,20 @@ class RixsScanTiffDataset:
             ``scan_index``    — scan number.
             ``frame_index``   — resolved (non-negative) frame index.
         """
-        self._data = self.read_data()
+        self._data = self.read_tiff_data()
+        if self._data is None or len(self._data) == 0:
+            logger.debug(
+                "Scan %d has no TIFF frames yet; skipping display.", self.scan_index
+            )
+            return None
+
+        scandata = self.scan_info["scandata"]
+        if scandata.empty:
+            logger.debug(
+                "Scan %d has no scandata rows yet; skipping display.", self.scan_index
+            )
+            return None
+
         num_frames = len(self._data)
         if frame_index == -2:
             frame_index = num_frames // 2
@@ -159,8 +205,10 @@ class RixsScanTiffDataset:
         levels = percentile_clip(self._data[frame_index], percentile_cutoff)
 
         frame_metadata = self.scan_info["metadata"].copy()
-        frame_metadata["E"] = self.scan_info["scandata"]["merixE"][frame_index]
-        frame_metadata["ThetaB"] = np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6  # micro-radian
+        frame_metadata["E"] = scandata["merixE"].iloc[frame_index]
+        frame_metadata["ThetaB"] = (
+            np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6
+        )  # micro-radian
 
         frame = self._data[frame_index]
         frame = self.apply_tilt_angle(frame, TiltAngle)
@@ -200,27 +248,36 @@ class RixsScanTiffDataset:
         -------
         data : numpy.ndarray
             Full TIFF image stack.
-        merixE : array-like
-            Per-frame incident energies.
-        scan_type : str
-            Type of scan ('EnergyScan', 'SnapshotScan', etc.).
         merged_kwargs : dict
             A new dict containing *kwargs* merged with SpecFile metadata
             (when applicable). The caller's original dict is not modified.
         """
-        assert metadata_source in ["SpecFile", "PV", "USER"], "metadata_source not supported."
+        assert metadata_source in ["SpecFile", "PV", "USER"], (
+            "metadata_source not supported."
+        )
 
         # Build a merged copy so the caller's dict is never mutated
         merged_kwargs = dict(kwargs)
         if metadata_source == "SpecFile":
             # SpecFile metadata wins over caller kwargs
             merged_kwargs.update(self.scan_info["metadata"])
+        merged_kwargs.setdefault("start", self.scan_info.get("start"))
+        merged_kwargs.setdefault("end", self.scan_info.get("end"))
 
         # Resolve self-dependent context and pass as plain data
-        data = self.read_data()
-        merixE = self.scan_info["scandata"]["merixE"]
-        scan_type = self.scan_info["scan_type"]
-        return data, merixE, scan_type, merged_kwargs
+        data = self.read_tiff_data()
+        if data is None or len(data) == 0:
+            raise ValueError(
+                f"Scan {self.scan_index} has no TIFF frames loaded; "
+                "cannot run processing on an empty dataset."
+            )
+        scandata = self.scan_info["scandata"]
+        if scandata.empty:
+            raise ValueError(
+                f"Scan {self.scan_index} has no scandata rows; "
+                "cannot run processing on an empty dataset."
+            )
+        return data, merged_kwargs
 
     def bin_data_wrap(
         self,
@@ -254,12 +311,11 @@ class RixsScanTiffDataset:
         dict
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
-        data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        data, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
         self.bin_result = bin_rixs_data(
-            data, merixE, scan_type,
-            progress_callback=progress_callback,
-            **merged_kwargs
+            data, self.scan_info, progress_callback=progress_callback, **merged_kwargs
         )
+
         return self.bin_result
 
     def save_to_file(self, fname=None):
@@ -271,6 +327,7 @@ class RixsScanTiffDataset:
             fname = "./test_rixsviewer_saving.spec"
 
         res = self.bin_result
+
         with open(fname, "a") as f:
             f.write(f"\n#S {self.scan_index} {self.scan_info['scan_type']}\n")
             f.write(f"#D {np.datetime64('now')}\n")
@@ -279,10 +336,10 @@ class RixsScanTiffDataset:
                 unit = unit_map.get(key, "")
                 f.write(f"#C {key} = {value}{unit}\n")
             f.write(f"#N {5}\n")
-            f.write(f"#L  Energy  Intensity  Error  Signal  Norm\n")
-
-            data = np.column_stack((*res["binned_line"], res["tot_signal"], res["tot_counts"]))
-            np.savetxt(f, data, fmt="%.6e")
+            header = "#L  " + "  ".join(list(self.file_save_keys.values()))
+            f.write(header + "\n")
+            data = np.column_stack([res[key] for key in self.file_save_keys.keys()])
+            np.savetxt(f, data, fmt="%.18e")
             f.write("\n")
 
     def fit_pixel_size_wrap(
@@ -316,7 +373,9 @@ class RixsScanTiffDataset:
         float
             Effective pixel size in mm.
         """
-        data, merixE, scan_type, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        data, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        merixE = np.asarray(self.scan_info["scandata"]["merixE"], dtype=float)
+        scan_type = self.scan_info["scan_type"]
 
         effective_pixel_size = fit_pixel_size(data, merixE, scan_type, **merged_kwargs)
         merged_kwargs["DeltaD"] = effective_pixel_size
@@ -365,7 +424,9 @@ class RixsScanTiffDataset:
         # Step 1 – resolve inputs once, then determine the reference pixel size
         org_value = kwargs[target]
         logger.info(f"Linesearch to optimize {target}, org_value: {org_value}")
-        data, merixE, scan_type, base_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        data, base_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        merixE = np.asarray(self.scan_info["scandata"]["merixE"], dtype=float)
+        scan_type = self.scan_info["scan_type"]
 
         # Step 2 – determine line search grid
         assert target in ("DeltaD", "TiltAngle")
@@ -391,7 +452,9 @@ class RixsScanTiffDataset:
         for i, val in enumerate(val_list):
             sweep_kwargs = dict(base_kwargs)
             sweep_kwargs[target] = float(val)
-            result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **sweep_kwargs)
+            result = bin_rixs_data(
+                data, self.scan_info, compute_fwhm=True, **sweep_kwargs
+            )
             fwhm = result.get("fwhm", np.nan)
             lns_table.append((float(val), float(fwhm)))
             if np.isfinite(fwhm) and fwhm < best_fwhm:
@@ -405,7 +468,9 @@ class RixsScanTiffDataset:
         # Step 4 – binning at the reference point for overlay comparison
         original_kwargs = dict(base_kwargs)
         original_kwargs[target] = float(org_value)
-        org_result = bin_rixs_data(data, merixE, scan_type, compute_fwhm=True, **original_kwargs)
+        org_result = bin_rixs_data(
+            data, self.scan_info, compute_fwhm=True, **original_kwargs
+        )
 
         return {
             "target": target,
@@ -430,9 +495,11 @@ class RixsScanTiffDataset:
         """
         if self._model is None:
             self._model = RixsScanImageTable(self.scan_info["filenames"])
+        else:
+            self._model.update_fnames(self.scan_info["filenames"])
         return self._model
 
-    def read_data(self):
+    def read_tiff_data(self):
         """
         Load any pending TIFF files and return the complete image stack.
 
@@ -454,7 +521,7 @@ class RixsScanTiffDataset:
             for fname in self.unloaded_filenames:
                 data.append(tifffile.imread(fname))
             data = np.array(data).astype(np.float32)
-            data = mask_bad_pixels(data)
+            data = fix_bad_pixels(data)
             if self._data is None:
                 self._data = data
             else:
@@ -497,6 +564,12 @@ class RixsScanImageTable(QAbstractTableModel):
         # self.fnames = glob.glob(os.path.join(folder, f"*_scan{scan_index:d}_*.tif"))
         self.fnames = fnames
         self._headers = ["TIF filename"]
+
+    def update_fnames(self, fnames):
+        """Update the list of filenames and notify views."""
+        self.beginResetModel()
+        self.fnames = fnames
+        self.endResetModel()
 
     def rowCount(self, parent=None):
         return len(self.fnames)

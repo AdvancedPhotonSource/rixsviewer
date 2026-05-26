@@ -8,14 +8,23 @@ from pathlib import Path
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
 from PySide6.QtCore import QTimer, QRunnable, Slot, QThreadPool, QObject, Signal
-from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMainWindow, QMessageBox
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QHeaderView,
+    QMainWindow,
+    QMessageBox,
+)
 
 from .model import RixsBinningModel, RixsSpecTable
 from .view import RixsView
 from .view.ui import Ui_MainWindow
 from . import __version__
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 logger = logging.getLogger(__name__)
@@ -89,7 +98,9 @@ class RixsViewerGUI(QMainWindow):
 
         # Connect signals
         self.ui.toolButton_load_specfile.clicked.connect(self.on_load_specfile_clicked)
-        self.ui.toolButton_set_tifffolder.clicked.connect(self.on_set_tifffolder_clicked)
+        self.ui.toolButton_set_tifffolder.clicked.connect(
+            self.on_set_tifffolder_clicked
+        )
         self.ui.pushButton_load_scan.clicked.connect(self.setup_scan_table)
         self.view = RixsView(self.ui)
         self.ui.pushButton_process.clicked.connect(self.process_binning)
@@ -105,6 +116,7 @@ class RixsViewerGUI(QMainWindow):
 
         self.threadpool = QThreadPool()
         self._binning_active = False
+        self._updating_params = False
 
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
@@ -128,9 +140,14 @@ class RixsViewerGUI(QMainWindow):
         if meta_source == "PV":
             logger.info("Using PVs for binning parameters")
             kwargs = self.binning_model.get_kwargs_from_pv()
-            self._put_params(kwargs)  # reflect PV values in the param-tree widget
+            self._put_params(kwargs)
+        elif meta_source == "SpecFile" and self.current_rixs_dset is not None:
+            logger.info("Using SpecFile metadata for binning parameters")
+            spec_meta = self.current_rixs_dset.scan_info.get("metadata", {})
+            self._put_params(spec_meta)
 
-        return
+        if self.current_rixs_dset is not None:
+            self.process_binning()
 
     def update_spec_record(self):
         """
@@ -139,9 +156,16 @@ class RixsViewerGUI(QMainWindow):
         This method is called periodically by the timer when auto-update is enabled.
         """
         if self.scan_model is not None:
-            self.scan_model.process_spec_file()
+            has_updates = self.scan_model.process_spec_file()
             self.current_rixs_dset = self.scan_model.last_scan_dset
-            self.process_binning()
+
+            if has_updates:
+                self.process_binning()
+                self.ui.tableView_image.setModel(
+                    self.current_rixs_dset.get_table_model()
+                )
+                header = self.ui.tableView_image.horizontalHeader()
+                header.setSectionResizeMode(QHeaderView.Stretch)
 
     def setup_parameter_tree(self):
         """Set up the parameter tree with RixsBinningModel parameters"""
@@ -164,9 +188,15 @@ class RixsViewerGUI(QMainWindow):
     def on_parameter_changed(self, param, changes):
         """Handle parameter tree changes and sync with binning model"""
         meta_source = self.ui.comboBox_metasource.currentText()
-        # Parameters are only editable when meta source is set to 'USER'
-        if meta_source == "USER":
-            self.binning_model.update_from_parameter(param, changes)
+        if meta_source != "USER" and not self._updating_params:
+            QMessageBox.warning(
+                self,
+                "Parameter edit blocked",
+                f"Parameters are read-only in '{meta_source}' mode.\n"
+                "Switch the metadata source to 'USER' to edit them.",
+            )
+            return
+        self.binning_model.update_from_parameter(param, changes)
 
     # ------------------------------------------------------------------
     # Controller helpers: keep model and param-tree widget in sync
@@ -187,9 +217,10 @@ class RixsViewerGUI(QMainWindow):
             The new value for the parameter.
         """
         self.binning_model.put_single_parameter(name, value)
-        param = self.params.child(name)
-        if param is not None:
-            param.setValue(value)
+        try:
+            self.params.child(name).setValue(value)
+        except KeyError:
+            pass
 
     def _put_params(self, kwargs):
         """
@@ -203,8 +234,10 @@ class RixsViewerGUI(QMainWindow):
         kwargs : dict
             A dictionary of parameter names and their new values.
         """
+        self._updating_params = True
         for name, value in kwargs.items():
             self._put_param(name, value)
+        self._updating_params = False
 
     def _get_binning_kwargs(self, meta_source):
         """
@@ -235,7 +268,11 @@ class RixsViewerGUI(QMainWindow):
         if self.current_rixs_dset is None:
             return
         if self.current_rixs_dset.scan_info["scan_type"] != "EnergyScan":
-            QMessageBox.warning(self, "Warning", "Effective pixel size can only be fitted for EnergyScan")
+            QMessageBox.warning(
+                self,
+                "Warning",
+                "Effective pixel size can only be fitted for EnergyScan",
+            )
             return
 
         self.ui.pushButton_fit_pixel_size.setEnabled(False)
@@ -256,7 +293,14 @@ class RixsViewerGUI(QMainWindow):
             )
 
         def on_error(err_str):
-            QMessageBox.critical(self, "Error", f"Linesearch to optimize {opt_target} failed:\n{err_str}")
+            if err_str.startswith("No frames"):
+                self.statusBar().showMessage(f"Warning: {err_str}", 5000)
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Linesearch to optimize {opt_target} failed:\n{err_str}",
+                )
 
         def on_result(ls):
             # Plot the sweep curve with all three reference markers
@@ -281,7 +325,9 @@ class RixsViewerGUI(QMainWindow):
                 if reply == QMessageBox.Yes:
                     if current_meta_source != "USER":
                         QMessageBox.critical(
-                            self, "Error", f"Overriding metadata entry [{opt_target}] only supported in `USER` mode."
+                            self,
+                            "Error",
+                            f"Overriding metadata entry [{opt_target}] only supported in `USER` mode.",
                         )
                         return
                     self._put_param(opt_target, ls["lns_value"])
@@ -294,11 +340,11 @@ class RixsViewerGUI(QMainWindow):
 
         worker = Worker(worker_fn)
         self.calibrate_worker = worker  # Keep reference to prevent GC of signals
-        
+
         if hasattr(self.ui, "progressBar_calibrate"):
             self.ui.progressBar_calibrate.setValue(0)
             worker.signals.progress.connect(self.ui.progressBar_calibrate.setValue)
-            
+
         worker.signals.result.connect(on_result)
         worker.signals.error.connect(on_error)
         worker.signals.finished.connect(on_finished)
@@ -306,11 +352,29 @@ class RixsViewerGUI(QMainWindow):
 
     def save_bin_results(self):
         """
-        Save the binned results to the specified save filename.
+        Save the binned results to a user-chosen file.
         """
         if self.current_rixs_dset is None or self.current_rixs_dset.bin_result is None:
             return
-        self.current_rixs_dset.save_to_file(self.save_filename)
+
+        default = str(self.save_filename) if self.save_filename else ""
+        dialog = QFileDialog(
+            self, "Save binned results", default, "SPEC files (*.spec);;All files (*)"
+        )
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dialog.setOption(QFileDialog.Option.DontConfirmOverwrite, True)
+        if not dialog.exec():
+            return
+        fname = dialog.selectedFiles()[0]
+
+        try:
+            self.current_rixs_dset.save_to_file(fname)
+        except Exception as e:
+            QMessageBox.critical(self, "Save failed", f"Could not save file:\n{e}")
+            return
+
+        self.save_filename = Path(fname)
+        self.statusBar().showMessage(f"Results saved to: {fname}", 5000)
 
     def process_binning(self):
         """
@@ -329,6 +393,7 @@ class RixsViewerGUI(QMainWindow):
         meta_source = self.ui.comboBox_metasource.currentText()
         center_method = self.ui.comboBox_center_method.currentText()
         bin_pixel = self.ui.spinBox_binpixel.value()
+        plot_target = self.ui.comboBox_plottarget.currentText()
 
         binning_kwargs = self._get_binning_kwargs(meta_source)
 
@@ -349,25 +414,40 @@ class RixsViewerGUI(QMainWindow):
             )
 
         def on_result(result):
-            self.view.plot_binned_data(result, show_rawdata, hdl_target="plot")
+            self.view.plot_binned_data(
+                result, show_rawdata, plot_target=plot_target, hdl_target="plot"
+            )
+            if result.get("warning"):
+                self.statusBar().showMessage(f"Warning: {result['warning']}", 5000)
 
         def on_error(err_str):
-            QMessageBox.critical(self, "Error", f"Processing binning failed:\n{err_str}")
+            if err_str.startswith("No frames"):
+                self.statusBar().showMessage(f"Warning: {err_str}", 5000)
+            else:
+                QMessageBox.critical(
+                    self, "Error", f"Processing binning failed:\n{err_str}"
+                )
 
         def on_finished():
             self._binning_active = False
             self.ui.pushButton_process.setEnabled(True)
-            if self.ui.checkBox_autoupdate.isChecked() and self.current_rixs_dset is not None:
+            if (
+                self.ui.checkBox_autoupdate.isChecked()
+                and self.current_rixs_dset is not None
+            ):
                 self.update_image(frame_index=-1)
                 si = self.current_rixs_dset.scan_info
-                if (si and si["tiff_points"] > 0
-                        and si["tiff_points"] == si["spec_points"]
-                        and self.current_rixs_dset.bin_result is not None):
+                if (
+                    si
+                    and si["tiff_points"] > 0
+                    and si["tiff_points"] == si["spec_points"]
+                    and self.current_rixs_dset.bin_result is not None
+                ):
                     self.current_rixs_dset.save_to_file(self.save_filename)
 
         worker = Worker(worker_fn)
         self.binning_worker = worker  # Keep reference to prevent GC of signals
-        
+
         if hasattr(self.ui, "progressBar_process"):
             self.ui.progressBar_process.setValue(0)
             worker.signals.progress.connect(self.ui.progressBar_process.setValue)
@@ -382,7 +462,9 @@ class RixsViewerGUI(QMainWindow):
     def on_load_specfile_clicked(self):
         """Handle the load spec file button click"""
         # Open file dialog to select a spec file
-        start_folder = "./" if self.spec_filename is None else str(Path(self.spec_filename).parent)
+        start_folder = (
+            "./" if self.spec_filename is None else str(Path(self.spec_filename).parent)
+        )
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open SPEC File",
@@ -422,7 +504,9 @@ class RixsViewerGUI(QMainWindow):
 
         logger.info(f"Loading spec and tiff: {self.spec_filename}, {self.tiff_folder}")
         try:
-            scan_model = RixsSpecTable(self.spec_filename, self.tiff_folder, self.save_filename)
+            scan_model = RixsSpecTable(
+                self.spec_filename, self.tiff_folder, self.save_filename
+            )
         except Exception as e:
             traceback.print_exc()
             logger.error(f"Error loading SPEC file: {e}")
@@ -446,7 +530,9 @@ class RixsViewerGUI(QMainWindow):
 
         # Connect click signal to handler
         # self.ui.tableView_scan.clicked.connect(self.on_scan_table_clicked)
-        self.ui.tableView_scan.selectionModel().selectionChanged.connect(self.on_selection_changed)
+        self.ui.tableView_scan.selectionModel().selectionChanged.connect(
+            self.on_selection_changed
+        )
         self.scan_model = scan_model
         return
 
@@ -458,7 +544,9 @@ class RixsViewerGUI(QMainWindow):
         selected_indexes = self.ui.tableView_scan.selectionModel().selectedIndexes()
         row = [index.row() for index in selected_indexes][0]
         if self.ui.checkBox_autoupdate.isChecked():
-            row = self.scan_model.rowCount() - 1  # choose the last row in auto-update mode
+            row = (
+                self.scan_model.rowCount() - 1
+            )  # choose the last row in auto-update mode
 
         dset = self.scan_model.get_selected_dataset(row)
         if dset is None:
@@ -493,6 +581,15 @@ class RixsViewerGUI(QMainWindow):
             percentile_cutoff=percentile_cutoff,
             **binning_kwargs,
         )
+
+        # Scan may be empty (no TIFF frames or no scandata rows yet)
+        if frame_info is None:
+            logger.debug(
+                "update_image: no data available for scan %s yet.",
+                self.current_rixs_dset.scan_index,
+            )
+            return
+
         self.view.update_image(
             frame_info["data"],
             frame_info["levels"],
@@ -522,8 +619,18 @@ class RixsViewerGUI(QMainWindow):
         event : PySide6.QtGui.QCloseEvent
             The close event object.
         """
-        self.timer.stop()
-        return super().closeEvent(event)
+        reply = QMessageBox.question(
+            self,
+            "Confirm Exit",
+            "Are you sure you want to close RIXSviewer?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.timer.stop()
+            super().closeEvent(event)
+        else:
+            event.ignore()
 
 
 def main():
@@ -541,7 +648,9 @@ def main():
         "--tiff-folder",
         help="Path to the TIFF folder (default: %(default)s)",
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
 
     # Parse arguments (filter out Qt arguments)
     args, qt_args = parser.parse_known_args()
@@ -554,6 +663,10 @@ def main():
 
     # Create QApplication with remaining arguments
     app = QApplication([sys.argv[0]] + qt_args)
+
+    icon_path = Path(__file__).parent / "assets" / "icon.png"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     # Configure pyqtgraph after QApplication is created to avoid Qt
     # "unique connections require a pointer to member function" warnings
