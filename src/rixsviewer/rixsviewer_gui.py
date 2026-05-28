@@ -392,10 +392,15 @@ class RixsViewerGUI(QMainWindow):
         show_rawdata = self.ui.checkBox_show_rawdata.isChecked()
         meta_source = self.ui.comboBox_metasource.currentText()
         center_method = self.ui.comboBox_center_method.currentText()
-        bin_pixel = self.ui.spinBox_binpixel.value()
         plot_target = self.ui.comboBox_plottarget.currentText()
 
         binning_kwargs = self._get_binning_kwargs(meta_source)
+
+        if self.ui.checkBox_overwrite_binning_points.isChecked():
+            binning_kwargs["NEnergyBins"] = self.ui.spinBox_force_binning_points.value()
+            binning_kwargs["force_NEnergyBins"] = True
+        else:
+            binning_kwargs["force_NEnergyBins"] = False
 
         if len(self.current_rixs_dset.unloaded_filenames) == 0:
             if self.ui.checkBox_autoupdate.isChecked():
@@ -408,7 +413,6 @@ class RixsViewerGUI(QMainWindow):
             return self.current_rixs_dset.bin_data_wrap(
                 metadata_source=meta_source,
                 center_method=center_method,
-                bin_pixel=bin_pixel,
                 progress_callback=worker.signals.progress.emit,
                 **binning_kwargs,
             )

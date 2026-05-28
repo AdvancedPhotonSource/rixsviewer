@@ -261,6 +261,9 @@ class RixsScanTiffDataset:
         if metadata_source == "SpecFile":
             # SpecFile metadata wins over caller kwargs
             merged_kwargs.update(self.scan_info["metadata"])
+            # Caller-forced overrides survive the SpecFile merge
+            if kwargs.get("force_NEnergyBins") and "NEnergyBins" in kwargs:
+                merged_kwargs["NEnergyBins"] = kwargs["NEnergyBins"]
         merged_kwargs.setdefault("start", self.scan_info.get("start"))
         merged_kwargs.setdefault("end", self.scan_info.get("end"))
 
@@ -312,6 +315,7 @@ class RixsScanTiffDataset:
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
         data, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
+        print(merged_kwargs)
         self.bin_result = bin_rixs_data(
             data, self.scan_info, progress_callback=progress_callback, **merged_kwargs
         )
