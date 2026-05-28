@@ -473,7 +473,7 @@ class RixsViewerGUI(QMainWindow):
             self,
             "Open SPEC File",
             start_folder,
-            "SPEC Files (*.spm3);;All Files (*)",
+            "All Files (*);;SPEC Files (*.spm3)",
         )
 
         # If a file was selected, update the line edit and reload the scan table

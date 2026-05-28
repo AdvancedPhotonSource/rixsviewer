@@ -315,7 +315,6 @@ class RixsScanTiffDataset:
             Result dictionary from :func:`~.utils.bin_rixs_data`.
         """
         data, merged_kwargs = self._prepare_inputs(metadata_source, kwargs)
-        print(merged_kwargs)
         self.bin_result = bin_rixs_data(
             data, self.scan_info, progress_callback=progress_callback, **merged_kwargs
         )
