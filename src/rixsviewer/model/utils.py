@@ -463,7 +463,17 @@ def fit_pixel_size(
 
 
 def _compute_energy_axis(
-    data_2d, xaxis, merixE, Eb, Ra, scan_type, DeltaD, start, end, NEnergyBins=None
+    data_2d,
+    xaxis,
+    merixE,
+    Eb,
+    Ra,
+    scan_type,
+    DeltaD,
+    start,
+    end,
+    NEnergyBins=None,
+    force_NEnergyBins=False,
 ):
     """Build per-pixel energy axes via Rowland geometry and align all
     frames onto a common energy grid.
@@ -515,32 +525,45 @@ def _compute_energy_axis(
     scale = Eb / (2 * Ra) / np.tan(theta_b)
 
     energy_axis = energy_cen - np.outer(scale, xaxis) * DeltaD
+    # sort each frame by energy to ensure monotonicity for interpolation;
+    for i in range(n):
+        idx = np.argsort(energy_axis[i])
+        energy_axis[i] = energy_axis[i][idx]
+        data_2d[i] = data_2d[i][idx]
 
+    lines = [[energy_axis[i], data_2d[i]] for i in range(n)]
+
+    if start is not None and end is not None and scan_type != "SnapshotScan":
+        e_min, e_max = min(start, end), max(start, end)
+    else:
+        e_min, e_max = np.min(energy_axis), np.max(energy_axis)
+
+    # no binning required;
     if scan_type == "SnapshotScan" and NEnergyBins == 0:
         bin_energy_axis = energy_axis[0]
         bin_data = data_2d.copy()
-        lines = [[bin_energy_axis, data_2d[i]] for i in range(n)]
         logger.info("SnapshotScan: using native pixel axis, no energy rebinning")
     else:
-        # sort each frame by energy to ensure monotonicity for interpolation;
-        for i in range(n):
-            idx = np.argsort(energy_axis[i])
-            energy_axis[i] = energy_axis[i][idx]
-            data_2d[i] = data_2d[i][idx]
+        delta_energy_keV_native = np.mean(np.abs(np.diff(energy_axis, axis=1)))
+        fallback_flag = True
+        if NEnergyBins >= 1:
+            delta_energy_keV = (e_max - e_min) / NEnergyBins
+            if delta_energy_keV < delta_energy_keV_native:
+                logger.warning(
+                    f"Requested NEnergyBins={NEnergyBins} leads to delta_energy_keV={delta_energy_keV * 1e6:.3f} meV, "
+                    f"which is smaller than the native pixel spacing of {delta_energy_keV_native * 1e6:.3f} meV;"
+                    "overwriteping to native spacing"
+                )
+            else:
+                fallback_flag = False
+        # NEnergyBins < 1 or requested bin size too small; use native pixel spacing
+        if fallback_flag and not force_NEnergyBins:
+            delta_energy_keV = delta_energy_keV_native
 
-        if start is not None and end is not None and scan_type != "SnapshotScan":
-            e_min, e_max = min(start, end), max(start, end)
-        else:
-            e_min, e_max = np.min(energy_axis), np.max(energy_axis)
-
-        lines = [[energy_axis[i], data_2d[i]] for i in range(n)]
-
-        if NEnergyBins > 1:
-            delta_energy_eV = (e_max - e_min) / NEnergyBins
-        else:
-            delta_energy_eV = np.mean(np.abs(np.diff(energy_axis, axis=1)))
-        logger.info(f"Using delta_energy_eV = {delta_energy_eV:.6f} eV for binning")
-        steps = int((e_max - e_min) / delta_energy_eV) + 1
+        logger.info(
+            f"Using delta_energy_keV = {delta_energy_keV * 1e6:.3f} meV for binning"
+        )
+        steps = int((e_max - e_min) / delta_energy_keV) + 1
         bin_energy_axis = np.linspace(e_min, e_max, steps)
 
         bin_data = np.array(
@@ -762,6 +785,7 @@ def bin_rixs_data(
     TiltAngle=0,
     TiltOrder=1,
     NEnergyBins=None,
+    force_NEnergyBins=False,
     start=None,
     end=None,
     progress_callback=None,
@@ -848,6 +872,7 @@ def bin_rixs_data(
         start,
         end,
         NEnergyBins=NEnergyBins,
+        force_NEnergyBins=force_NEnergyBins,
     )
     if progress_callback:
         progress_callback(80)
