@@ -676,6 +676,7 @@ def main():
     # "unique connections require a pointer to member function" warnings
     pg.setConfigOption("background", "w")
     pg.setConfigOption("foreground", "k")
+    pg.setConfigOption("antialias", True)
 
     # Create and show the GUI
     gui = RixsViewerGUI(spec_filename=args.specfile, tiff_folder=args.tiff_folder)
