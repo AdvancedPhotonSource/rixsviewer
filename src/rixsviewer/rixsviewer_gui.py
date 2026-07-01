@@ -558,6 +558,13 @@ class RixsViewerGUI(QMainWindow):
         if dset is None:
             return
 
+        if self.current_rixs_dset is not None and self.current_rixs_dset is not dset:
+            prev = self.current_rixs_dset
+            if prev._data is not None and prev.scan_info is not None:
+                logger.debug(f"Scan {prev.scan_index}: evicting {prev._data.nbytes // (1024 * 1024)} MB from memory")
+                prev._data = None
+                prev.unloaded_filenames = list(prev.scan_info["filenames"])
+
         self.current_rixs_dset = dset
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
