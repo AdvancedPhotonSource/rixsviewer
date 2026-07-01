@@ -494,7 +494,7 @@ class RixsViewerGUI(QMainWindow):
                 self.statusBar().showMessage(f"Warning: {result['warning']}", 5000)
 
         def on_error(err_str):
-            if err_str.startswith("No frames"):
+            if err_str.startswith("No frames") or "no scandata rows" in err_str:
                 self.statusBar().showMessage(f"Warning: {err_str}", 5000)
             else:
                 QMessageBox.critical(

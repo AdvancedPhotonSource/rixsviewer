@@ -844,8 +844,8 @@ def bin_rixs_data(
     if data_2d.shape[0] != merixE.shape[0]:
         n = min(data_2d.shape[0], merixE.shape[0])
         warning_msg = (
-            f"Frame count mismatch: merixE has {merixE.shape[0]} frames, "
-            f"data has {data_2d.shape[0]}; trimming to {n}"
+            f"Frame count mismatch: SPEC has {merixE.shape[0]} rows, "
+            f"tiff has {data_2d.shape[0]} frames; trimming to {n}"
         )
         logger.warning("Scan %d: %s", scan_info["scan_number"], warning_msg)
 
