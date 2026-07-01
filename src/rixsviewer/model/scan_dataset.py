@@ -1,6 +1,5 @@
-import glob
 import logging
-import os
+from pathlib import Path
 
 import numpy as np
 import tifffile
@@ -119,9 +118,10 @@ class RixsScanTiffDataset:
             return False
         if self.scan_info["tiff_points"] >= self.scan_info["spec_points"]:
             return False
-        basename = os.path.basename(self.spec_fname)
-        pattern = os.path.join(self.tif_folder, f"{basename}_scan{self.scan_index}_point*.tif")
-        filenames = sorted(glob.glob(pattern))
+        basename = Path(self.spec_fname).name
+        filenames = sorted(
+            str(p) for p in Path(self.tif_folder).glob(f"{basename}_scan{self.scan_index}_point*.tif")
+        )
         new_files = [fn for fn in filenames if fn not in self.scan_info["filenames"]]
         if not new_files:
             return False
@@ -608,7 +608,7 @@ class RixsScanImageTable(QAbstractTableModel):
             return None
         if role == Qt.DisplayRole:
             row, _ = index.row(), index.column()
-            return os.path.basename(self.fnames[row])
+            return Path(self.fnames[row]).name
 
         elif role == Qt.TextAlignmentRole:
             return Qt.AlignCenter

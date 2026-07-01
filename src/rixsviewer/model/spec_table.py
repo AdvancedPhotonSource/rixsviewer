@@ -1,5 +1,5 @@
 import logging
-import os
+from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
@@ -67,7 +67,7 @@ class RixsSpecTable(QAbstractTableModel):
             ``True`` when the file was (re-)loaded; ``False`` when the
             cached version is still current.
         """
-        last_modtime = os.path.getmtime(self.spec_fname)
+        last_modtime = Path(self.spec_fname).stat().st_mtime
         if last_modtime == self.last_modtime and self.spec_container is not None:
             return False
         else:
