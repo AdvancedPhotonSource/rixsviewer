@@ -121,6 +121,67 @@ class RixsViewerGUI(QMainWindow):
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
         self.setup_scan_table()
+        self._setup_tooltips()
+
+    def _setup_tooltips(self):
+        ui = self.ui
+        # Load / file
+        ui.toolButton_load_specfile.setToolTip("Browse for a SPEC data file (.spec)")
+        ui.lineEdit_specfilename.setToolTip("Path to the loaded SPEC file")
+        ui.toolButton_set_tifffolder.setToolTip("Browse for the folder containing TIFF detector images")
+        ui.lineEdit.setToolTip("Path to the TIFF image folder")
+        ui.pushButton_load_scan.setToolTip("Parse the SPEC file and populate the scan table")
+        ui.checkBox_autoupdate.setToolTip(
+            "Poll the SPEC file every second for new scans and process them automatically.\n"
+            "Disables manual calibration."
+        )
+        # 2D image display
+        ui.doubleSpinBox_percentile_cutoff.setToolTip(
+            "Percentile used to clip the colour scale (50–100).\n"
+            "Lower values increase contrast by saturating bright pixels."
+        )
+        ui.horizontalSlider_frame_index.setToolTip("Step through individual detector frames in the current scan")
+        # Parameters / metadata
+        ui.comboBox_metasource.setToolTip(
+            "Source of binning parameters:\n"
+            "  SpecFile — read from the scan header\n"
+            "  PV       — live EPICS readback\n"
+            "  USER     — manual entry in the parameter tree"
+        )
+        ui.pushButton_3.setToolTip("Load binning parameters from a saved file")
+        ui.pushButton_4.setToolTip("Save current binning parameters to a file")
+        # Process tab
+        ui.checkBox_show_rawdata.setToolTip("Overlay the un-normalised raw spectrum on the plot")
+        ui.checkBox_overwrite_binning_points.setToolTip("Override the automatic energy bin spacing with a fixed bin count")
+        ui.spinBox_force_binning_points.setToolTip("Number of energy bins to use when the override checkbox is enabled")
+        ui.comboBox_plottarget.setToolTip(
+            "Signal channel to display:\n"
+            "  intensity_norm — normalised RIXS intensity\n"
+            "  pseudo_cps     — counts per second\n"
+            "  i0 / i2        — incident / transmitted beam monitors\n"
+            "  mmepin1/2      — pin diode monitors\n"
+            "  A              — number of valid frames per energy bin"
+        )
+        ui.pushButton_process.setToolTip("Run the Rowland-circle binning pipeline on the current scan")
+        ui.progressBar_process.setToolTip("Binning progress (%)")
+        ui.pushButton_save.setToolTip("Export the binned spectrum to a SPEC-format file")
+        # Calibration tab
+        ui.comboBox_fit_target.setToolTip(
+            "Parameter to optimise:\n"
+            "  DeltaD    — effective pixel size (mm)\n"
+            "  TiltAngle — crystal tilt angle (degrees)"
+        )
+        ui.comboBox_center_method.setToolTip(
+            "Peak-finding algorithm for the elastic line:\n"
+            "  gaussian  — most accurate, slowest\n"
+            "  centroid  — balanced\n"
+            "  argmax    — fastest, least accurate"
+        )
+        ui.pushButton_fit_pixel_size.setToolTip(
+            "Run a line-search to find the optimal DeltaD or TiltAngle\n"
+            "by minimising the elastic peak FWHM"
+        )
+        ui.progressBar_calibrate.setToolTip("Calibration progress (%)")
 
     def start_stop_timer(self):
         """Auto-update the scan table with new scans from the spec file"""
