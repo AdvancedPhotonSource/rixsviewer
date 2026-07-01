@@ -658,6 +658,9 @@ def main():
 
     # Parse arguments (filter out Qt arguments)
     args, qt_args = parser.parse_known_args()
+    unrecognized_opts = [a for a in qt_args if a.startswith("-")]
+    if unrecognized_opts:
+        parser.error(f"unrecognized arguments: {' '.join(unrecognized_opts)}")
 
     # Suppress a harmless pyqtgraph/Qt6 warning about UniqueConnection + lambdas:
     # "qt.core.qobject.connect: QObject::connect(QStyleHints, QStyleHints):

@@ -509,12 +509,6 @@ def _compute_energy_axis(
 
     n = min(data_2d.shape[0], merixE.shape[0])
     if data_2d.shape[0] != merixE.shape[0]:
-        logger.warning(
-            "Frame count mismatch: merixE has %d frames, data has %d; trimming to %d",
-            merixE.shape[0],
-            data_2d.shape[0],
-            n,
-        )
         data_2d = data_2d[:n]
         merixE = merixE[:n]
     if n == 0:
@@ -631,8 +625,9 @@ def _reduce_frames(
     # print("i2 shape", scan_data["i2"].shape)
     # print("i2 values", scan_data["i2"].values)
 
+    n_frames = bin_data.shape[0]
     for key in ("i2", "i0", "mmepin1", "mmepin2"):
-        full_data = np.tile(scan_data[key].values[:, np.newaxis], (1, num_bins)).astype(
+        full_data = np.tile(scan_data[key].values[:n_frames, np.newaxis], (1, num_bins)).astype(
             np.float64
         )
         full_data[nan_mask_2d] = np.nan
@@ -860,6 +855,7 @@ def bin_rixs_data(
             f"Frame count mismatch: merixE has {merixE.shape[0]} frames, "
             f"data has {data_2d.shape[0]}; trimming to {n}"
         )
+        logger.warning("Scan %d: %s", scan_info["scan_number"], warning_msg)
 
     lines, bin_energy, bin_data = _compute_energy_axis(
         data_2d,

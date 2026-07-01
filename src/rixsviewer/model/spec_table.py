@@ -86,6 +86,10 @@ class RixsSpecTable(QAbstractTableModel):
         via ``beginInsertRows`` / ``endInsertRows``.
         """
         if not self.read_latest_spec_file():
+            if self.last_scan_dset is not None and self.last_scan_dset.refresh_tiff_filenames():
+                row = self.last_scan_dset.row_position
+                self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+                return True
             return False
 
         has_updates = False

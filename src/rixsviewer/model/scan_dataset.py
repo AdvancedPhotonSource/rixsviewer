@@ -1,3 +1,4 @@
+import glob
 import logging
 import os
 
@@ -108,6 +109,27 @@ class RixsScanTiffDataset:
             self.unloaded_filenames = unloaded_filenames
             self.scan_info = scan_info
 
+    def refresh_tiff_filenames(self):
+        """Re-glob tiff files to pick up NFS-lagged files when SPEC is already done.
+
+        Returns True if new files were found, False otherwise.
+        Stops early once tiff_points >= spec_points (all expected files have landed).
+        """
+        if self.scan_info is None:
+            return False
+        if self.scan_info["tiff_points"] >= self.scan_info["spec_points"]:
+            return False
+        basename = os.path.basename(self.spec_fname)
+        pattern = os.path.join(self.tif_folder, f"{basename}_scan{self.scan_index}_point*.tif")
+        filenames = sorted(glob.glob(pattern))
+        new_files = [fn for fn in filenames if fn not in self.scan_info["filenames"]]
+        if not new_files:
+            return False
+        self.unloaded_filenames.extend(new_files)
+        self.scan_info["filenames"] = filenames
+        self.scan_info["tiff_points"] = len(filenames)
+        return True
+
     def get_qtableview_display_data(self, col):
         """
         Return the display value for a specific table column.
@@ -205,7 +227,8 @@ class RixsScanTiffDataset:
         levels = percentile_clip(self._data[frame_index], percentile_cutoff)
 
         frame_metadata = self.scan_info["metadata"].copy()
-        frame_metadata["E"] = scandata["merixE"].iloc[frame_index]
+        scandata_index = min(frame_index, len(scandata) - 1)
+        frame_metadata["E"] = scandata["merixE"].iloc[scandata_index]
         frame_metadata["ThetaB"] = (
             np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6
         )  # micro-radian
@@ -519,7 +542,7 @@ class RixsScanTiffDataset:
             ``float32``, or ``None`` if no files have been loaded yet.
         """
         if len(self.unloaded_filenames) > 0:
-            logger.info(f"Reading {len(self.unloaded_filenames)} tiff file(s)")
+            logger.info(f"Scan {self.scan_index}: Reading {len(self.unloaded_filenames)} tiff file(s)")
             data = []
             for fname in self.unloaded_filenames:
                 data.append(tifffile.imread(fname))
