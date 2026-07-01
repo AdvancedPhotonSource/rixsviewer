@@ -1,5 +1,6 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from os import cpu_count
 from pathlib import Path
 
 import numpy as np
@@ -547,7 +548,7 @@ class RixsScanTiffDataset:
             def _read_frame(fname):
                 return tifffile.imread(fname).astype(np.float32)
 
-            with ThreadPoolExecutor(max_workers=len(self.unloaded_filenames)) as ex:
+            with ThreadPoolExecutor(max_workers=min(len(self.unloaded_filenames), (cpu_count() or 2) // 2)) as ex:
                 frames = list(ex.map(_read_frame, self.unloaded_filenames))
             data = np.stack(frames)
             data = fix_bad_pixels(data)

@@ -2,6 +2,7 @@ import functools
 import logging
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+from os import cpu_count
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -562,7 +563,7 @@ def _compute_energy_axis(
         def _interp_frame(i):
             return np.interp(bin_energy_axis, energy_axis[i], data_2d[i], left=np.nan, right=np.nan)
 
-        with ThreadPoolExecutor(max_workers=n) as ex:
+        with ThreadPoolExecutor(max_workers=min(n, (cpu_count() or 2) // 2)) as ex:
             bin_data = np.stack(list(ex.map(_interp_frame, range(n))))
 
     return lines, bin_energy_axis, np.array(bin_data)
