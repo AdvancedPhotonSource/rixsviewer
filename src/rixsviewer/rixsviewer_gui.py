@@ -185,6 +185,14 @@ class RixsViewerGUI(QMainWindow):
         # Set the parameter tree to display these parameters
         self.ui.widget_ptree.setParameters(self.params, showTop=False)
 
+        # Disable "PV" metadata source if EPICS is not reachable
+        if not self.binning_model.check_pv_connection():
+            logger.info("EPICS PVs not reachable — disabling PV metadata source")
+            combo = self.ui.comboBox_metasource
+            pv_item = combo.model().item(1)  # index 1 = "PV"
+            pv_item.setEnabled(False)
+            pv_item.setToolTip("EPICS PVs not available")
+
     def on_parameter_changed(self, param, changes):
         """Handle parameter tree changes and sync with binning model"""
         meta_source = self.ui.comboBox_metasource.currentText()
