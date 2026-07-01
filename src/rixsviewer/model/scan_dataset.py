@@ -547,7 +547,6 @@ class RixsScanTiffDataset:
         if len(self.unloaded_filenames) > 0:
             n_files = len(self.unloaded_filenames)
             t0 = time.perf_counter()
-            logger.info(f"Scan {self.scan_index}: Reading {n_files} tiff file(s)")
             def _read_frame(fname):
                 return tifffile.imread(fname).astype(np.float32)
 
