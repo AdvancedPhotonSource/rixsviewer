@@ -1,4 +1,5 @@
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from os import cpu_count
 from pathlib import Path
@@ -544,14 +545,17 @@ class RixsScanTiffDataset:
             ``float32``, or ``None`` if no files have been loaded yet.
         """
         if len(self.unloaded_filenames) > 0:
-            logger.info(f"Scan {self.scan_index}: Reading {len(self.unloaded_filenames)} tiff file(s)")
+            n_files = len(self.unloaded_filenames)
+            t0 = time.perf_counter()
+            logger.info(f"Scan {self.scan_index}: Reading {n_files} tiff file(s)")
             def _read_frame(fname):
                 return tifffile.imread(fname).astype(np.float32)
 
-            with ThreadPoolExecutor(max_workers=min(len(self.unloaded_filenames), (cpu_count() or 2) // 2)) as ex:
+            with ThreadPoolExecutor(max_workers=min(n_files, (cpu_count() or 2) // 2)) as ex:
                 frames = list(ex.map(_read_frame, self.unloaded_filenames))
             data = np.stack(frames)
             data = fix_bad_pixels(data)
+            logger.info(f"Scan {self.scan_index}: Read {n_files} tiff file(s) in {time.perf_counter() - t0:.2f}s")
             if self._data is None:
                 self._data = data
             else:
