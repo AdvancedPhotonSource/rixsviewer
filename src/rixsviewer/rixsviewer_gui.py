@@ -448,6 +448,8 @@ class RixsViewerGUI(QMainWindow):
                     and self.current_rixs_dset.bin_result is not None
                 ):
                     self.current_rixs_dset.save_to_file(self.save_filename)
+                if self.current_rixs_dset.unloaded_filenames:
+                    self.process_binning()
 
         worker = Worker(worker_fn)
         self.binning_worker = worker  # Keep reference to prevent GC of signals
