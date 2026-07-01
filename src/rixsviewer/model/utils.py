@@ -660,9 +660,8 @@ def _reduce_frames(
         # place holder
         results["intensity_norm_err"] = np.sqrt(results["intensity"]) * 0
 
-    # apply number_of_sample normalization;
     for key in ("i2", "i0", "mmepin1", "mmepin2"):
-        results[key + "_norm"] = results[key] / results["sample"]
+        results[key + "_norm"] = results[key] / norm_factor
     results["A"] = results["sample"]
 
     results["energy_resolution"] = round((energy_axis[1] - energy_axis[0]) * 1e6, 3)
