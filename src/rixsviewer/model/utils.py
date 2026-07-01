@@ -1,6 +1,7 @@
 import functools
 import logging
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -519,11 +520,9 @@ def _compute_energy_axis(
     scale = Eb / (2 * Ra) / np.tan(theta_b)
 
     energy_axis = energy_cen - np.outer(scale, xaxis) * DeltaD
-    # sort each frame by energy to ensure monotonicity for interpolation;
-    for i in range(n):
-        idx = np.argsort(energy_axis[i])
-        energy_axis[i] = energy_axis[i][idx]
-        data_2d[i] = data_2d[i][idx]
+    idx = np.argsort(energy_axis, axis=1)
+    energy_axis = np.take_along_axis(energy_axis, idx, axis=1)
+    data_2d = np.take_along_axis(data_2d, idx, axis=1)
 
     lines = [[energy_axis[i], data_2d[i]] for i in range(n)]
 
@@ -560,18 +559,11 @@ def _compute_energy_axis(
         steps = int((e_max - e_min) / delta_energy_keV) + 1
         bin_energy_axis = np.linspace(e_min, e_max, steps)
 
-        bin_data = np.array(
-            [
-                np.interp(
-                    bin_energy_axis,
-                    energy_axis[i],
-                    data_2d[i],
-                    left=np.nan,
-                    right=np.nan,
-                )
-                for i in range(n)
-            ]
-        )
+        def _interp_frame(i):
+            return np.interp(bin_energy_axis, energy_axis[i], data_2d[i], left=np.nan, right=np.nan)
+
+        with ThreadPoolExecutor() as ex:
+            bin_data = np.stack(list(ex.map(_interp_frame, range(n))))
 
     return lines, bin_energy_axis, np.array(bin_data)
 

@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -543,10 +544,12 @@ class RixsScanTiffDataset:
         """
         if len(self.unloaded_filenames) > 0:
             logger.info(f"Scan {self.scan_index}: Reading {len(self.unloaded_filenames)} tiff file(s)")
-            data = []
-            for fname in self.unloaded_filenames:
-                data.append(tifffile.imread(fname))
-            data = np.array(data).astype(np.float32)
+            def _read_frame(fname):
+                return tifffile.imread(fname).astype(np.float32)
+
+            with ThreadPoolExecutor() as ex:
+                frames = list(ex.map(_read_frame, self.unloaded_filenames))
+            data = np.stack(frames)
             data = fix_bad_pixels(data)
             if self._data is None:
                 self._data = data
