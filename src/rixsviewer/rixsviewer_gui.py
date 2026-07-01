@@ -563,6 +563,8 @@ class RixsViewerGUI(QMainWindow):
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         self.update_image(frame_index=-2)
+        if not self.ui.checkBox_autoupdate.isChecked():
+            self.process_binning()
 
     def update_image(self, frame_index=-2):
         """
