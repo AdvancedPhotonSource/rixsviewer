@@ -547,7 +547,7 @@ class RixsScanTiffDataset:
             def _read_frame(fname):
                 return tifffile.imread(fname).astype(np.float32)
 
-            with ThreadPoolExecutor() as ex:
+            with ThreadPoolExecutor(max_workers=len(self.unloaded_filenames)) as ex:
                 frames = list(ex.map(_read_frame, self.unloaded_filenames))
             data = np.stack(frames)
             data = fix_bad_pixels(data)
