@@ -63,11 +63,11 @@ class RixsBinningModel:
         values = caget_many(list(pvs), timeout=timeout, connection_timeout=timeout)
 
         for name, value in zip(names, values):
-            # update the UI parameter tree if it's connected
+            if value is None:
+                continue
             if name in ("Ylow", "Yhigh", "RefL"):
                 value = int(value)
-            if value is not None:
-                self.put_single_parameter(name, value)
+            self.put_single_parameter(name, value)
         return self.get_kwargs()
 
     def _get_single_parameter(self, name):
