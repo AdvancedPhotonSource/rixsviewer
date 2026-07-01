@@ -63,7 +63,7 @@ Repository = "https://github.com/AZjk/rixsviewer"
 where = ["src"]
 
 [tool.setuptools.package-data]
-rixsviewer = ["*.ui", "assets/*.png"]
+rixsviewer = ["assets/*.png"]
 
 [tool.black]
 line-length = 120
