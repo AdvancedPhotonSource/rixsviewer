@@ -344,11 +344,11 @@ class RixsScanTiffDataset:
         self.bin_result = bin_rixs_data(
             data, self.scan_info, progress_callback=progress_callback, **merged_kwargs
         )
-
+        self._saved = False
         return self.bin_result
 
-    def save_to_file(self, fname=None):
-        if self.bin_result is None or self._saved:
+    def save_to_file(self, fname=None, force=False):
+        if self.bin_result is None or (self._saved and not force):
             return
         self._saved = True
 
@@ -364,7 +364,7 @@ class RixsScanTiffDataset:
             for key, value in self.scan_info["metadata"].items():
                 unit = unit_map.get(key, "")
                 f.write(f"#C {key} = {value}{unit}\n")
-            f.write(f"#N {5}\n")
+            f.write(f"#N {len(self.file_save_keys)}\n")
             header = "#L  " + "  ".join(list(self.file_save_keys.values()))
             f.write(header + "\n")
             data = np.column_stack([res[key] for key in self.file_save_keys.keys()])

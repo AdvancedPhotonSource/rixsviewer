@@ -368,7 +368,7 @@ class RixsViewerGUI(QMainWindow):
         fname = dialog.selectedFiles()[0]
 
         try:
-            self.current_rixs_dset.save_to_file(fname)
+            self.current_rixs_dset.save_to_file(fname, force=True)
         except Exception as e:
             QMessageBox.critical(self, "Save failed", f"Could not save file:\n{e}")
             return
@@ -525,7 +525,7 @@ class RixsViewerGUI(QMainWindow):
 
         p = Path(self.spec_filename)
         self.save_filename = p.with_name(f"{p.stem}_bindata_rixsviewer.spec")
-        logger.info(f"saveing bined results to {self.save_filename}")
+        logger.info(f"saving binned results to {self.save_filename}")
 
         # Connect the model to the tableView_scan
         self.ui.tableView_scan.setModel(scan_model)
