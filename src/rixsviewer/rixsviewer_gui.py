@@ -641,7 +641,7 @@ def main():
     """Main entry point for the application"""
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
-        description="RixsViewer - A tool for visualization and modeling of RIXS (Resonance Inelastic X-ray Scattering) data"
+        description="RixsViewer - A tool for visualizing and analyzing RIXS (Resonance Inelastic X-ray Scattering) data"
     )
     parser.add_argument(
         "--specfile",
