@@ -500,9 +500,7 @@ class RixsViewerGUI(QMainWindow):
             if err_str.startswith("No frames") or "no scandata rows" in err_str:
                 self.statusBar().showMessage(f"Warning: {err_str}", 5000)
             else:
-                QMessageBox.critical(
-                    self, "Error", f"Processing binning failed:\n{err_str}"
-                )
+                logger.error(f"Processing binning failed: {err_str}")
 
         def on_finished():
             self._binning_active = False
