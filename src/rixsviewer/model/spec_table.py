@@ -30,7 +30,7 @@ class RixsSpecTable(QAbstractTableModel):
         Parent object passed to :class:`QAbstractTableModel`.
     """
 
-    def __init__(self, fname, tif_folder, save_filename, parent=None):
+    def __init__(self, fname, tif_folder, save_filename, force_reload_s=5.0, parent=None):
         """
         Initialise the model and perform the first read of the SPEC file.
 
@@ -49,6 +49,7 @@ class RixsSpecTable(QAbstractTableModel):
         self.tif_folder = tif_folder
         self.last_modtime = -1
         self.last_read_wall_time = 0.0
+        self.force_reload_s = force_reload_s
         self._headers = ["Scan#", "Type", "SpecPoints", "TiffPoints"]
         self.record = {}
         self.last_scan_index = 0
@@ -70,7 +71,7 @@ class RixsSpecTable(QAbstractTableModel):
             cached version is still current.
         """
         current_mtime = Path(self.spec_fname).stat().st_mtime
-        stale = time.time() - self.last_read_wall_time > 5.0
+        stale = time.time() - self.last_read_wall_time > self.force_reload_s
 
         if current_mtime == self.last_modtime and self.spec_container is not None and not stale:
             return False

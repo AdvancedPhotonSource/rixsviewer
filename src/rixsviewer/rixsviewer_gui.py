@@ -66,7 +66,7 @@ class RixsViewerGUI(QMainWindow):
     and coordinates between the model and view.
     """
 
-    def __init__(self, spec_filename=None, tiff_folder=None):
+    def __init__(self, spec_filename=None, tiff_folder=None, heartbeat_s=1.0, force_reload_s=5.0):
         """
         Initialize the RixsViewerGUI.
 
@@ -89,6 +89,7 @@ class RixsViewerGUI(QMainWindow):
 
         self.tiff_folder = tiff_folder
         self.spec_filename = spec_filename
+        self.force_reload_s = force_reload_s
         self.save_filename = None
 
         if tiff_folder:
@@ -110,7 +111,7 @@ class RixsViewerGUI(QMainWindow):
         self.ui.horizontalSlider_frame_index.valueChanged.connect(self.update_image)
 
         self.timer = QTimer(self)
-        self.timer.setInterval(1000)
+        self.timer.setInterval(int(heartbeat_s * 1000))
         self.timer.timeout.connect(self.update_spec_record)
         self.ui.checkBox_autoupdate.checkStateChanged.connect(self.start_stop_timer)
 
@@ -581,7 +582,8 @@ class RixsViewerGUI(QMainWindow):
         logger.info(f"Loading spec and tiff: {self.spec_filename}, {self.tiff_folder}")
         try:
             scan_model = RixsSpecTable(
-                self.spec_filename, self.tiff_folder, self.save_filename
+                self.spec_filename, self.tiff_folder, self.save_filename,
+                force_reload_s=self.force_reload_s,
             )
         except Exception as e:
             traceback.print_exc()
@@ -734,6 +736,21 @@ def main():
         help="Path to the TIFF folder (default: %(default)s)",
     )
     parser.add_argument(
+        "--heartbeat",
+        type=float,
+        default=1.0,
+        metavar="SEC",
+        help="Auto-update poll interval in seconds (default: 1.0)",
+    )
+    parser.add_argument(
+        "--force-reload",
+        type=float,
+        default=5.0,
+        metavar="SEC",
+        help="Force SPEC re-read after this many seconds regardless of mtime,"
+             " to bypass NFS attribute caching (default: 5.0)",
+    )
+    parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
 
@@ -763,7 +780,12 @@ def main():
     pg.setConfigOption("antialias", True)
 
     # Create and show the GUI
-    gui = RixsViewerGUI(spec_filename=args.specfile, tiff_folder=args.tiff_folder)
+    gui = RixsViewerGUI(
+        spec_filename=args.specfile,
+        tiff_folder=args.tiff_folder,
+        heartbeat_s=args.heartbeat,
+        force_reload_s=args.force_reload,
+    )
     gui.show()
 
     sys.exit(app.exec())
