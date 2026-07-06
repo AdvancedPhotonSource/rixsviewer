@@ -1,4 +1,5 @@
 import logging
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
@@ -47,6 +48,7 @@ class RixsSpecTable(QAbstractTableModel):
         self.spec_container = None
         self.tif_folder = tif_folder
         self.last_modtime = -1
+        self.last_read_wall_time = 0.0
         self._headers = ["Scan#", "Type", "SpecPoints", "TiffPoints"]
         self.record = {}
         self.last_scan_index = 0
@@ -67,11 +69,20 @@ class RixsSpecTable(QAbstractTableModel):
             ``True`` when the file was (re-)loaded; ``False`` when the
             cached version is still current.
         """
-        last_modtime = Path(self.spec_fname).stat().st_mtime
-        if last_modtime == self.last_modtime and self.spec_container is not None:
+        current_mtime = Path(self.spec_fname).stat().st_mtime
+        stale = time.time() - self.last_read_wall_time > 5.0
+
+        if current_mtime == self.last_modtime and self.spec_container is not None and not stale:
             return False
-        else:
-            self.last_modtime = last_modtime
+
+        if stale and current_mtime == self.last_modtime:
+            logger.debug(
+                "Forcing SPEC re-read (%.0fs since last read — NFS cache bypass)",
+                time.time() - self.last_read_wall_time,
+            )
+
+        self.last_modtime = current_mtime
+        self.last_read_wall_time = time.time()
         self.spec_container = SpecFile(self.spec_fname)
         return True
 
