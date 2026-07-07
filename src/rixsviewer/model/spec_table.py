@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -84,8 +85,29 @@ class RixsSpecTable(QAbstractTableModel):
 
         self.last_modtime = current_mtime
         self.last_read_wall_time = time.time()
+        self._drop_page_cache(self.spec_fname)
         self.spec_container = SpecFile(self.spec_fname)
         return True
+
+    @staticmethod
+    def _drop_page_cache(path):
+        """Advise the kernel to drop cached pages for *path*.
+
+        On NFS mounts the page cache may serve stale file content even after
+        a forced re-read because the NFS client only invalidates pages when it
+        detects a changed mtime.  Calling posix_fadvise(POSIX_FADV_DONTNEED)
+        drops the cached pages so the next open reads fresh data from the
+        server.  This is a hint — the kernel may ignore it — but in practice
+        it is reliable on Linux NFS mounts.
+        """
+        try:
+            fd = os.open(str(path), os.O_RDONLY)
+            try:
+                os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+            finally:
+                os.close(fd)
+        except (OSError, AttributeError):
+            pass  # not available on all platforms (e.g. macOS); silently skip
 
     def process_spec_file(self):
         """
