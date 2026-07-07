@@ -446,7 +446,6 @@ class RixsViewerGUI(QMainWindow):
             QMessageBox.critical(self, "Save failed", f"Could not save file:\n{e}")
             return
 
-        self.save_filename = Path(fname)
         self.statusBar().showMessage(f"Results saved to: {fname}", 5000)
 
     def process_binning(self):
