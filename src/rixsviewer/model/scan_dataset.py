@@ -98,9 +98,12 @@ class RixsScanTiffDataset:
             self.spec_fname,
             self.tif_folder,
         )
+        n_new_spec_rows = len(scan_info["scandata"])
+        n_old_spec_rows = len(self.scan_info["scandata"]) if self.scan_info is not None else -1
         if (
             self.scan_info is None
             or self.scan_info["tiff_points"] != scan_info["tiff_points"]
+            or n_new_spec_rows != n_old_spec_rows
         ):
             prev_filenames = (
                 [] if self.scan_info is None else self.scan_info["filenames"]

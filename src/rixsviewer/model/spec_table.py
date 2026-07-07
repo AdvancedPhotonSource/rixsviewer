@@ -137,13 +137,11 @@ class RixsSpecTable(QAbstractTableModel):
             if get_scan_header(scan_pack)["scan_type"] in ["EnergyScan", "SnapshotScan"]:
                 if scan_number in self.record:
                     scan_dset = self.record[scan_number]
-                    prev_tiff = (
-                        scan_dset.scan_info["tiff_points"]
-                        if scan_dset.scan_info
-                        else -1
-                    )
+                    prev_tiff = scan_dset.scan_info["tiff_points"] if scan_dset.scan_info else -1
+                    prev_spec_rows = len(scan_dset.scan_info["scandata"]) if scan_dset.scan_info else -1
                     scan_dset.update_scan_info(scan_pack)
-                    if scan_dset.scan_info["tiff_points"] != prev_tiff:
+                    if (scan_dset.scan_info["tiff_points"] != prev_tiff or
+                            len(scan_dset.scan_info["scandata"]) != prev_spec_rows):
                         has_updates = True
                         # update the view for this row
                         row = scan_dset.row_position

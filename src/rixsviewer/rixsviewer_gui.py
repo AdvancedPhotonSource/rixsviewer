@@ -476,7 +476,8 @@ class RixsViewerGUI(QMainWindow):
 
         if len(self.current_rixs_dset.unloaded_filenames) == 0:
             if self.ui.checkBox_autoupdate.isChecked():
-                return
+                if self.current_rixs_dset._data is None:
+                    return  # nothing loaded yet, nothing to re-bin
 
         self._binning_active = True
         self.ui.pushButton_process.setEnabled(False)
