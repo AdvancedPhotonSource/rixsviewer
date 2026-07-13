@@ -437,127 +437,49 @@
              <property name="bottomMargin">
               <number>1</number>
              </property>
-             <item row="0" column="3">
-              <widget class="Line" name="line">
+             <item row="0" column="11">
+              <widget class="QCheckBox" name="checkBox_overwrite_binning_points">
+               <property name="text">
+                <string>Force NEnergyBins</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="20">
+              <widget class="Line" name="line_9">
                <property name="orientation">
                 <enum>Qt::Orientation::Vertical</enum>
                </property>
               </widget>
              </item>
-             <item row="0" column="11">
-              <widget class="QCheckBox" name="checkBox_show_rawdata">
-               <property name="text">
-                <string>Show RawData</string>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="19">
+             <item row="0" column="21">
               <widget class="QPushButton" name="pushButton_process">
                <property name="text">
                 <string>Apply</string>
                </property>
               </widget>
              </item>
-             <item row="0" column="13">
-              <widget class="QLabel" name="label_binpixel">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
+             <item row="0" column="15">
+              <widget class="QLabel" name="label_10">
                <property name="text">
-                <string>Bin Pixel:</string>
+                <string>Progress:</string>
                </property>
               </widget>
              </item>
-             <item row="0" column="12">
-              <widget class="Line" name="line_3">
+             <item row="0" column="17">
+              <widget class="Line" name="line_10">
                <property name="orientation">
                 <enum>Qt::Orientation::Vertical</enum>
                </property>
               </widget>
              </item>
              <item row="0" column="8">
-              <widget class="QLabel" name="label_7">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="text">
-                <string>Error Model:</string>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="16">
-              <spacer name="horizontalSpacer_2">
-               <property name="orientation">
-                <enum>Qt::Orientation::Horizontal</enum>
-               </property>
-               <property name="sizeHint" stdset="0">
-                <size>
-                 <width>40</width>
-                 <height>20</height>
-                </size>
-               </property>
-              </spacer>
-             </item>
-             <item row="0" column="14">
-              <widget class="QSpinBox" name="spinBox_binpixel">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="minimum">
-                <number>1</number>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="10">
               <widget class="Line" name="line_2">
                <property name="orientation">
                 <enum>Qt::Orientation::Vertical</enum>
                </property>
               </widget>
              </item>
-             <item row="0" column="18">
-              <widget class="QProgressBar" name="progressBar_process">
-               <property name="value">
-                <number>0</number>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="20">
-              <widget class="QPushButton" name="pushButton_save">
-               <property name="text">
-                <string>Export</string>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="9">
-              <widget class="QComboBox" name="comboBox">
-               <item>
-                <property name="text">
-                 <string>poisson</string>
-                </property>
-               </item>
-               <item>
-                <property name="text">
-                 <string>gaussian</string>
-                </property>
-               </item>
-               <item>
-                <property name="text">
-                 <string>none</string>
-                </property>
-               </item>
-              </widget>
-             </item>
-             <item row="0" column="15">
+             <item row="0" column="13">
               <widget class="QLabel" name="label_energy_interval">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
@@ -570,10 +492,153 @@
                </property>
               </widget>
              </item>
-             <item row="0" column="17">
-              <widget class="QLabel" name="label_10">
+             <item row="0" column="12">
+              <widget class="QSpinBox" name="spinBox_force_binning_points">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimum">
+                <number>10</number>
+               </property>
+               <property name="maximum">
+                <number>9999</number>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="10">
+              <widget class="Line" name="line_3">
+               <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="9">
+              <widget class="QCheckBox" name="checkBox_show_rawdata">
                <property name="text">
-                <string>Progress:</string>
+                <string>Show RawData</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="3">
+              <widget class="Line" name="line">
+               <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="18">
+              <widget class="QLabel" name="label_11">
+               <property name="text">
+                <string>Plot</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="22">
+              <widget class="QPushButton" name="pushButton_save">
+               <property name="text">
+                <string>Export</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="16">
+              <widget class="QProgressBar" name="progressBar_process">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                 <horstretch>2</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="value">
+                <number>0</number>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="19">
+              <widget class="QComboBox" name="comboBox_plottarget">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                 <horstretch>2</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>120</width>
+                 <height>0</height>
+                </size>
+               </property>
+               <item>
+                <property name="text">
+                 <string>intensity_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>i0_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>i2_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>mmepin1_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>mmepin2_norm</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>pseudo_cps</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>intensity_raw</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>A</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>i0</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>i2</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>mmepin1</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>mmepin2</string>
+                </property>
+               </item>
+              </widget>
+             </item>
+             <item row="0" column="14">
+              <widget class="Line" name="line_8">
+               <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
                </property>
               </widget>
              </item>
@@ -805,12 +870,28 @@
    <slot>setDisabled(bool)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>491</x>
-     <y>140</y>
+     <x>296</x>
+     <y>145</y>
     </hint>
     <hint type="destinationlabel">
-     <x>684</x>
-     <y>812</y>
+     <x>1553</x>
+     <y>827</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>checkBox_overwrite_binning_points</sender>
+   <signal>toggled(bool)</signal>
+   <receiver>spinBox_force_binning_points</receiver>
+   <slot>setEnabled(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>546</x>
+     <y>807</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>700</x>
+     <y>815</y>
     </hint>
    </hints>
   </connection>

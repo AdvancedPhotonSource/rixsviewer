@@ -1,6 +1,5 @@
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtWidgets import QMessageBox
 
 
 class RixsView:
@@ -139,7 +138,9 @@ class RixsView:
             hdl.legend = None
         hdl.clear()
 
-    def plot_binned_data(self, result, show_rawdata=False, hdl_target="plot"):
+    def plot_binned_data(
+        self, result, show_rawdata=False, plot_target="intensity", hdl_target="plot"
+    ):
         """Render binned RIXS data onto the plot widget.
 
         Parameters
@@ -153,28 +154,59 @@ class RixsView:
             colours behind the binned line.
         """
         hdl = self.plot_hdl if hdl_target == "plot" else self.calib_hdl
-        hdl.clear()
-        if show_rawdata:
-            for i, (x, y) in enumerate(result["rawdata_lines"]):
-                color = self._LINE_COLORS[i % len(self._LINE_COLORS)]
-                pen = pg.mkPen(color=color, width=1)
-                hdl.plot(x, y, pen=pen)
+        self._clear_plot(hdl)
+        assert plot_target in result, (
+            f"plot_target {plot_target} not found in result {list(result.keys())}"
+        )
 
-        # Plot the binned line with error bars
-        x, y, err = result["binned_line"]
-        pen = pg.mkPen(color=(0, 0, 255), width=1)
-        hdl.plot(x, y, pen=pen)
-
-        # --- Error bar item ---
-        err_plot = pg.ErrorBarItem(x=x, y=y, top=err, bottom=err, beam=0.00001)
-        hdl.addItem(err_plot)
-
-        hdl.setLabel("left", "Intensity")
         hdl.setLabel("bottom", "Energy (keV)")
+        pen = pg.mkPen(color=(0, 0, 255), width=1)
+        energy_axis = result["energy_axis"]
+        y_data = result[plot_target]
 
+        hdl.plot(
+            energy_axis,
+            y_data,
+            pen=pen,
+            symbol="o",
+            symbolSize=5,
+            symbolPen=pg.mkPen(color=(0, 0, 255), width=1),
+            symbolBrush=None,
+        )
+        if plot_target == "intensity_norm":
+            err = result["intensity_norm_err"]
+            # --- Error bar item ---
+            err_plot = pg.ErrorBarItem(
+                x=energy_axis, y=y_data, top=err, bottom=err, beam=0.00001
+            )
+            hdl.addItem(err_plot)
+            hdl.setLabel("left", "Intensity")
+            if show_rawdata:
+                for i, (x, y) in enumerate(result["rawdata_lines"]):
+                    color = self._LINE_COLORS[i % len(self._LINE_COLORS)]
+                    pen = pg.mkPen(color=color, width=1)
+                    hdl.plot(
+                        x,
+                        y,
+                        pen=pen,
+                        symbol="o",
+                        symbolSize=4,
+                        symbolPen=pg.mkPen(color=color, width=1),
+                        symbolBrush=None,
+                    )
+        elif plot_target == "intensity_raw":
+            hdl.setLabel("left", "Raw Intensity")
+        elif plot_target == "pseudo_cps":
+            hdl.setLabel("left", "Counts/second")
+        else:
+            hdl.setLabel("left", plot_target)
+
+        hdl.enableAutoRange()
         if result["summed_data"] is not None:
             self.img2d_hdl.setImage(result["summed_data"], levels=result["levels"])
-        self.ui.label_energy_interval.setText(f"Energy interval: [{result['energy_resolution']:.3f} meV]")
+        self.ui.label_energy_interval.setText(
+            f"Energy interval: [{result['energy_resolution']:.3f} meV]"
+        )
 
     def plot_linesearch(self, ls):
         """Render the DeltaD vs FWHM line-search curve on ``linesearch_hdl``.
@@ -237,7 +269,7 @@ class RixsView:
 
         hdl.setLabel("bottom", "DeltaD (mm)")
         hdl.setLabel("left", "FWHM (keV)")
-        hdl.setTitle(f"{ls["target"]} line search")
+        hdl.setTitle(f"{ls['target']} line search")
 
     def plot_calib_overlay(self, ls):
         """Overlay three calibration spectra on ``calib_hdl``.
@@ -273,7 +305,9 @@ class RixsView:
         for color, result, label in layers:
             if result is None:
                 continue
-            x, y, err = result["binned_line"]
+            x = result["energy_axis"]
+            y = result["intensity_norm"]
+            err = result["intensity_norm_err"]
             fwhm_val = result.get("fwhm")
             fwhm_str = f"{fwhm_val * 1e6:.1f} meV" if fwhm_val is not None else "N/A"
             legend_name = f"{label} (FWHM={fwhm_str})"
@@ -298,7 +332,9 @@ class RixsView:
         center = linesearch_result["center"]
         hdl.setXRange(center - 8 * fwhm, center + 8 * fwhm, padding=0)
 
-    def update_image(self, data, levels, num_frames, binning_kwargs, scan_index, frame_index):
+    def update_image(
+        self, data, levels, num_frames, binning_kwargs, scan_index, frame_index
+    ):
         """Render a single detector frame.
 
         Parameters
@@ -318,7 +354,7 @@ class RixsView:
         self._update_projections(data)
         self._update_roi(data.shape, binning_kwargs)
         self.ui.groupBox_2d_scattering.setTitle(
-            f"2D Scattering: [Scan: {scan_index}, Frame: {frame_index+1}/{num_frames}]"
+            f"2D Scattering: [Scan: {scan_index}, Frame: {frame_index + 1}/{num_frames}]"
         )
 
     def _update_projections(self, data):
@@ -344,7 +380,7 @@ class RixsView:
     # ROI helpers
     # ------------------------------------------------------------------
 
-    def _update_roi(self, image_shape, binning_kwargs):
+    def _update_roi(self, image_shape, binning_kwargs, bin_result=None):
         """Create (first call) or reposition (subsequent calls) the ROI overlay.
 
         With ``invertY(True)`` on the plot, display coordinates match data
@@ -357,15 +393,26 @@ class RixsView:
             ``(rows, cols)`` of the data array (used for default fallbacks).
         binning_kwargs : dict
             Must contain ``"Ylow"``, ``"Yhigh"``, and ``"RefL"``.
+        bin_result : dict, optional
+            When provided the ``"roi"`` key (set by :func:`~.utils.bin_rixs_data`)
+            is used directly, which accounts for detector-edge clamping and
+            avoids recomputing the geometry here.
         """
-        ylow = binning_kwargs.get("Ylow", 0)
-        yhigh = binning_kwargs.get("Yhigh", image_shape[0])
-        refl = binning_kwargs.get("RefL", image_shape[1] // 2)
-
-        roi_x = 0
-        roi_y = ylow
-        roi_w = 2 * refl
-        roi_h = yhigh - ylow  # always >= 0
+        if bin_result is not None and "roi" in bin_result:
+            roi = bin_result["roi"]
+            roi_x, roi_y, roi_w, roi_h = roi["x"], roi["y"], roi["w"], roi["h"]
+        else:
+            ylow = binning_kwargs.get("Ylow", 0)
+            yhigh = binning_kwargs.get("Yhigh", image_shape[0])
+            refl = binning_kwargs.get("RefL", image_shape[1] // 2)
+            xsize = int(
+                binning_kwargs.get("Acrystalsize", 1.3)
+                / binning_kwargs.get("DeltaD", 0.02)
+            )
+            roi_x = max(0, refl - xsize)
+            roi_y = ylow
+            roi_w = max(0, 2 * xsize + 1)
+            roi_h = max(0, yhigh - ylow)
 
         if self._roi_rect is None:
             # Create once; make it non-interactive (display-only)
@@ -379,7 +426,7 @@ class RixsView:
             # Remove the scale handle that RectROI adds by default
             self._roi_rect.removeHandle(0)
             self._img_plot.addItem(self._roi_rect)
-        elif self._roi_parameters != (ylow, yhigh, refl):
-            self._roi_parameters = (ylow, yhigh, refl)
+        elif self._roi_parameters != (roi_x, roi_y, roi_w, roi_h):
+            self._roi_parameters = (roi_x, roi_y, roi_w, roi_h)
             self._roi_rect.setPos([roi_x, roi_y], finish=False)
             self._roi_rect.setSize([roi_w, roi_h], finish=False)

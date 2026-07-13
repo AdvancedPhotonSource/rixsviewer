@@ -1,5 +1,5 @@
 """
-RixsViewer - A tool for visualization and modeling of RIXS (Resonance Inelastic X-ray Scattering) data
+RixsViewer - A tool for visualizing and analyzing RIXS (Resonance Inelastic X-ray Scattering) data
 
 This package provides tools for loading, visualizing, and analyzing RIXS spectroscopy data.
 """
