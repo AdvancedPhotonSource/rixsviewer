@@ -71,8 +71,14 @@ class RixsSpecTable(QAbstractTableModel):
             ``True`` when the file was (re-)loaded; ``False`` when the
             cached version is still current.
         """
+        now = time.time()
         current_mtime = Path(self.spec_fname).stat().st_mtime
-        stale = time.time() - self.last_read_wall_time > self.force_reload_s
+
+        # Force-reload only makes sense when the file was recently modified.
+        # If mtime is >60s old the NFS attribute cache (acregmax ~60s) has already
+        # refreshed at least once — any real change would have been reflected.
+        recently_modified = (now - current_mtime) < 60
+        stale = (now - self.last_read_wall_time > self.force_reload_s) and recently_modified
 
         if current_mtime == self.last_modtime and self.spec_container is not None and not stale:
             return False
@@ -80,7 +86,7 @@ class RixsSpecTable(QAbstractTableModel):
         if stale and current_mtime == self.last_modtime:
             logger.debug(
                 "Forcing SPEC re-read (%.0fs since last read — NFS cache bypass)",
-                time.time() - self.last_read_wall_time,
+                now - self.last_read_wall_time,
             )
 
         self.last_modtime = current_mtime
