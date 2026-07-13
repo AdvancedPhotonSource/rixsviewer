@@ -172,6 +172,23 @@ class RixsSpecTable(QAbstractTableModel):
                     self.last_scan_index = max(self.last_scan_index, scan_number)
         if scan_dset is not None:
             self.last_scan_dset = scan_dset
+
+        # Trigger 3: save if the SPEC file has been inactive for >300s and
+        # the current result hasn't been saved yet (covers stalled/aborted scans).
+        if (
+            self.last_scan_dset is not None
+            and self.last_scan_dset.bin_result is not None
+            and not self.last_scan_dset._saved
+            and self.last_modtime > 0
+            and time.time() - self.last_modtime > 300
+        ):
+            logger.info(
+                "Scan %d: auto-saving after 300s of SPEC inactivity",
+                self.last_scan_dset.scan_index,
+            )
+            self.last_scan_dset.save_to_file(self.save_filename)
+            self.last_scan_dset.bin_result = None
+
         return has_updates
 
     def rowCount(self, parent=None):
