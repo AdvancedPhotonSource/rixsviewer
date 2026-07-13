@@ -516,6 +516,7 @@ class RixsViewerGUI(QMainWindow):
                     si
                     and si["tiff_points"] > 0
                     and si["tiff_points"] == si["spec_points"]
+                    and len(si["scandata"]) == si["spec_points"]
                     and self.current_rixs_dset.bin_result is not None
                 ):
                     self.current_rixs_dset.save_to_file(self.save_filename)
