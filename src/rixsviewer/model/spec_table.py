@@ -92,6 +92,7 @@ class RixsSpecTable(QAbstractTableModel):
         self.last_modtime = current_mtime
         self.last_read_wall_time = time.time()
         self._drop_page_cache(self.spec_fname)
+        self.spec_container = None  # release before allocating to avoid peak spike
         self.spec_container = SpecFile(self.spec_fname)
         return True
 
@@ -156,9 +157,10 @@ class RixsSpecTable(QAbstractTableModel):
                         self.dataChanged.emit(index_top_left, index_bottom_right)
                 else:
                     has_updates = True
-                    # new scan dataset; save the previous scan
+                    # new scan dataset; save the previous scan then free its spectrum
                     if self.last_scan_dset is not None:
                         self.last_scan_dset.save_to_file(self.save_filename)
+                        self.last_scan_dset.bin_result = None
                     row = len(self.record)
                     scan_dset = RixsScanTiffDataset(
                         row, self.spec_fname, self.tif_folder, scan_number
