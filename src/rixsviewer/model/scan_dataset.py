@@ -113,6 +113,8 @@ class RixsScanTiffDataset:
             ]
             self.unloaded_filenames = unloaded_filenames
             self.scan_info = scan_info
+            if unloaded_filenames or n_new_spec_rows > n_old_spec_rows:
+                self._saved = False  # new data arrived; previous save is stale
 
     def refresh_tiff_filenames(self):
         """Re-glob tiff files to pick up NFS-lagged files when SPEC is already done.
@@ -134,6 +136,7 @@ class RixsScanTiffDataset:
         self.unloaded_filenames.extend(new_files)
         self.scan_info["filenames"] = filenames
         self.scan_info["tiff_points"] = len(filenames)
+        self._saved = False  # new tiff files arrived; previous save is stale
         return True
 
     def get_qtableview_display_data(self, col):
@@ -347,7 +350,6 @@ class RixsScanTiffDataset:
         self.bin_result = bin_rixs_data(
             data, self.scan_info, progress_callback=progress_callback, **merged_kwargs
         )
-        self._saved = False
         return self.bin_result
 
     def save_to_file(self, fname=None, force=False):
