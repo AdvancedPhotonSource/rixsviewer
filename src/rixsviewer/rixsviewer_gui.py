@@ -66,7 +66,7 @@ class RixsViewerGUI(QMainWindow):
     and coordinates between the model and view.
     """
 
-    def __init__(self, spec_filename=None, tiff_folder=None):
+    def __init__(self, spec_filename=None, tiff_folder=None, heartbeat_s=1.0, force_reload_s=2.0):
         """
         Initialize the RixsViewerGUI.
 
@@ -89,6 +89,7 @@ class RixsViewerGUI(QMainWindow):
 
         self.tiff_folder = tiff_folder
         self.spec_filename = spec_filename
+        self.force_reload_s = force_reload_s
         self.save_filename = None
 
         if tiff_folder:
@@ -110,7 +111,7 @@ class RixsViewerGUI(QMainWindow):
         self.ui.horizontalSlider_frame_index.valueChanged.connect(self.update_image)
 
         self.timer = QTimer(self)
-        self.timer.setInterval(1000)
+        self.timer.setInterval(int(heartbeat_s * 1000))
         self.timer.timeout.connect(self.update_spec_record)
         self.ui.checkBox_autoupdate.checkStateChanged.connect(self.start_stop_timer)
 
@@ -121,6 +122,67 @@ class RixsViewerGUI(QMainWindow):
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
         self.setup_scan_table()
+        self._setup_tooltips()
+
+    def _setup_tooltips(self):
+        ui = self.ui
+        # Load / file
+        ui.toolButton_load_specfile.setToolTip("Browse for a SPEC data file (.spec)")
+        ui.lineEdit_specfilename.setToolTip("Path to the loaded SPEC file")
+        ui.toolButton_set_tifffolder.setToolTip("Browse for the folder containing TIFF detector images")
+        ui.lineEdit.setToolTip("Path to the TIFF image folder")
+        ui.pushButton_load_scan.setToolTip("Parse the SPEC file and populate the scan table")
+        ui.checkBox_autoupdate.setToolTip(
+            "Poll the SPEC file every second for new scans and process them automatically.\n"
+            "Disables manual calibration."
+        )
+        # 2D image display
+        ui.doubleSpinBox_percentile_cutoff.setToolTip(
+            "Percentile used to clip the colour scale (50–100).\n"
+            "Lower values increase contrast by saturating bright pixels."
+        )
+        ui.horizontalSlider_frame_index.setToolTip("Step through individual detector frames in the current scan")
+        # Parameters / metadata
+        ui.comboBox_metasource.setToolTip(
+            "Source of binning parameters:\n"
+            "  SpecFile — read from the scan header\n"
+            "  PV       — live EPICS readback\n"
+            "  USER     — manual entry in the parameter tree"
+        )
+        ui.pushButton_3.setToolTip("Load binning parameters from a saved file")
+        ui.pushButton_4.setToolTip("Save current binning parameters to a file")
+        # Process tab
+        ui.checkBox_show_rawdata.setToolTip("Overlay the un-normalised raw spectrum on the plot")
+        ui.checkBox_overwrite_binning_points.setToolTip("Override the automatic energy bin spacing with a fixed bin count")
+        ui.spinBox_force_binning_points.setToolTip("Number of energy bins to use when the override checkbox is enabled")
+        ui.comboBox_plottarget.setToolTip(
+            "Signal channel to display:\n"
+            "  intensity_norm — normalised RIXS intensity\n"
+            "  pseudo_cps     — counts per second\n"
+            "  i0 / i2        — incident / transmitted beam monitors\n"
+            "  mmepin1/2      — pin diode monitors\n"
+            "  A              — number of valid frames per energy bin"
+        )
+        ui.pushButton_process.setToolTip("Run the Rowland-circle binning pipeline on the current scan")
+        ui.progressBar_process.setToolTip("Binning progress (%)")
+        ui.pushButton_save.setToolTip("Export the binned spectrum to a SPEC-format file")
+        # Calibration tab
+        ui.comboBox_fit_target.setToolTip(
+            "Parameter to optimise:\n"
+            "  DeltaD    — effective pixel size (mm)\n"
+            "  TiltAngle — crystal tilt angle (degrees)"
+        )
+        ui.comboBox_center_method.setToolTip(
+            "Peak-finding algorithm for the elastic line:\n"
+            "  gaussian  — most accurate, slowest\n"
+            "  centroid  — balanced\n"
+            "  argmax    — fastest, least accurate"
+        )
+        ui.pushButton_fit_pixel_size.setToolTip(
+            "Run a line-search to find the optimal DeltaD or TiltAngle\n"
+            "by minimising the elastic peak FWHM"
+        )
+        ui.progressBar_calibrate.setToolTip("Calibration progress (%)")
 
     def start_stop_timer(self):
         """Auto-update the scan table with new scans from the spec file"""
@@ -184,6 +246,17 @@ class RixsViewerGUI(QMainWindow):
 
         # Set the parameter tree to display these parameters
         self.ui.widget_ptree.setParameters(self.params, showTop=False)
+
+        # Disable "PV" and "Auto Update" if EPICS is not reachable
+        if not self.binning_model.check_pv_connection():
+            logger.info("EPICS PVs not reachable — disabling PV metadata source and auto-update")
+            combo = self.ui.comboBox_metasource
+            pv_item = combo.model().item(1)  # index 1 = "PV"
+            pv_item.setEnabled(False)
+            pv_item.setToolTip("EPICS PVs not available")
+            self.ui.checkBox_autoupdate.setChecked(False)
+            self.ui.checkBox_autoupdate.setEnabled(False)
+            self.ui.checkBox_autoupdate.setToolTip("Auto-update requires EPICS PV access (not available)")
 
     def on_parameter_changed(self, param, changes):
         """Handle parameter tree changes and sync with binning model"""
@@ -368,12 +441,11 @@ class RixsViewerGUI(QMainWindow):
         fname = dialog.selectedFiles()[0]
 
         try:
-            self.current_rixs_dset.save_to_file(fname)
+            self.current_rixs_dset.save_to_file(fname, force=True)
         except Exception as e:
             QMessageBox.critical(self, "Save failed", f"Could not save file:\n{e}")
             return
 
-        self.save_filename = Path(fname)
         self.statusBar().showMessage(f"Results saved to: {fname}", 5000)
 
     def process_binning(self):
@@ -404,7 +476,8 @@ class RixsViewerGUI(QMainWindow):
 
         if len(self.current_rixs_dset.unloaded_filenames) == 0:
             if self.ui.checkBox_autoupdate.isChecked():
-                return
+                if self.current_rixs_dset._data is None:
+                    return  # nothing loaded yet, nothing to re-bin
 
         self._binning_active = True
         self.ui.pushButton_process.setEnabled(False)
@@ -425,12 +498,10 @@ class RixsViewerGUI(QMainWindow):
                 self.statusBar().showMessage(f"Warning: {result['warning']}", 5000)
 
         def on_error(err_str):
-            if err_str.startswith("No frames"):
+            if err_str.startswith("No frames") or "no scandata rows" in err_str:
                 self.statusBar().showMessage(f"Warning: {err_str}", 5000)
             else:
-                QMessageBox.critical(
-                    self, "Error", f"Processing binning failed:\n{err_str}"
-                )
+                logger.error(f"Processing binning failed: {err_str}")
 
         def on_finished():
             self._binning_active = False
@@ -445,9 +516,12 @@ class RixsViewerGUI(QMainWindow):
                     si
                     and si["tiff_points"] > 0
                     and si["tiff_points"] == si["spec_points"]
+                    and len(si["scandata"]) == si["spec_points"]
                     and self.current_rixs_dset.bin_result is not None
                 ):
                     self.current_rixs_dset.save_to_file(self.save_filename)
+                if self.current_rixs_dset.unloaded_filenames:
+                    self.process_binning()
 
         worker = Worker(worker_fn)
         self.binning_worker = worker  # Keep reference to prevent GC of signals
@@ -509,7 +583,8 @@ class RixsViewerGUI(QMainWindow):
         logger.info(f"Loading spec and tiff: {self.spec_filename}, {self.tiff_folder}")
         try:
             scan_model = RixsSpecTable(
-                self.spec_filename, self.tiff_folder, self.save_filename
+                self.spec_filename, self.tiff_folder, self.save_filename,
+                force_reload_s=self.force_reload_s,
             )
         except Exception as e:
             traceback.print_exc()
@@ -523,7 +598,7 @@ class RixsViewerGUI(QMainWindow):
 
         p = Path(self.spec_filename)
         self.save_filename = p.with_name(f"{p.stem}_bindata_rixsviewer.spec")
-        logger.info(f"saveing bined results to {self.save_filename}")
+        logger.info(f"saving binned results to {self.save_filename}")
 
         # Connect the model to the tableView_scan
         self.ui.tableView_scan.setModel(scan_model)
@@ -556,11 +631,20 @@ class RixsViewerGUI(QMainWindow):
         if dset is None:
             return
 
+        if self.current_rixs_dset is not None and self.current_rixs_dset is not dset:
+            prev = self.current_rixs_dset
+            if prev._data is not None and prev.scan_info is not None:
+                logger.debug(f"Scan {prev.scan_index}: evicting {prev._data.nbytes // (1024 * 1024)} MB from memory")
+                prev._data = None
+                prev.unloaded_filenames = list(prev.scan_info["filenames"])
+
         self.current_rixs_dset = dset
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         self.update_image(frame_index=-2)
+        if not self.ui.checkBox_autoupdate.isChecked():
+            self.process_binning()
 
     def update_image(self, frame_index=-2):
         """
@@ -641,7 +725,7 @@ def main():
     """Main entry point for the application"""
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
-        description="RixsViewer - A tool for visualization and modeling of RIXS (Resonance Inelastic X-ray Scattering) data"
+        description="RixsViewer - A tool for visualizing and analyzing RIXS (Resonance Inelastic X-ray Scattering) data"
     )
     parser.add_argument(
         "--specfile",
@@ -653,11 +737,29 @@ def main():
         help="Path to the TIFF folder (default: %(default)s)",
     )
     parser.add_argument(
+        "--heartbeat",
+        type=float,
+        default=1.0,
+        metavar="SEC",
+        help="Auto-update poll interval in seconds (default: 1.0)",
+    )
+    parser.add_argument(
+        "--force-reload",
+        type=float,
+        default=2.0,
+        metavar="SEC",
+        help="Force SPEC re-read after this many seconds regardless of mtime,"
+             " to bypass NFS attribute caching (default: 2.0)",
+    )
+    parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
 
     # Parse arguments (filter out Qt arguments)
     args, qt_args = parser.parse_known_args()
+    unrecognized_opts = [a for a in qt_args if a.startswith("-")]
+    if unrecognized_opts:
+        parser.error(f"unrecognized arguments: {' '.join(unrecognized_opts)}")
 
     # Suppress a harmless pyqtgraph/Qt6 warning about UniqueConnection + lambdas:
     # "qt.core.qobject.connect: QObject::connect(QStyleHints, QStyleHints):
@@ -679,7 +781,12 @@ def main():
     pg.setConfigOption("antialias", True)
 
     # Create and show the GUI
-    gui = RixsViewerGUI(spec_filename=args.specfile, tiff_folder=args.tiff_folder)
+    gui = RixsViewerGUI(
+        spec_filename=args.specfile,
+        tiff_folder=args.tiff_folder,
+        heartbeat_s=args.heartbeat,
+        force_reload_s=args.force_reload,
+    )
     gui.show()
 
     sys.exit(app.exec())

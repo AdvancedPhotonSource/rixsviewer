@@ -1,6 +1,8 @@
 import functools
 import logging
 import warnings
+from concurrent.futures import ThreadPoolExecutor
+from os import cpu_count
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -509,12 +511,6 @@ def _compute_energy_axis(
 
     n = min(data_2d.shape[0], merixE.shape[0])
     if data_2d.shape[0] != merixE.shape[0]:
-        logger.warning(
-            "Frame count mismatch: merixE has %d frames, data has %d; trimming to %d",
-            merixE.shape[0],
-            data_2d.shape[0],
-            n,
-        )
         data_2d = data_2d[:n]
         merixE = merixE[:n]
     if n == 0:
@@ -525,11 +521,9 @@ def _compute_energy_axis(
     scale = Eb / (2 * Ra) / np.tan(theta_b)
 
     energy_axis = energy_cen - np.outer(scale, xaxis) * DeltaD
-    # sort each frame by energy to ensure monotonicity for interpolation;
-    for i in range(n):
-        idx = np.argsort(energy_axis[i])
-        energy_axis[i] = energy_axis[i][idx]
-        data_2d[i] = data_2d[i][idx]
+    idx = np.argsort(energy_axis, axis=1)
+    energy_axis = np.take_along_axis(energy_axis, idx, axis=1)
+    data_2d = np.take_along_axis(data_2d, idx, axis=1)
 
     lines = [[energy_axis[i], data_2d[i]] for i in range(n)]
 
@@ -566,18 +560,11 @@ def _compute_energy_axis(
         steps = int((e_max - e_min) / delta_energy_keV) + 1
         bin_energy_axis = np.linspace(e_min, e_max, steps)
 
-        bin_data = np.array(
-            [
-                np.interp(
-                    bin_energy_axis,
-                    energy_axis[i],
-                    data_2d[i],
-                    left=np.nan,
-                    right=np.nan,
-                )
-                for i in range(n)
-            ]
-        )
+        def _interp_frame(i):
+            return np.interp(bin_energy_axis, energy_axis[i], data_2d[i], left=np.nan, right=np.nan)
+
+        with ThreadPoolExecutor(max_workers=min(n, (cpu_count() or 2) // 2)) as ex:
+            bin_data = np.stack(list(ex.map(_interp_frame, range(n))))
 
     return lines, bin_energy_axis, np.array(bin_data)
 
@@ -631,8 +618,9 @@ def _reduce_frames(
     # print("i2 shape", scan_data["i2"].shape)
     # print("i2 values", scan_data["i2"].values)
 
+    n_frames = bin_data.shape[0]
     for key in ("i2", "i0", "mmepin1", "mmepin2"):
-        full_data = np.tile(scan_data[key].values[:, np.newaxis], (1, num_bins)).astype(
+        full_data = np.tile(scan_data[key].values[:n_frames, np.newaxis], (1, num_bins)).astype(
             np.float64
         )
         full_data[nan_mask_2d] = np.nan
@@ -672,9 +660,8 @@ def _reduce_frames(
         # place holder
         results["intensity_norm_err"] = np.sqrt(results["intensity"]) * 0
 
-    # apply number_of_sample normalization;
     for key in ("i2", "i0", "mmepin1", "mmepin2"):
-        results[key + "_norm"] = results[key] / results["sample"]
+        results[key + "_norm"] = results[key] / norm_factor
     results["A"] = results["sample"]
 
     results["energy_resolution"] = round((energy_axis[1] - energy_axis[0]) * 1e6, 3)
@@ -857,9 +844,10 @@ def bin_rixs_data(
     if data_2d.shape[0] != merixE.shape[0]:
         n = min(data_2d.shape[0], merixE.shape[0])
         warning_msg = (
-            f"Frame count mismatch: merixE has {merixE.shape[0]} frames, "
-            f"data has {data_2d.shape[0]}; trimming to {n}"
+            f"Frame count mismatch: SPEC has {merixE.shape[0]} rows, "
+            f"tiff has {data_2d.shape[0]} frames; trimming to {n}"
         )
+        logger.warning("Scan %d: %s", scan_info["scan_number"], warning_msg)
 
     lines, bin_energy, bin_data = _compute_energy_axis(
         data_2d,

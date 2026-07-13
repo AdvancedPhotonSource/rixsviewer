@@ -5,24 +5,27 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rixsviewer"
 dynamic = ["version"]
-description = "A tool for visualization and modeling of RIXS (Resonance Inelastic X-ray Scattering) data"
+description = "A tool for visualizing and analyzing RIXS (Resonance Inelastic X-ray Scattering) data"
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
-authors = [{ name = "MQICHU", email = "your.email@example.com" }]
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Miaoqi Chu", email = "mqichu@anl.gov" },
+    { name = "Mary Upton", email = "mhupton@anl.gov" },
+]
 keywords = [
     "RIXS",
     "X-ray scattering",
     "spectroscopy",
     "visualization",
-    "modeling",
+    "analysis",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Scientific/Engineering :: Visualization",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -35,6 +38,7 @@ dependencies = [
     "PySide6>=6.0.0",
     "silx>=1.0.0",
     "numpy>=1.20.0",
+    "scipy>=1.0.0",
     "pyqtgraph",
     "tifffile",
     "pandas",
@@ -42,6 +46,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+epics = ["pyepics"]
 dev = ["pytest>=7.0.0", "black>=22.0.0", "flake8>=4.0.0"]
 docs = ["sphinx>=6.0.0", "sphinx-rtd-theme>=1.0.0", "numpydoc>=1.5.0"]
 
@@ -49,16 +54,16 @@ docs = ["sphinx>=6.0.0", "sphinx-rtd-theme>=1.0.0", "numpydoc>=1.5.0"]
 rixsviewer = "rixsviewer.rixsviewer_gui:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/rixsviewer"
-Documentation = "https://github.com/yourusername/rixsviewer/blob/main/README.md"
-Repository = "https://github.com/yourusername/rixsviewer"
-"Bug Tracker" = "https://github.com/yourusername/rixsviewer/issues"
+Homepage = "https://github.com/AZjk/rixsviewer"
+Documentation = "https://github.com/AZjk/rixsviewer/blob/main/README.md"
+Repository = "https://github.com/AZjk/rixsviewer"
+"Bug Tracker" = "https://github.com/AZjk/rixsviewer/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-rixsviewer = ["*.ui", "assets/*.png"]
+rixsviewer = ["assets/*.png"]
 
 [tool.black]
 line-length = 120

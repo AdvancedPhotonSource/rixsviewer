@@ -154,7 +154,7 @@ class RixsView:
             colours behind the binned line.
         """
         hdl = self.plot_hdl if hdl_target == "plot" else self.calib_hdl
-        hdl.clear()
+        self._clear_plot(hdl)
         assert plot_target in result, (
             f"plot_target {plot_target} not found in result {list(result.keys())}"
         )

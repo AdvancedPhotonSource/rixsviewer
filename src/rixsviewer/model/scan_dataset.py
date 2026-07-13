@@ -1,5 +1,8 @@
 import logging
-import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+from os import cpu_count
+from pathlib import Path
 
 import numpy as np
 import tifffile
@@ -95,9 +98,12 @@ class RixsScanTiffDataset:
             self.spec_fname,
             self.tif_folder,
         )
+        n_new_spec_rows = len(scan_info["scandata"])
+        n_old_spec_rows = len(self.scan_info["scandata"]) if self.scan_info is not None else -1
         if (
             self.scan_info is None
             or self.scan_info["tiff_points"] != scan_info["tiff_points"]
+            or n_new_spec_rows != n_old_spec_rows
         ):
             prev_filenames = (
                 [] if self.scan_info is None else self.scan_info["filenames"]
@@ -107,6 +113,31 @@ class RixsScanTiffDataset:
             ]
             self.unloaded_filenames = unloaded_filenames
             self.scan_info = scan_info
+            if unloaded_filenames or n_new_spec_rows > n_old_spec_rows:
+                self._saved = False  # new data arrived; previous save is stale
+
+    def refresh_tiff_filenames(self):
+        """Re-glob tiff files to pick up NFS-lagged files when SPEC is already done.
+
+        Returns True if new files were found, False otherwise.
+        Stops early once tiff_points >= spec_points (all expected files have landed).
+        """
+        if self.scan_info is None:
+            return False
+        if self.scan_info["tiff_points"] >= self.scan_info["spec_points"]:
+            return False
+        basename = Path(self.spec_fname).name
+        filenames = sorted(
+            str(p) for p in Path(self.tif_folder).glob(f"{basename}_scan{self.scan_index}_point*.tif")
+        )
+        new_files = [fn for fn in filenames if fn not in self.scan_info["filenames"]]
+        if not new_files:
+            return False
+        self.unloaded_filenames.extend(new_files)
+        self.scan_info["filenames"] = filenames
+        self.scan_info["tiff_points"] = len(filenames)
+        self._saved = False  # new tiff files arrived; previous save is stale
+        return True
 
     def get_qtableview_display_data(self, col):
         """
@@ -205,7 +236,8 @@ class RixsScanTiffDataset:
         levels = percentile_clip(self._data[frame_index], percentile_cutoff)
 
         frame_metadata = self.scan_info["metadata"].copy()
-        frame_metadata["E"] = scandata["merixE"].iloc[frame_index]
+        scandata_index = min(frame_index, len(scandata) - 1)
+        frame_metadata["E"] = scandata["merixE"].iloc[scandata_index]
         frame_metadata["ThetaB"] = (
             np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6
         )  # micro-radian
@@ -318,11 +350,10 @@ class RixsScanTiffDataset:
         self.bin_result = bin_rixs_data(
             data, self.scan_info, progress_callback=progress_callback, **merged_kwargs
         )
-
         return self.bin_result
 
-    def save_to_file(self, fname=None):
-        if self.bin_result is None or self._saved:
+    def save_to_file(self, fname=None, force=False):
+        if self.bin_result is None or (self._saved and not force):
             return
         self._saved = True
 
@@ -338,7 +369,7 @@ class RixsScanTiffDataset:
             for key, value in self.scan_info["metadata"].items():
                 unit = unit_map.get(key, "")
                 f.write(f"#C {key} = {value}{unit}\n")
-            f.write(f"#N {5}\n")
+            f.write(f"#N {len(self.file_save_keys)}\n")
             header = "#L  " + "  ".join(list(self.file_save_keys.values()))
             f.write(header + "\n")
             data = np.column_stack([res[key] for key in self.file_save_keys.keys()])
@@ -519,12 +550,16 @@ class RixsScanTiffDataset:
             ``float32``, or ``None`` if no files have been loaded yet.
         """
         if len(self.unloaded_filenames) > 0:
-            logger.info(f"Reading {len(self.unloaded_filenames)} tiff file(s)")
-            data = []
-            for fname in self.unloaded_filenames:
-                data.append(tifffile.imread(fname))
-            data = np.array(data).astype(np.float32)
+            n_files = len(self.unloaded_filenames)
+            t0 = time.perf_counter()
+            def _read_frame(fname):
+                return tifffile.imread(fname).astype(np.float32)
+
+            with ThreadPoolExecutor(max_workers=min(n_files, (cpu_count() or 2) // 2)) as ex:
+                frames = list(ex.map(_read_frame, self.unloaded_filenames))
+            data = np.stack(frames)
             data = fix_bad_pixels(data)
+            logger.info(f"Scan {self.scan_index}: Read {n_files} tiff file(s) in {time.perf_counter() - t0:.2f}s")
             if self._data is None:
                 self._data = data
             else:
@@ -585,7 +620,7 @@ class RixsScanImageTable(QAbstractTableModel):
             return None
         if role == Qt.DisplayRole:
             row, _ = index.row(), index.column()
-            return os.path.basename(self.fnames[row])
+            return Path(self.fnames[row]).name
 
         elif role == Qt.TextAlignmentRole:
             return Qt.AlignCenter

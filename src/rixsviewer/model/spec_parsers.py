@@ -1,8 +1,7 @@
-import glob
 import logging
 import math
-import os
 import re
+from pathlib import Path
 
 import pandas as pd
 
@@ -86,9 +85,9 @@ def parse_single_scan(scan, spec_fname, tif_folder):
     """
     header = get_scan_header(scan)
 
-    basename = os.path.basename(spec_fname)
+    basename = Path(spec_fname).name
     filenames = sorted(
-        glob.glob(os.path.join(tif_folder, f"{basename}_scan{scan.number}_point*.tif"))
+        str(p) for p in Path(tif_folder).glob(f"{basename}_scan{scan.number}_point*.tif")
     )
 
     # metadata key changed from "B" to "XB"; check both for backward compatibility

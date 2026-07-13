@@ -1,4 +1,11 @@
-from epics import caget_many
+try:
+    from epics import caget_many
+    _EPICS_AVAILABLE = True
+except ImportError:
+    _EPICS_AVAILABLE = False
+
+    def caget_many(*args, **kwargs):
+        return []
 
 from .process_parameters import params
 
@@ -45,6 +52,14 @@ class RixsBinningModel:
         for name, value in kwargs.items():
             self.put_single_parameter(name, value)
 
+    def check_pv_connection(self, timeout=0.5):
+        """Return True if at least one PV responds within timeout."""
+        if not _EPICS_AVAILABLE or not self.pv_info:
+            return False
+        pvs = [p for p, _ in self.pv_info[:3]]
+        values = caget_many(pvs, timeout=timeout, connection_timeout=timeout)
+        return any(v is not None for v in values)
+
     def get_kwargs_from_pv(self, timeout=0.05):
         """
         Retrieve parameters from their associated PVs.
@@ -63,11 +78,11 @@ class RixsBinningModel:
         values = caget_many(list(pvs), timeout=timeout, connection_timeout=timeout)
 
         for name, value in zip(names, values):
-            # update the UI parameter tree if it's connected
+            if value is None:
+                continue
             if name in ("Ylow", "Yhigh", "RefL"):
                 value = int(value)
-            if value is not None:
-                self.put_single_parameter(name, value)
+            self.put_single_parameter(name, value)
         return self.get_kwargs()
 
     def _get_single_parameter(self, name):
