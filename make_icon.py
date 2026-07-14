@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 """Generate the RixsViewer application icon.
 
 Depicts the Rowland circle geometry used in RIXS spectroscopy:

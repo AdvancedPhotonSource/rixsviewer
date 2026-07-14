@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 """Generated Qt UI classes for RixsViewer.
 
 Re-exports Ui_MainWindow so the controller can import it from .view.ui

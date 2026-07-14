@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 import argparse
 import logging
 import os

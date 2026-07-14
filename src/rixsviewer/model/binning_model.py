@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 try:
     from epics import caget_many
     _EPICS_AVAILABLE = True

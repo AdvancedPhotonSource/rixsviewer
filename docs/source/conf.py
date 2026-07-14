@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:

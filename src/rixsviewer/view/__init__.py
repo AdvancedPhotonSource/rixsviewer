@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 """View layer for RixsViewer (MVC).
 
 Exposes RixsView — the sole public class of this layer.
