@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 """
 RixsViewer - A tool for visualizing and analyzing RIXS (Resonance Inelastic X-ray Scattering) data
 

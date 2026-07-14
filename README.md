@@ -1,3 +1,5 @@
+<!-- Copyright © UChicago Argonne LLC -->
+<!-- See LICENSE file for details -->
 # RixsViewer
 
 A PySide6-based GUI application for visualizing and analyzing RIXS (Resonance Inelastic X-ray Scattering) spectroscopy data.
