@@ -99,9 +99,59 @@ jobs:
           name: windows-exe
           path: dist/rixsviewer-*-windows.exe
 
+  linux-appimage-build:
+    name: Build Linux AppImage
+    runs-on: ubuntu-latest
+    container: rockylinux:9
+    steps:
+      - name: Install git
+        run: dnf install -y git
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          dnf install -y python3.11 python3.11-pip \
+            mesa-libGL mesa-libEGL libxkbcommon libxkbcommon-x11 \
+            xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil \
+            dbus-libs fontconfig freetype file
+
+      - name: Install project and PyInstaller
+        run: python3.11 -m pip install ".[pyinstaller]"
+
+      - name: Build AppImage
+        run: bash packaging/linux/build-appimage.sh "${{ github.ref_name }}"
+
+      - name: Smoke test AppImage launches
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          APPIMAGE=$(ls dist/rixsviewer-*-x86_64.AppImage)
+          chmod +x "$APPIMAGE"
+          timeout 8 "$APPIMAGE" --appimage-extract-and-run > /tmp/run.log 2>&1 &
+          RPID=$!
+          sleep 6
+          if kill -0 $RPID 2>/dev/null; then
+            echo "Smoke test passed: AppImage is running after 6s"
+            kill $RPID
+          else
+            wait $RPID || true
+            echo "Smoke test FAILED: AppImage exited early"
+            cat /tmp/run.log
+            exit 1
+          fi
+
+      - name: Upload Linux AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: dist/rixsviewer-*-x86_64.AppImage
+
   github-release:
     name: Publish GitHub Release
-    needs: windows-build
+    needs: [windows-build, linux-appimage-build]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -113,8 +163,16 @@ jobs:
           name: windows-exe
           path: dist/
 
+      - name: Download Linux AppImage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-appimage
+          path: dist/
+
       - name: Create/update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: dist/rixsviewer-*-windows.exe
+          files: |
+            dist/rixsviewer-*-windows.exe
+            dist/rixsviewer-*-x86_64.AppImage
