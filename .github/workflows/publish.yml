@@ -6,6 +6,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch: {}
 
 jobs:
   build:
@@ -38,6 +39,7 @@ jobs:
   publish:
     name: Publish to PyPI
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -53,3 +55,66 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  windows-build:
+    name: Build Windows executable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project and PyInstaller
+        run: python -m pip install ".[pyinstaller]"
+
+      - name: Build executable
+        run: pyinstaller packaging/windows/rixsviewer.spec
+
+      - name: Rename executable with version
+        shell: bash
+        run: mv dist/rixsviewer.exe "dist/rixsviewer-${{ github.ref_name }}-windows.exe"
+
+      - name: Smoke test executable launches
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $exe = Get-ChildItem dist -Filter "rixsviewer-*-windows.exe" | Select-Object -First 1
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 8
+          if ($proc.HasExited) {
+            Write-Error "Executable exited early with code $($proc.ExitCode)"
+            exit 1
+          }
+          Write-Host "Executable is running after 8s, smoke test passed"
+          Stop-Process -Id $proc.Id -Force
+
+      - name: Upload Windows executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/rixsviewer-*-windows.exe
+
+  github-release:
+    name: Publish GitHub Release
+    needs: windows-build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows executable artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/
+
+      - name: Create/update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/rixsviewer-*-windows.exe
