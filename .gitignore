@@ -34,6 +34,7 @@ MANIFEST
 *.manifest
 *.spec
 !packaging/windows/*.spec
+!packaging/linux/*.spec
 
 # Installer logs
 pip-log.txt
