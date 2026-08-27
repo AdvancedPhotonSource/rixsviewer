@@ -119,6 +119,8 @@ class RixsViewerGUI(QMainWindow):
 
         self.threadpool = QThreadPool()
         self._binning_active = False
+        self._binning_dset = None
+        self._pending_evict = None
         self._updating_params = False
 
         # Initialize the RixsBinningModel and set up parameter tree
@@ -213,6 +215,30 @@ class RixsViewerGUI(QMainWindow):
         if self.current_rixs_dset is not None:
             self.process_binning()
 
+    def _evict_scan_data(self, dset):
+        """
+        Release a dataset's loaded TIFF stack so memory stays at ~one scan.
+
+        The frames can be reloaded from disk on demand, so a released scan
+        remains fully usable.
+
+        Parameters
+        ----------
+        dset : RixsScanTiffDataset or None
+            The dataset to release. ``None`` is a no-op.
+        """
+        if dset is None or dset._data is None or dset.scan_info is None:
+            return
+        if self._binning_active and dset is self._binning_dset:
+            # a background worker is still reading/writing this dataset's
+            # buffer (process_binning -> bin_data_wrap -> read_tiff_data);
+            # freeing it now would race the worker thread. Defer eviction
+            # until process_binning's on_finished runs.
+            self._pending_evict = dset
+            return
+        # release_data() frees the preallocated buffer, not just the view
+        dset.release_data()
+
     def update_spec_record(self):
         """
         Check for updates in the spec file and process them.
@@ -221,7 +247,12 @@ class RixsViewerGUI(QMainWindow):
         """
         if self.scan_model is not None:
             has_updates = self.scan_model.process_spec_file()
-            self.current_rixs_dset = self.scan_model.last_scan_dset
+            new_dset = self.scan_model.last_scan_dset
+            if new_dset is not self.current_rixs_dset:
+                # auto-update never fires on_selection_changed; evict here or
+                # every scan's stack stays resident for the whole session (OOM)
+                self._evict_scan_data(self.current_rixs_dset)
+                self.current_rixs_dset = new_dset
 
             if has_updates:
                 self.process_binning()
@@ -482,10 +513,11 @@ class RixsViewerGUI(QMainWindow):
                     return  # nothing loaded yet, nothing to re-bin
 
         self._binning_active = True
+        self._binning_dset = self.current_rixs_dset
         self.ui.pushButton_process.setEnabled(False)
 
         def worker_fn():
-            return self.current_rixs_dset.bin_data_wrap(
+            return self._binning_dset.bin_data_wrap(
                 metadata_source=meta_source,
                 center_method=center_method,
                 progress_callback=worker.signals.progress.emit,
@@ -507,7 +539,12 @@ class RixsViewerGUI(QMainWindow):
 
         def on_finished():
             self._binning_active = False
+            self._binning_dset = None
             self.ui.pushButton_process.setEnabled(True)
+            if self._pending_evict is not None:
+                pending = self._pending_evict
+                self._pending_evict = None
+                self._evict_scan_data(pending)
             if (
                 self.ui.checkBox_autoupdate.isChecked()
                 and self.current_rixs_dset is not None
@@ -634,11 +671,7 @@ class RixsViewerGUI(QMainWindow):
             return
 
         if self.current_rixs_dset is not None and self.current_rixs_dset is not dset:
-            prev = self.current_rixs_dset
-            if prev._data is not None and prev.scan_info is not None:
-                logger.debug(f"Scan {prev.scan_index}: evicting {prev._data.nbytes // (1024 * 1024)} MB from memory")
-                prev._data = None
-                prev.unloaded_filenames = list(prev.scan_info["filenames"])
+            self._evict_scan_data(self.current_rixs_dset)
 
         self.current_rixs_dset = dset
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
