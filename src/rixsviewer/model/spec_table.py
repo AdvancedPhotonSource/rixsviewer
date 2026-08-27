@@ -33,7 +33,7 @@ class RixsSpecTable(QAbstractTableModel):
         Parent object passed to :class:`QAbstractTableModel`.
     """
 
-    def __init__(self, fname, tif_folder, save_filename, force_reload_s=2.0, parent=None):
+    def __init__(self, fname, tif_folder, save_filename, force_reload_s=10.0, parent=None):
         """
         Initialise the model and perform the first read of the SPEC file.
 

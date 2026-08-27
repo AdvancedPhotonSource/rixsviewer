@@ -68,7 +68,7 @@ class RixsViewerGUI(QMainWindow):
     and coordinates between the model and view.
     """
 
-    def __init__(self, spec_filename=None, tiff_folder=None, heartbeat_s=1.0, force_reload_s=2.0):
+    def __init__(self, spec_filename=None, tiff_folder=None, heartbeat_s=1.0, force_reload_s=10.0):
         """
         Initialize the RixsViewerGUI.
 
@@ -781,10 +781,10 @@ def main():
     parser.add_argument(
         "--force-reload",
         type=float,
-        default=2.0,
+        default=10.0,
         metavar="SEC",
         help="Force SPEC re-read after this many seconds regardless of mtime,"
-             " to bypass NFS attribute caching (default: 2.0)",
+             " to bypass NFS attribute caching (default: 10.0)",
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
