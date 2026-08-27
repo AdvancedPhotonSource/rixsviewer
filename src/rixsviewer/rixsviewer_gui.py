@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from .model import RixsBinningModel, RixsSpecTable
+from .model import RixsBinningModel, RixsSpecTable, load_settings, save_settings
 from .view import RixsView
 from .view.ui import Ui_MainWindow
 from . import __version__
@@ -639,6 +639,8 @@ class RixsViewerGUI(QMainWindow):
         self.save_filename = p.with_name(f"{p.stem}_bindata_rixsviewer.spec")
         logger.info(f"saving binned results to {self.save_filename}")
 
+        save_settings(self.spec_filename, self.tiff_folder)
+
         # Connect the model to the tableView_scan
         self.ui.tableView_scan.setModel(scan_model)
 
@@ -795,6 +797,14 @@ def main():
     unrecognized_opts = [a for a in qt_args if a.startswith("-")]
     if unrecognized_opts:
         parser.error(f"unrecognized arguments: {' '.join(unrecognized_opts)}")
+
+    # Fall back to the last-used spec file / TIFF folder for any field not
+    # given on the command line.
+    saved = load_settings()
+    if args.specfile is None:
+        args.specfile = saved.get("spec_filename")
+    if args.tiff_folder is None:
+        args.tiff_folder = saved.get("tiff_folder")
 
     # Suppress a harmless pyqtgraph/Qt6 warning about UniqueConnection + lambdas:
     # "qt.core.qobject.connect: QObject::connect(QStyleHints, QStyleHints):
