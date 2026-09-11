@@ -98,7 +98,7 @@ params = [
         "value": 0.0,
         "suffix": " degree",
         "tip": "Tilt angle of the detector",
-        "pv": "none",
+        "pv": "27idmot1:TiltAngle",
         "format": "{value:.3f} {suffix}",
         "step": 1e-3,
         "siPrefix": False,

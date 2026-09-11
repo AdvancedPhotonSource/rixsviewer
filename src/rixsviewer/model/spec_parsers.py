@@ -133,6 +133,9 @@ def _get_metadata(scan_comment_str: str) -> dict:
     - Ylow, Yhigh: Y pixel binning range
     - Acrystalsize: Analyzer crystal size (mm)
     - DeltaD: Detector pixel width in energy dispersion direction (mm)
+    - TiltAngle: Detector tilt angle (degrees); defaults to 0.0 when the
+      'TiltAngle_deg' key is absent (older datasets)
+    - NEnergyBins: Number of energy bins; defaults to 0 when absent
 
     Raises
     ------
@@ -147,6 +150,7 @@ def _get_metadata(scan_comment_str: str) -> dict:
         return m.group(1)
 
     n_energy_bins_m = re.search(r"N_Energy_Bins\s*=\s*([\d.]+)", scan_comment_str)
+    tilt_angle_m = re.search(r"TiltAngle_deg\s*=\s*([+-]?[\d.]+)", scan_comment_str)
 
     return {
         "Eb": float(_get(r"Analyzer_EB_keV\s*=\s*([\d.]+)", "Analyzer_EB_keV")),
@@ -160,6 +164,6 @@ def _get_metadata(scan_comment_str: str) -> dict:
         "DeltaD": float(
             _get(r"Lambda_Strip_Size_mm\s*=\s*([\d.]+)", "Lambda_Strip_Size_mm")
         ),
-        "TiltAngle": 0.0,
+        "TiltAngle": float(tilt_angle_m.group(1)) if tilt_angle_m else 0.0,
         "NEnergyBins": int(float(n_energy_bins_m.group(1))) if n_energy_bins_m else 0,
     }
