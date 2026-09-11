@@ -193,6 +193,39 @@ class RixsSpecTable(QAbstractTableModel):
 
         return has_updates
 
+    def get_unprocessed_scans(self):
+        """
+        Find scans that are complete but were never saved to the results file.
+
+        Compares every complete scan currently in :attr:`record` against the
+        scan numbers already present in :attr:`save_filename` (if it exists)
+        to find scans that were binned in a previous session but never
+        reached ``save_to_file`` -- e.g. because the application crashed
+        before getting to them.
+
+        Returns
+        -------
+        list of RixsScanTiffDataset
+            Complete, unsaved scans in ascending scan-number order.
+        """
+        already_saved = self._read_saved_scan_numbers()
+        return [
+            self.record[n]
+            for n in sorted(self.record)
+            if n not in already_saved and self.record[n].is_complete()
+        ]
+
+    def _read_saved_scan_numbers(self):
+        """Return the set of scan numbers already written to :attr:`save_filename`."""
+        if self.save_filename is None or not Path(self.save_filename).is_file():
+            return set()
+        try:
+            saved = SpecFile(str(self.save_filename))
+            return {scan.number for scan in saved}
+        except Exception as e:
+            logger.warning(f"Could not read saved results file {self.save_filename}: {e}")
+            return set()
+
     def rowCount(self, parent=None):
         return len(self.record)
 

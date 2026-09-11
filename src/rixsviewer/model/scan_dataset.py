@@ -176,6 +176,17 @@ class RixsScanTiffDataset:
         }[col]
         return self.scan_info[key]
 
+    def is_complete(self):
+        """Whether every expected SPEC row and TIFF frame has arrived for this scan."""
+        si = self.scan_info
+        if si is None:
+            return False
+        return (
+            si["tiff_points"] > 0
+            and si["tiff_points"] == si["spec_points"]
+            and len(si["scandata"]) == si["spec_points"]
+        )
+
     def apply_tilt_angle(self, data, tilt_angle=0, tilt_order=1):
         Ylow, Yhigh = (
             self.scan_info["metadata"]["Ylow"],

@@ -122,6 +122,9 @@ class RixsViewerGUI(QMainWindow):
         self._binning_dset = None
         self._pending_evict = None
         self._updating_params = False
+        self._catching_up = False
+        self._backfill_queue = []
+        self._backfill_index = 0
 
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
@@ -193,12 +196,63 @@ class RixsViewerGUI(QMainWindow):
         if self.ui.checkBox_autoupdate.isChecked():
             self.ui.pushButton_fit_pixel_size.setDisabled(True)
             self.ui.pushButton_fit_pixel_size.setChecked(False)
-            logger.info("Auto-updating scan table from spec file...")
-            self.timer.start()
+
+            backfill = self.scan_model.get_unprocessed_scans() if self.scan_model else []
+            if backfill:
+                logger.info(
+                    "Auto-update enabled: catching up on %d unprocessed scan(s).",
+                    len(backfill),
+                )
+                self._catching_up = True
+                self._backfill_queue = backfill
+                self._backfill_index = 0
+                self._advance_backfill_queue()
+            else:
+                logger.info("Auto-updating scan table from spec file...")
+                self.timer.start()
         else:
             self.ui.pushButton_fit_pixel_size.setEnabled(True)
             logger.info("Auto-update disabled.")
             self.timer.stop()
+            self._catching_up = False
+            self._backfill_queue = []
+            self._backfill_index = 0
+
+    def _advance_backfill_queue(self):
+        """
+        Process the next scan in :attr:`_backfill_queue`, or start live polling.
+
+        Called once to kick off catch-up processing, then again from
+        :meth:`process_binning`'s completion handler after each scan finishes,
+        until the queue is drained. If auto-update is unchecked mid-catch-up,
+        the queue is abandoned without starting the timer.
+        """
+        if self._backfill_index >= len(self._backfill_queue) or not self.ui.checkBox_autoupdate.isChecked():
+            caught_up = self._backfill_index > 0
+            self._catching_up = False
+            self._backfill_queue = []
+            self._backfill_index = 0
+            if self.ui.checkBox_autoupdate.isChecked():
+                if caught_up:
+                    self.statusBar().showMessage("Catch-up complete.", 5000)
+                self.timer.start()
+            return
+
+        dset = self._backfill_queue[self._backfill_index]
+        self._backfill_index += 1
+        self.statusBar().showMessage(
+            f"Catching up on missed scans: scan {dset.scan_index} "
+            f"({self._backfill_index}/{len(self._backfill_queue)})"
+        )
+
+        if self.current_rixs_dset is not None and self.current_rixs_dset is not dset:
+            self._evict_scan_data(self.current_rixs_dset)
+        self.current_rixs_dset = dset
+        self.ui.tableView_image.setModel(dset.get_table_model())
+        header = self.ui.tableView_image.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        self.update_image(frame_index=-1)
+        self.process_binning()
 
     def update_meta_source(self):
         """Update the binning kwargs source based on the combo box selection"""
@@ -550,17 +604,16 @@ class RixsViewerGUI(QMainWindow):
                 and self.current_rixs_dset is not None
             ):
                 self.update_image(frame_index=-1)
-                si = self.current_rixs_dset.scan_info
                 if (
-                    si
-                    and si["tiff_points"] > 0
-                    and si["tiff_points"] == si["spec_points"]
-                    and len(si["scandata"]) == si["spec_points"]
+                    self.current_rixs_dset.is_complete()
                     and self.current_rixs_dset.bin_result is not None
                 ):
                     self.current_rixs_dset.save_to_file(self.save_filename)
                 if self.current_rixs_dset.unloaded_filenames:
                     self.process_binning()
+                    return
+            if self._catching_up:
+                self._advance_backfill_queue()
 
         worker = Worker(worker_fn)
         self.binning_worker = worker  # Keep reference to prevent GC of signals
@@ -619,6 +672,10 @@ class RixsViewerGUI(QMainWindow):
             logger.error(f"Check the spec file: {self.spec_filename}")
             return
 
+        p = Path(self.spec_filename)
+        self.save_filename = p.with_name(f"{p.stem}_bindata_rixsviewer.spec")
+        logger.info(f"saving binned results to {self.save_filename}")
+
         logger.info(f"Loading spec and tiff: {self.spec_filename}, {self.tiff_folder}")
         try:
             scan_model = RixsSpecTable(
@@ -634,10 +691,6 @@ class RixsViewerGUI(QMainWindow):
                 f"Failed to load SPEC file:\n{e}",
             )
             return
-
-        p = Path(self.spec_filename)
-        self.save_filename = p.with_name(f"{p.stem}_bindata_rixsviewer.spec")
-        logger.info(f"saving binned results to {self.save_filename}")
 
         save_settings(self.spec_filename, self.tiff_folder)
 
