@@ -7,5 +7,6 @@ Exposes the two public model classes used by the controller.
 
 from .binning_model import RixsBinningModel
 from .spec_table import RixsSpecTable
+from .user_settings import load_settings, save_settings
 
-__all__ = ["RixsBinningModel", "RixsSpecTable"]
+__all__ = ["RixsBinningModel", "RixsSpecTable", "load_settings", "save_settings"]

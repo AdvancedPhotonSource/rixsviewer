@@ -63,6 +63,8 @@ class RixsScanTiffDataset:
         self.spec_fname = spec_fname
         self.tif_folder = tif_folder
         self._model = None
+        self._buffer = None
+        self._n_filled = 0
         self._data = None
         self.unloaded_filenames = []
         self.scan_info = None
@@ -540,8 +542,9 @@ class RixsScanTiffDataset:
         Load any pending TIFF files and return the complete image stack.
 
         Only the filenames in :attr:`unloaded_filenames` are read from
-        disk; previously loaded frames stored in :attr:`_data` are
-        preserved and the new frames are concatenated.
+        disk.  New frames are appended in place into a preallocated
+        buffer so incremental loads during a live scan never reallocate
+        the whole stack; :attr:`_data` is a view into that buffer.
 
         Bad pixels listed in :mod:`bad_pixels` are zeroed out after loading.
 
@@ -554,20 +557,57 @@ class RixsScanTiffDataset:
         if len(self.unloaded_filenames) > 0:
             n_files = len(self.unloaded_filenames)
             t0 = time.perf_counter()
+
             def _read_frame(fname):
                 return tifffile.imread(fname).astype(np.float32)
 
             with ThreadPoolExecutor(max_workers=min(n_files, (cpu_count() or 2) // 2)) as ex:
                 frames = list(ex.map(_read_frame, self.unloaded_filenames))
-            data = np.stack(frames)
-            data = fix_bad_pixels(data)
-            logger.info(f"Scan {self.scan_index}: Read {n_files} tiff file(s) in {time.perf_counter() - t0:.2f}s")
-            if self._data is None:
-                self._data = data
-            else:
-                self._data = np.concatenate([self._data, data], axis=0)
+            chunk = fix_bad_pixels(np.stack(frames))
+
+            if self._buffer is None:
+                height, width = chunk.shape[1], chunk.shape[2]
+                capacity = n_files
+                if self.scan_info is not None:
+                    capacity = max(
+                        capacity,
+                        self.scan_info.get("spec_points", 0),
+                        self.scan_info.get("tiff_points", 0),
+                    )
+                self._buffer = np.empty((max(1, capacity), height, width), dtype=np.float32)
+                self._n_filled = 0
+
+            needed = self._n_filled + chunk.shape[0]
+            if needed > self._buffer.shape[0]:
+                # more frames than preallocated (e.g. snapshot scans or
+                # stray tiffs); regrow once and copy the filled portion
+                new_capacity = max(needed, 2 * self._buffer.shape[0])
+                grown = np.empty((new_capacity, *self._buffer.shape[1:]), dtype=np.float32)
+                grown[: self._n_filled] = self._buffer[: self._n_filled]
+                self._buffer = grown
+
+            self._buffer[self._n_filled : needed] = chunk  # noqa: E203
+            self._n_filled = needed
+            self._data = self._buffer[: self._n_filled]
             self.unloaded_filenames = []
+            logger.info(f"Scan {self.scan_index}: Read {n_files} tiff file(s) in {time.perf_counter() - t0:.2f}s")
         return self._data
+
+    def release_data(self):
+        """
+        Release the loaded frame buffer so memory returns to ~zero.
+
+        The frames can be reloaded from disk on demand:
+        :attr:`unloaded_filenames` is restored so the next
+        :meth:`read_tiff_data` call rebuilds the stack.
+        """
+        if self._data is not None:
+            logger.debug(f"Scan {self.scan_index}: evicting {self._data.nbytes // (1024 * 1024)} MB from memory")
+        self._buffer = None
+        self._data = None
+        self._n_filled = 0
+        if self.scan_info is not None:
+            self.unloaded_filenames = list(self.scan_info["filenames"])
 
 
 class RixsScanImageTable(QAbstractTableModel):
