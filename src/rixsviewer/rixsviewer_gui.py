@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 import argparse
 import logging
 import os
@@ -769,6 +771,11 @@ def main():
 
     # Create QApplication with remaining arguments
     app = QApplication([sys.argv[0]] + qt_args)
+
+    if sys.platform == "darwin":
+        pass                      # keep native macOS style
+    else:
+        app.setStyle("Fusion")    # Windows / Linux
 
     icon_path = Path(__file__).parent / "assets" / "icon.png"
     if icon_path.exists():

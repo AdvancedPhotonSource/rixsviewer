@@ -1,3 +1,5 @@
+<!-- Copyright © UChicago Argonne LLC -->
+<!-- See LICENSE file for details -->
 # RIXS Viewer Agent Instructions
 
 ## Project Overview

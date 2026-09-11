@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 # Minimal makefile for Sphinx documentation
 #
 

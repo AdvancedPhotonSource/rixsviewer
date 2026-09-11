@@ -1,3 +1,5 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 # bad_pixels.py
 # ─────────────────────────────────────────────────────────────────────────────
 # List of known bad pixel coordinates for the Lambda detector.
