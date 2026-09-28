@@ -16,6 +16,9 @@ H = W = 256
 E0, E1 = 11.180, 11.200
 POINTS = 3
 
+RXES_EMISSION_START, RXES_EMISSION_END = 11.190, 11.200  # merixE (analyzer/emission)
+RXES_INCIDENT_START, RXES_INCIDENT_END = 12.650, 12.660  # kohzuE (incident)
+
 # metadata the parser requires, consistent with the H x W test detector
 XB_FIELDS = [
     "Analyzer_EB_keV = 11.184",
@@ -66,6 +69,46 @@ class FakeBeamline:
         self.start_scan(scan_no)
         for pt in range(POINTS):
             self.add_point(scan_no, pt)
+
+    def start_rxes_scan(self, scan_no, n_emission=2, n_incident=2):
+        """Write an ``rxesamesh`` header: outer loop merixE (emission,
+        analyzer), inner loop kohzuE (incident) -- matches the real
+        beamline's raster order (kohzuE resets and sweeps low->high at
+        every merixE step)."""
+        if not hasattr(self, "_rxes_grids"):
+            self._rxes_grids = {}
+        self._rxes_grids[scan_no] = (n_emission, n_incident)
+        with open(self.spec, "a") as f:
+            f.write(
+                f"#S {scan_no} rxesamesh merixE {RXES_EMISSION_START} {RXES_EMISSION_END} "
+                f"{n_emission - 1} kohzuE {RXES_INCIDENT_START} {RXES_INCIDENT_END} "
+                f"{n_incident - 1} 0.1\n"
+            )
+            f.write("#N 5\n")
+            f.write("#L KohzuE merixE i0 i2 mmepin1\n")
+            f.write(f"#B {' '.join(XB_FIELDS)}\n")
+            f.write("#D 2026-09-27 12:00:00\n")
+
+    def add_rxes_point(self, scan_no, point_index):
+        """Append the scandata row + TIFF for one raster point (0-based,
+        row-major: point_index = i * n_incident + j, i=emission row,
+        j=incident column)."""
+        n_emission, n_incident = self._rxes_grids[scan_no]
+        i, j = divmod(point_index, n_incident)
+        merixE = RXES_EMISSION_START + (RXES_EMISSION_END - RXES_EMISSION_START) * i / max(n_emission - 1, 1)
+        kohzuE = RXES_INCIDENT_START + (RXES_INCIDENT_END - RXES_INCIDENT_START) * j / max(n_incident - 1, 1)
+        with open(self.spec, "a") as f:
+            f.write(f"{kohzuE:.6f} {merixE:.6f} 1.0 100.0 10.0\n")
+        img = np.zeros((H, W), dtype=np.uint16)
+        img[:, W // 2] = 60000
+        tifffile.imwrite(
+            os.path.join(self.workdir, f"fake.spec_scan{scan_no}_point{point_index:04d}.tif"), img
+        )
+
+    def run_rxes_scan(self, scan_no, n_emission=2, n_incident=2):
+        self.start_rxes_scan(scan_no, n_emission=n_emission, n_incident=n_incident)
+        for pt in range(n_emission * n_incident):
+            self.add_rxes_point(scan_no, pt)
 
 
 @pytest.fixture()
