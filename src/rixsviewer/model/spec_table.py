@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
 
+from .rxes_dataset import RixsRxesScanDataset
 from .scan_dataset import RixsScanTiffDataset
 from .spec_parsers import get_scan_header
 
@@ -143,7 +144,8 @@ class RixsSpecTable(QAbstractTableModel):
             if scan_number < self.last_scan_index:
                 continue
 
-            if get_scan_header(scan_pack)["scan_type"] in ["EnergyScan", "SnapshotScan", "RXESScan"]:
+            scan_type = get_scan_header(scan_pack)["scan_type"]
+            if scan_type in ["EnergyScan", "SnapshotScan", "RXESScan"]:
                 if scan_number in self.record:
                     scan_dset = self.record[scan_number]
                     prev_tiff = scan_dset.scan_info["tiff_points"] if scan_dset.scan_info else -1
@@ -164,7 +166,10 @@ class RixsSpecTable(QAbstractTableModel):
                         self.last_scan_dset.save_to_file(self.save_filename)
                         self.last_scan_dset.bin_result = None
                     row = len(self.record)
-                    scan_dset = RixsScanTiffDataset(
+                    dataset_cls = (
+                        RixsRxesScanDataset if scan_type == "RXESScan" else RixsScanTiffDataset
+                    )
+                    scan_dset = dataset_cls(
                         row, self.spec_fname, self.tif_folder, scan_number
                     )
                     scan_dset.update_scan_info(scan_pack)

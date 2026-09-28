@@ -146,3 +146,35 @@ class TestOutOfRangeFrame:
 
         assert result["kind"] == "rxes_map"
         assert dset._n_processed == 5
+
+
+class TestGetDataForDisplay:
+    def test_returns_last_frame_by_default(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=3)
+
+        result = dset.get_data_for_display()
+
+        assert result is not None
+        assert result["frame_index"] == 2
+        assert result["num_frames"] == 3
+        assert result["data"].shape == (256, 256)
+
+    def test_returns_none_when_no_files_yet(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=0)
+        assert dset.get_data_for_display() is None
+
+
+class TestReleaseData:
+    def test_release_data_is_a_harmless_no_op(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        dset.release_data()  # must not raise or clear the accumulator
+        assert dset.intensity is not None
+
+
+class TestSaveToFile:
+    def test_save_to_file_is_a_no_op(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        dset.save_to_file(str(tmp_path / "out.spec"))  # must not raise
+        assert not (tmp_path / "out.spec").exists()

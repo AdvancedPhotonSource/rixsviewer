@@ -6,7 +6,7 @@ import numpy as np
 import tifffile
 
 from .scan_dataset import TiffScanDatasetMixin
-from .utils import _preprocess_frames, apply_subpixel_shear_3d, compute_frame_energy_axis, fix_bad_pixels
+from .utils import _preprocess_frames, apply_subpixel_shear_3d, compute_frame_energy_axis, fix_bad_pixels, percentile_clip
 
 logger = logging.getLogger(__name__)
 
@@ -223,3 +223,60 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             "intensity_norm": intensity_norm,
         }
         return self.bin_result
+
+    def get_data_for_display(self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs):
+        """
+        Load one raw detector frame from disk for browsing.
+
+        Unlike :meth:`~.scan_dataset.RixsScanTiffDataset.get_data_for_display`,
+        this always reads directly from disk -- no raw stack is ever
+        retained for RXES scans.
+        """
+        if self.scan_info is None or not self.scan_info["filenames"]:
+            logger.debug("Scan %d has no TIFF frames yet; skipping display.", self.scan_index)
+            return None
+
+        filenames = self.scan_info["filenames"]
+        num_frames = len(filenames)
+        if frame_index == -2:
+            frame_index = num_frames // 2
+        elif frame_index == -1:
+            frame_index = num_frames - 1
+        frame_index = max(0, min(frame_index, num_frames - 1))
+
+        frame = tifffile.imread(filenames[frame_index]).astype(np.float32)
+        frame = fix_bad_pixels(frame[np.newaxis])[0]
+        levels = percentile_clip(frame, percentile_cutoff)
+
+        scandata = self.scan_info["scandata"]
+        if scandata.empty:
+            logger.debug("Scan %d has no scandata rows yet; skipping display.", self.scan_index)
+            return None
+        frame_metadata = self.scan_info["metadata"].copy()
+        scandata_index = min(frame_index, len(scandata) - 1)
+        frame_metadata["E"] = scandata["merixE"].iloc[scandata_index]
+        frame_metadata["ThetaB"] = (
+            np.arcsin(frame_metadata["Eb"] / frame_metadata["E"]) * 1e6
+        )
+
+        frame = self.apply_tilt_angle(frame, TiltAngle)
+
+        return {
+            "data": frame,
+            "levels": levels,
+            "num_frames": num_frames,
+            "frame_metadata": frame_metadata,
+            "scan_index": self.scan_index,
+            "frame_index": frame_index,
+        }
+
+    def release_data(self):
+        """No large buffer is ever retained for RXES scans; nothing to release."""
+        pass
+
+    def save_to_file(self, fname=None, force=False):
+        """RXES map persistence is not implemented yet (deferred by design)."""
+        logger.info(
+            "Scan %d: RXES map persistence is not implemented yet; skipping save.",
+            self.scan_index,
+        )
