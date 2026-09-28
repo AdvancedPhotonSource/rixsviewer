@@ -11,8 +11,13 @@ import pytest
 
 
 def _synthetic_rxes_result(
-    n_emission=3, n_incident=2, emission_range=(11.190, 11.200), incident_range=(12.650, 12.660)
+    n_emission=3, n_incident=2, emission_range=(11.190, 11.200), incident_range=(12.650, 12.660),
+    n_raster_emission=None,
 ):
+    """*n_emission* is the number of DISPLAY bins; *n_raster_emission* is the
+    number of actually-scanned merixE points (defaults to matching
+    *n_emission* when not given -- pass it explicitly to test behavior that
+    must distinguish the two, e.g. after a Force-NEnergyBins override)."""
     emission_axis = np.linspace(*emission_range, n_emission)
     incident_axis = np.linspace(*incident_range, n_incident)
     intensity = np.arange(n_emission * n_incident, dtype=float).reshape(n_emission, n_incident)
@@ -27,6 +32,7 @@ def _synthetic_rxes_result(
         "sample": sample,
         "intensity_norm": intensity_norm,
         "energy_resolution": round(float(emission_axis[1] - emission_axis[0]) * 1e6, 3),
+        "emission_points": n_raster_emission if n_raster_emission is not None else n_emission,
     }
 
 
@@ -144,43 +150,50 @@ def test_plot_rxes_map_shows_median_incident_profile_by_default(gui):
     x, y = gui.view._rxes_profile_curve.getData()
     np.testing.assert_array_equal(x, result["emission_axis"])
     np.testing.assert_array_equal(y, result["intensity_norm"][:, median_index])
-    assert gui.view._rxes_vline.value() == result["incident_axis"][median_index]
+    assert gui.view._rxes_crosshair_vline.value() == pytest.approx(result["incident_axis"][median_index])
 
 
-def test_selecting_near_a_clicked_incident_energy_updates_profile_and_marker(gui):
+def test_clicking_near_an_incident_energy_updates_the_profile(gui):
     result = _synthetic_rxes_result(n_emission=3, n_incident=5)
     gui.view.plot_rxes_map(result, plot_target="intensity_norm")
     incident_axis = result["incident_axis"]
     target_index = 3
     click_value = incident_axis[target_index] + 0.0001  # near, not exact
 
-    gui.view._select_incident_index_near(click_value)
+    gui.view._select_rxes_frame_near(click_value, result["emission_axis"][0])
 
     x, y = gui.view._rxes_profile_curve.getData()
     np.testing.assert_array_equal(y, result["intensity_norm"][:, target_index])
-    assert gui.view._rxes_vline.value() == incident_axis[target_index]
+    assert gui.view._rxes_crosshair_vline.value() == pytest.approx(incident_axis[target_index])
 
 
-def test_set_rxes_profile_visible_toggles_plot_and_marker(gui):
+def test_set_rxes_profile_visible_toggles_the_profile_plot(gui):
     result = _synthetic_rxes_result(n_emission=3, n_incident=5)
     gui.view.plot_rxes_map(result, plot_target="intensity_norm")
 
     gui.view.set_rxes_profile_visible(False)
     assert gui.view._rxes_profile_plot.isVisible() is False
-    assert gui.view._rxes_vline.isVisible() is False
+    assert gui.ui.widget_rxesprofilehdl.isHidden() is True
 
     gui.view.set_rxes_profile_visible(True)
     assert gui.view._rxes_profile_plot.isVisible() is True
-    assert gui.view._rxes_vline.isVisible() is True
+    assert gui.ui.widget_rxesprofilehdl.isHidden() is False
     median_index = len(result["incident_axis"]) // 2
     x, y = gui.view._rxes_profile_curve.getData()
     np.testing.assert_array_equal(y, result["intensity_norm"][:, median_index])
 
 
-def test_profile_index_resets_to_median_when_incident_grid_size_changes(gui):
+def test_rxes_map_splitter_contains_map_and_profile_panes(gui):
+    splitter = gui.ui.splitter_rxesmap
+    assert splitter.count() == 2
+    assert splitter.widget(0) is gui.ui.widget_rxeshdl
+    assert splitter.widget(1) is gui.ui.widget_rxesprofilehdl
+
+
+def test_profile_column_resets_to_median_when_incident_grid_size_changes(gui):
     small = _synthetic_rxes_result(n_emission=3, n_incident=2)
     gui.view.plot_rxes_map(small, plot_target="intensity_norm")
-    gui.view._select_incident_index_near(small["incident_axis"][1])  # pick a non-default index
+    gui.view._select_rxes_frame_near(small["incident_axis"][1], small["emission_axis"][0])  # non-default
 
     bigger = _synthetic_rxes_result(n_emission=3, n_incident=7)
     gui.view.plot_rxes_map(bigger, plot_target="intensity_norm")
@@ -188,25 +201,20 @@ def test_profile_index_resets_to_median_when_incident_grid_size_changes(gui):
     expected_index = len(bigger["incident_axis"]) // 2
     x, y = gui.view._rxes_profile_curve.getData()
     np.testing.assert_array_equal(y, bigger["intensity_norm"][:, expected_index])
-    assert gui.view._rxes_vline.value() == bigger["incident_axis"][expected_index]
+    assert gui.view._rxes_crosshair_vline.value() == pytest.approx(bigger["incident_axis"][expected_index])
 
 
-def test_profile_index_persists_across_a_same_shape_replot(gui):
+def test_profile_column_persists_across_a_same_shape_replot(gui):
     result1 = _synthetic_rxes_result(n_emission=3, n_incident=5)
     gui.view.plot_rxes_map(result1, plot_target="intensity_norm")
     chosen_index = 1
-    gui.view._select_incident_index_near(result1["incident_axis"][chosen_index])
+    gui.view._select_rxes_frame_near(result1["incident_axis"][chosen_index], result1["emission_axis"][0])
 
     result2 = _synthetic_rxes_result(n_emission=3, n_incident=5)  # same shape, e.g. a live-update tick
     gui.view.plot_rxes_map(result2, plot_target="intensity_norm")
 
     x, y = gui.view._rxes_profile_curve.getData()
     np.testing.assert_array_equal(y, result2["intensity_norm"][:, chosen_index])
-
-
-def test_selecting_incident_index_before_any_result_is_a_noop(gui):
-    gui.view._select_incident_index_near(12.65)  # must not raise
-    assert gui.view._rxes_last_result is None
 
 
 def test_checkbox_toggle_calls_set_rxes_profile_visible(gui, monkeypatch):
@@ -260,3 +268,122 @@ def test_cmap_combo_change_calls_set_rxes_colormap(gui, monkeypatch):
     gui.ui.comboBox_rxes_cmap.setCurrentText("plasma")
 
     assert calls == ["plasma"]
+
+
+# ---------------------------------------------------------------------------
+# Crosshair: click-driven vline + hline (both dashed white, the sole map
+# overlay for the selected point), and click-to-nearest-frame. No hover
+# tracking -- both lines only move on click, toggled by "Show crosshair"
+# independently of "Show RIXS Profile" (which only toggles the side panel).
+# ---------------------------------------------------------------------------
+
+
+def test_rxes_crosshair_visible_by_default(gui):
+    assert gui.view._rxes_crosshair_visible is True
+
+
+def test_plot_rxes_map_shows_crosshair_at_default_median_point(gui):
+    result = _synthetic_rxes_result(n_emission=5, n_incident=3, n_raster_emission=5)
+
+    gui.view.plot_rxes_map(result, plot_target="intensity_norm")
+
+    expected_row = 5 // 2
+    expected_col = 3 // 2
+    assert gui.view._rxes_crosshair_hline.value() == pytest.approx(result["emission_axis"][expected_row])
+    assert gui.view._rxes_crosshair_vline.value() == pytest.approx(result["incident_axis"][expected_col])
+    assert gui.view._rxes_crosshair_hline.isVisible() is True
+    assert gui.view._rxes_crosshair_vline.isVisible() is True
+
+
+def test_select_rxes_frame_near_snaps_to_the_raster_grid_not_the_display_bins(gui):
+    # 6 raster points but only 3 display bins (e.g. after a coarse Force
+    # NEnergyBins) -- clicking must snap to the real scanned points, not
+    # whatever the (decoupled) display axis happens to show.
+    result = _synthetic_rxes_result(
+        n_emission=3, n_incident=4, n_raster_emission=6, emission_range=(11.000, 11.010)
+    )
+    gui.view.plot_rxes_map(result, plot_target="intensity_norm")
+    raster_emission_axis = np.linspace(11.000, 11.010, 6)
+
+    gui.view._select_rxes_frame_near(result["incident_axis"][2], raster_emission_axis[4])
+
+    assert gui.view._rxes_crosshair_hline.value() == pytest.approx(raster_emission_axis[4])
+    assert gui.view._rxes_crosshair_vline.value() == pytest.approx(result["incident_axis"][2])
+
+
+def test_select_rxes_frame_near_invokes_the_click_callback_with_the_frame_index(gui):
+    result = _synthetic_rxes_result(n_emission=3, n_incident=4, n_raster_emission=6)
+    gui.view.plot_rxes_map(result, plot_target="intensity_norm")
+    raster_emission_axis = np.linspace(result["emission_axis"][0], result["emission_axis"][-1], 6)
+    n_incident = 4
+    target_row, target_col = 4, 2
+
+    calls = []
+    gui.view.on_rxes_map_clicked = lambda idx: calls.append(idx)
+    gui.view._select_rxes_frame_near(result["incident_axis"][target_col], raster_emission_axis[target_row])
+
+    assert calls == [target_row * n_incident + target_col]
+
+
+def test_select_rxes_frame_near_is_a_noop_before_any_result(gui):
+    calls = []
+    gui.view.on_rxes_map_clicked = lambda idx: calls.append(idx)
+
+    gui.view._select_rxes_frame_near(12.65, 11.2)  # must not raise
+
+    assert calls == []
+
+
+def test_set_rxes_crosshair_visible_toggles_both_lines(gui):
+    result = _synthetic_rxes_result(n_incident=4)
+    gui.view.plot_rxes_map(result, plot_target="intensity_norm")
+    gui.view._select_rxes_frame_near(result["incident_axis"][1], result["emission_axis"][0])
+
+    gui.view.set_rxes_crosshair_visible(False)
+    assert gui.view._rxes_crosshair_vline.isVisible() is False
+    assert gui.view._rxes_crosshair_hline.isVisible() is False
+
+    gui.view.set_rxes_crosshair_visible(True)
+    assert gui.view._rxes_crosshair_hline.isVisible() is True
+    assert gui.view._rxes_crosshair_vline.isVisible() is True
+
+
+def test_selected_point_resets_on_a_new_scans_raster_grid(gui):
+    small = _synthetic_rxes_result(n_emission=3, n_incident=2, n_raster_emission=4)
+    gui.view.plot_rxes_map(small, plot_target="intensity_norm")
+    raster_axis_small = np.linspace(small["emission_axis"][0], small["emission_axis"][-1], 4)
+    gui.view._select_rxes_frame_near(small["incident_axis"][1], raster_axis_small[3])
+    assert gui.view._rxes_selected_row_index == 3
+    assert gui.view._rxes_selected_col_index == 1
+
+    bigger = _synthetic_rxes_result(n_emission=3, n_incident=5, n_raster_emission=9)
+    gui.view.plot_rxes_map(bigger, plot_target="intensity_norm")
+
+    assert gui.view._rxes_selected_row_index == 9 // 2
+    assert gui.view._rxes_selected_col_index == 5 // 2
+
+
+def test_selected_point_persists_across_a_same_shape_replot(gui):
+    result1 = _synthetic_rxes_result(n_emission=3, n_incident=4, n_raster_emission=7)
+    gui.view.plot_rxes_map(result1, plot_target="intensity_norm")
+    raster_axis = np.linspace(result1["emission_axis"][0], result1["emission_axis"][-1], 7)
+    gui.view._select_rxes_frame_near(result1["incident_axis"][2], raster_axis[5])
+    assert gui.view._rxes_selected_row_index == 5
+    assert gui.view._rxes_selected_col_index == 2
+
+    result2 = _synthetic_rxes_result(n_emission=3, n_incident=4, n_raster_emission=7)
+    gui.view.plot_rxes_map(result2, plot_target="intensity_norm")
+
+    assert gui.view._rxes_selected_row_index == 5
+    assert gui.view._rxes_selected_col_index == 2
+
+
+def test_clear_rxes_map_hides_crosshair_lines(gui):
+    result = _synthetic_rxes_result(n_incident=4)
+    gui.view.plot_rxes_map(result, plot_target="intensity_norm")
+    gui.view._select_rxes_frame_near(result["incident_axis"][1], result["emission_axis"][0])
+
+    gui.view.clear_rxes_map()
+
+    assert gui.view._rxes_crosshair_vline.isVisible() is False
+    assert gui.view._rxes_crosshair_hline.isVisible() is False

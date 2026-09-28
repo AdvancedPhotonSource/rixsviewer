@@ -123,6 +123,8 @@ class RixsViewerGUI(QMainWindow):
         self.ui.checkBox_overwrite_rxes_binning_points.toggled.connect(
             self.on_rxes_force_nenergybins_changed
         )
+        self.ui.checkBox_show_crosshair.toggled.connect(self.on_show_crosshair_toggled)
+        self.view.on_rxes_map_clicked = self._on_rxes_map_frame_clicked
 
         self.timer = QTimer(self)
         self.timer.setInterval(int(heartbeat_s * 1000))
@@ -698,6 +700,18 @@ class RixsViewerGUI(QMainWindow):
         """
         if self.current_rixs_dset is not None and self.current_rixs_dset.supports_rxes_map():
             self.process_binning()
+
+    def on_show_crosshair_toggled(self, checked):
+        self.view.set_rxes_crosshair_visible(checked)
+
+    def _on_rxes_map_frame_clicked(self, frame_position):
+        """Show the frame nearest a click on the RXES map in "2D Scattering".
+
+        Routed through the frame slider (rather than calling update_image
+        directly) so its range-based clamping and the slider's own position
+        both stay correct for free.
+        """
+        self.ui.horizontalSlider_frame_index.setValue(frame_position)
 
     def _route_binning_result(self, result, show_rawdata, plot_target):
         """

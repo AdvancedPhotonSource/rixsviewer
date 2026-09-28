@@ -188,3 +188,32 @@ def test_editing_rxes_binning_spinbox_is_a_noop_for_a_non_rxes_scan(gui, monkeyp
     gui.ui.spinBox_force_rxes_binning_points.editingFinished.emit()
 
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# Crosshair checkbox + click-to-navigate wiring
+# ---------------------------------------------------------------------------
+
+
+def test_show_crosshair_checked_by_default(gui):
+    assert gui.ui.checkBox_show_crosshair.isChecked() is True
+
+
+def test_toggling_show_crosshair_calls_set_rxes_crosshair_visible(gui, monkeypatch):
+    calls = []
+    monkeypatch.setattr(gui.view, "set_rxes_crosshair_visible", lambda v: calls.append(v))
+
+    gui.ui.checkBox_show_crosshair.setChecked(False)
+
+    assert calls == [False]
+
+
+def test_rxes_map_click_callback_sets_the_frame_slider(gui):
+    gui.beamline.run_rxes_scan(1, n_emission=3, n_incident=3)
+    gui.update_spec_record()
+    gui.ui.tableView_scan.selectRow(0)
+    gui.ui.horizontalSlider_frame_index.setRange(0, 20)
+
+    gui._on_rxes_map_frame_clicked(4)
+
+    assert gui.ui.horizontalSlider_frame_index.value() == 4

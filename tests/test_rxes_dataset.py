@@ -90,6 +90,12 @@ class TestEnergyResolution:
         expected = round(float(dset.emission_axis[1] - dset.emission_axis[0]) * 1e6, 3)
         assert result["energy_resolution"] == expected
 
+    def test_bin_result_includes_raster_emission_points(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_emission=5, n_incident=2, n_points=1)
+        result = dset.bin_data_wrap(metadata_source="SpecFile")
+
+        assert result["emission_points"] == dset.scan_info["emission_points"] == 5
+
 
 class TestAccumulatorReset:
     def test_reset_builds_axes_and_zeroed_arrays(self, tmp_path):

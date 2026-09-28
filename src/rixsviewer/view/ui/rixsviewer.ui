@@ -658,13 +658,32 @@
            <number>1</number>
           </property>
           <item row="0" column="0">
-           <widget class="GraphicsLayoutWidget" name="widget_rxeshdl" native="true">
+           <widget class="QSplitter" name="splitter_rxesmap">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
               <horstretch>0</horstretch>
               <verstretch>3</verstretch>
              </sizepolicy>
             </property>
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <widget class="GraphicsLayoutWidget" name="widget_rxeshdl" native="true">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+               <horstretch>2</horstretch>
+               <verstretch>3</verstretch>
+              </sizepolicy>
+             </property>
+            </widget>
+            <widget class="GraphicsLayoutWidget" name="widget_rxesprofilehdl" native="true">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+               <horstretch>1</horstretch>
+               <verstretch>3</verstretch>
+              </sizepolicy>
+             </property>
+            </widget>
            </widget>
           </item>
           <item row="1" column="0">
@@ -842,6 +861,16 @@
                </property>
                <property name="text">
                 <string>Energy interval:</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QCheckBox" name="checkBox_show_crosshair">
+               <property name="text">
+                <string>Show crosshair</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
                </property>
               </widget>
              </item>
