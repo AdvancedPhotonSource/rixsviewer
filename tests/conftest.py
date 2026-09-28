@@ -49,16 +49,22 @@ class FakeBeamline:
         with open(self.spec, "w") as f:
             f.write("#F fake session\n")
 
-    def start_scan(self, scan_no):
+    def start_scan(self, scan_no, e0=None, e1=None):
+        e0 = E0 if e0 is None else e0
+        e1 = E1 if e1 is None else e1
+        if not hasattr(self, "_scan_energy_range"):
+            self._scan_energy_range = {}
+        self._scan_energy_range[scan_no] = (e0, e1)
         with open(self.spec, "a") as f:
-            f.write(f"#S {scan_no} ascan merixE {E0} {E1} {POINTS} 0.1\n")
+            f.write(f"#S {scan_no} ascan merixE {e0} {e1} {POINTS} 0.1\n")
             f.write("#N 5\n")
             f.write("#L merixE i0 i2 mmepin1 mmepin2\n")
             f.write(f"#B {' '.join(XB_FIELDS)}\n")
             f.write("#D 2026-08-27 12:00:00\n")
 
     def add_point(self, scan_no, pt):
-        e = E0 + (E1 - E0) * pt / (POINTS - 1)
+        e0, e1 = getattr(self, "_scan_energy_range", {}).get(scan_no, (E0, E1))
+        e = e0 + (e1 - e0) * pt / (POINTS - 1)
         with open(self.spec, "a") as f:
             f.write(f"{e:.6f} 1.0 100.0 10.0 10.0\n")
         img = np.zeros((H, W), dtype=np.uint16)
@@ -67,6 +73,11 @@ class FakeBeamline:
 
     def run_scan(self, scan_no):
         self.start_scan(scan_no)
+        for pt in range(POINTS):
+            self.add_point(scan_no, pt)
+
+    def run_snapshot_scan(self, scan_no, energy=E1):
+        self.start_scan(scan_no, e0=energy, e1=energy)
         for pt in range(POINTS):
             self.add_point(scan_no, pt)
 
