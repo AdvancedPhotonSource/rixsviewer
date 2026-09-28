@@ -437,6 +437,27 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_rxesmap.addWidget(self.comboBox_rxes_plottarget)
 
+        self.label_rxes_cmap = QLabel(self.groupBox_rxesmap)
+        self.label_rxes_cmap.setObjectName(u"label_rxes_cmap")
+
+        self.horizontalLayout_rxesmap.addWidget(self.label_rxes_cmap)
+
+        self.comboBox_rxes_cmap = QComboBox(self.groupBox_rxesmap)
+        self.comboBox_rxes_cmap.addItem("")
+        self.comboBox_rxes_cmap.addItem("")
+        self.comboBox_rxes_cmap.addItem("")
+        self.comboBox_rxes_cmap.addItem("")
+        self.comboBox_rxes_cmap.addItem("")
+        self.comboBox_rxes_cmap.addItem("")
+        self.comboBox_rxes_cmap.addItem("")
+        self.comboBox_rxes_cmap.addItem("")
+        self.comboBox_rxes_cmap.setObjectName(u"comboBox_rxes_cmap")
+        sizePolicy9.setHeightForWidth(self.comboBox_rxes_cmap.sizePolicy().hasHeightForWidth())
+        self.comboBox_rxes_cmap.setSizePolicy(sizePolicy9)
+        self.comboBox_rxes_cmap.setMinimumSize(QSize(100, 0))
+
+        self.horizontalLayout_rxesmap.addWidget(self.comboBox_rxes_cmap)
+
         self.checkBox_show_rixsprofile = QCheckBox(self.groupBox_rxesmap)
         self.checkBox_show_rixsprofile.setObjectName(u"checkBox_show_rixsprofile")
         self.checkBox_show_rixsprofile.setChecked(True)
@@ -622,6 +643,16 @@ class Ui_MainWindow(object):
         self.comboBox_rxes_plottarget.setItemText(0, QCoreApplication.translate("MainWindow", u"intensity_norm", None))
         self.comboBox_rxes_plottarget.setItemText(1, QCoreApplication.translate("MainWindow", u"intensity", None))
         self.comboBox_rxes_plottarget.setItemText(2, QCoreApplication.translate("MainWindow", u"sample", None))
+
+        self.label_rxes_cmap.setText(QCoreApplication.translate("MainWindow", u"Colormap:", None))
+        self.comboBox_rxes_cmap.setItemText(0, QCoreApplication.translate("MainWindow", u"jet", None))
+        self.comboBox_rxes_cmap.setItemText(1, QCoreApplication.translate("MainWindow", u"viridis", None))
+        self.comboBox_rxes_cmap.setItemText(2, QCoreApplication.translate("MainWindow", u"plasma", None))
+        self.comboBox_rxes_cmap.setItemText(3, QCoreApplication.translate("MainWindow", u"inferno", None))
+        self.comboBox_rxes_cmap.setItemText(4, QCoreApplication.translate("MainWindow", u"magma", None))
+        self.comboBox_rxes_cmap.setItemText(5, QCoreApplication.translate("MainWindow", u"turbo", None))
+        self.comboBox_rxes_cmap.setItemText(6, QCoreApplication.translate("MainWindow", u"gray", None))
+        self.comboBox_rxes_cmap.setItemText(7, QCoreApplication.translate("MainWindow", u"coolwarm", None))
 
         self.checkBox_show_rixsprofile.setText(QCoreApplication.translate("MainWindow", u"Show RIXS Profile", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_rxesmap), QCoreApplication.translate("MainWindow", u"RXES Map", None))

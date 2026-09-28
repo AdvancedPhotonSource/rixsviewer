@@ -116,6 +116,7 @@ class RixsViewerGUI(QMainWindow):
             self.on_rxes_plottarget_changed
         )
         self.ui.checkBox_show_rixsprofile.toggled.connect(self.on_show_rixsprofile_toggled)
+        self.ui.comboBox_rxes_cmap.currentIndexChanged.connect(self.on_rxes_cmap_changed)
 
         self.timer = QTimer(self)
         self.timer.setInterval(int(heartbeat_s * 1000))
@@ -184,6 +185,7 @@ class RixsViewerGUI(QMainWindow):
             "  intensity      — raw accumulated intensity\n"
             "  sample         — coverage count (frames per cell)"
         )
+        ui.comboBox_rxes_cmap.setToolTip("Colormap used for the RXES map's colorbar")
         ui.checkBox_show_rixsprofile.setToolTip(
             "Show a 1D emission-energy profile at a fixed incident energy.\n"
             "Click anywhere on the map to pick the incident energy; defaults to the median."
@@ -656,6 +658,9 @@ class RixsViewerGUI(QMainWindow):
 
     def on_show_rixsprofile_toggled(self, checked):
         self.view.set_rxes_profile_visible(checked)
+
+    def on_rxes_cmap_changed(self):
+        self.view.set_rxes_colormap(self.ui.comboBox_rxes_cmap.currentText())
 
     def _route_binning_result(self, result, show_rawdata, plot_target):
         """

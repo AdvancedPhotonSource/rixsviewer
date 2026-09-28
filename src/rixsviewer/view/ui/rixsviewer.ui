@@ -724,6 +724,69 @@
               </widget>
              </item>
              <item>
+              <widget class="QLabel" name="label_rxes_cmap">
+               <property name="text">
+                <string>Colormap:</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QComboBox" name="comboBox_rxes_cmap">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>100</width>
+                 <height>0</height>
+                </size>
+               </property>
+               <item>
+                <property name="text">
+                 <string>jet</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>viridis</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>plasma</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>inferno</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>magma</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>turbo</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>gray</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>coolwarm</string>
+                </property>
+               </item>
+              </widget>
+             </item>
+             <item>
               <widget class="QCheckBox" name="checkBox_show_rixsprofile">
                <property name="text">
                 <string>Show RIXS Profile</string>

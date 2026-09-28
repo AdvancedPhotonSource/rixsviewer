@@ -144,11 +144,10 @@ class RixsView:
         plot.addItem(self.rxes_img_hdl)
         self._rxes_plot = plot
 
-        hist = pg.HistogramLUTItem()
-        hist.setImageItem(self.rxes_img_hdl)
-        self.ui.widget_rxeshdl.addItem(hist, row=0, col=1)
-        cmap = pg.colormap.getFromMatplotlib("viridis")
-        hist.gradient.setColorMap(cmap)
+        self._rxes_hist = pg.HistogramLUTItem()
+        self._rxes_hist.setImageItem(self.rxes_img_hdl)
+        self.ui.widget_rxeshdl.addItem(self._rxes_hist, row=0, col=1)
+        self.set_rxes_colormap("jet")
 
         self._rxes_vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen(color=(255, 255, 255), width=1))
         self._rxes_vline.setVisible(False)
@@ -175,6 +174,11 @@ class RixsView:
         self._rxes_last_incident_len = None
         self._rxes_profile_visible = True
         self.set_rxes_profile_visible(self.ui.checkBox_show_rixsprofile.isChecked())
+
+    def set_rxes_colormap(self, name):
+        """Set the RXES map's colorbar to the named matplotlib colormap."""
+        self._rxes_hist.gradient.setColorMap(pg.colormap.getFromMatplotlib(name))
+        self._rxes_cmap_name = name
 
     def set_rxes_profile_visible(self, visible):
         """Show/hide the RIXS-profile panel and its marker line on the map.
@@ -339,11 +343,6 @@ class RixsView:
             incident_axis[-1] - incident_axis[0],
             emission_axis[-1] - emission_axis[0],
         )
-
-        sample = result["sample"]
-        filled = int(np.sum(sample > 0))
-        total = sample.size
-        self._rxes_plot.setTitle(f"RXES map ({plot_target}): {filled}/{total} cells filled")
 
         if self._rxes_last_incident_len != len(incident_axis):
             self._rxes_profile_index = None  # different grid -- re-default to the median column

@@ -52,6 +52,14 @@ def test_plot_rxes_map_displays_the_selected_array(gui):
     np.testing.assert_array_equal(gui.view.rxes_img_hdl.image, result["sample"])
 
 
+def test_plot_rxes_map_does_not_show_a_title_on_the_2d_plot(gui):
+    result = _synthetic_rxes_result()
+
+    gui.view.plot_rxes_map(result, plot_target="intensity_norm")
+
+    assert gui.view._rxes_plot.titleLabel.isVisible() is False
+
+
 def test_switching_rxes_plottarget_replots_the_cached_result_without_recomputing(gui, monkeypatch):
     result = _synthetic_rxes_result()
     gui.beamline.run_rxes_scan(1, n_emission=2, n_incident=2)
@@ -180,3 +188,32 @@ def test_switching_display_target_updates_profile_source_array(gui):
 
     x, y = gui.view._rxes_profile_curve.getData()
     np.testing.assert_array_equal(y, result["sample"][:, median_index])
+
+
+# ---------------------------------------------------------------------------
+# Colormap selection (comboBox_rxes_cmap)
+# ---------------------------------------------------------------------------
+
+
+def test_rxes_cmap_combo_defaults_to_jet(gui):
+    assert gui.ui.comboBox_rxes_cmap.currentText() == "jet"
+    assert gui.view._rxes_cmap_name == "jet"
+
+
+def test_set_rxes_colormap_changes_the_map_colors(gui):
+    lut_before = gui.view._rxes_hist.gradient.colorMap().getLookupTable(nPts=8)
+
+    gui.view.set_rxes_colormap("viridis")
+
+    lut_after = gui.view._rxes_hist.gradient.colorMap().getLookupTable(nPts=8)
+    assert gui.view._rxes_cmap_name == "viridis"
+    assert not np.array_equal(lut_before, lut_after)
+
+
+def test_cmap_combo_change_calls_set_rxes_colormap(gui, monkeypatch):
+    calls = []
+    monkeypatch.setattr(gui.view, "set_rxes_colormap", lambda name: calls.append(name))
+
+    gui.ui.comboBox_rxes_cmap.setCurrentText("plasma")
+
+    assert calls == ["plasma"]
