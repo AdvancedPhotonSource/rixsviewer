@@ -277,6 +277,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             "intensity": self.intensity.copy(),
             "sample": self.sample.copy(),
             "intensity_norm": intensity_norm,
+            "energy_resolution": round(float(self.emission_axis[1] - self.emission_axis[0]) * 1e6, 3),
         }
         return self.bin_result
 

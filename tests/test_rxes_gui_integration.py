@@ -146,3 +146,45 @@ def test_resolve_nenergybins_override_uses_process_tab_controls_for_a_plain_scan
     gui.ui.checkBox_overwrite_binning_points.setChecked(True)
     gui.ui.spinBox_force_binning_points.setValue(99)
     assert gui._resolve_nenergybins_override() == {"NEnergyBins": 99, "force_NEnergyBins": True}
+
+
+def test_pressing_enter_in_rxes_binning_spinbox_reprocesses(gui, monkeypatch):
+    gui.beamline.run_rxes_scan(1, n_emission=7, n_incident=3)
+    gui.update_spec_record()
+    gui.ui.tableView_scan.selectRow(0)
+
+    calls = []
+    monkeypatch.setattr(gui, "process_binning", lambda: calls.append(True))
+
+    gui.ui.spinBox_force_rxes_binning_points.setValue(50)
+    gui.ui.spinBox_force_rxes_binning_points.editingFinished.emit()
+
+    assert calls == [True]
+
+
+def test_toggling_rxes_force_checkbox_reprocesses(gui, monkeypatch):
+    gui.beamline.run_rxes_scan(1, n_emission=7, n_incident=3)
+    gui.update_spec_record()
+    gui.ui.tableView_scan.selectRow(0)
+
+    calls = []
+    monkeypatch.setattr(gui, "process_binning", lambda: calls.append(True))
+
+    gui.ui.checkBox_overwrite_rxes_binning_points.setChecked(False)
+
+    assert calls == [True]
+
+
+def test_editing_rxes_binning_spinbox_is_a_noop_for_a_non_rxes_scan(gui, monkeypatch):
+    gui.beamline.run_scan(1)
+    gui.update_spec_record()
+    gui.ui.tableView_scan.selectRow(0)
+
+    calls = []
+    monkeypatch.setattr(gui, "process_binning", lambda: calls.append(True))
+
+    # the RXES tab's own spinbox, not the Process tab's -- must not reprocess
+    # a plain scan even if this signal somehow fires
+    gui.ui.spinBox_force_rxes_binning_points.editingFinished.emit()
+
+    assert calls == []

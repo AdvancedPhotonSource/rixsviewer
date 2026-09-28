@@ -26,6 +26,7 @@ def _synthetic_rxes_result(
         "intensity": intensity,
         "sample": sample,
         "intensity_norm": intensity_norm,
+        "energy_resolution": round(float(emission_axis[1] - emission_axis[0]) * 1e6, 3),
     }
 
 
@@ -61,6 +62,14 @@ def test_plot_rxes_map_does_not_show_a_title_on_the_2d_plot(gui):
     gui.view.plot_rxes_map(result, plot_target="intensity_norm")
 
     assert gui.view._rxes_plot.titleLabel.isVisible() is False
+
+
+def test_plot_rxes_map_shows_the_energy_interval_label(gui):
+    result = _synthetic_rxes_result(n_emission=5)
+
+    gui.view.plot_rxes_map(result, plot_target="intensity_norm")
+
+    assert f"{result['energy_resolution']:.3f}" in gui.ui.label_rxes_energy_interval.text()
 
 
 def test_plot_rxes_map_resets_view_range_for_a_new_scans_axis_bounds(gui):

@@ -82,6 +82,15 @@ class TestSupportsRxesMap:
         assert dset.supports_rxes_map() is True
 
 
+class TestEnergyResolution:
+    def test_bin_result_includes_energy_resolution(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_emission=5, n_incident=2, n_points=1)
+        result = dset.bin_data_wrap(metadata_source="SpecFile")
+
+        expected = round(float(dset.emission_axis[1] - dset.emission_axis[0]) * 1e6, 3)
+        assert result["energy_resolution"] == expected
+
+
 class TestAccumulatorReset:
     def test_reset_builds_axes_and_zeroed_arrays(self, tmp_path):
         dset, _ = _make_dataset(tmp_path, n_emission=3, n_incident=2, n_points=0)

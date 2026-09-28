@@ -833,6 +833,19 @@
               </widget>
              </item>
              <item>
+              <widget class="QLabel" name="label_rxes_energy_interval">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="text">
+                <string>Energy interval:</string>
+               </property>
+              </widget>
+             </item>
+             <item>
               <spacer name="horizontalSpacer_rxesmap">
                <property name="orientation">
                 <enum>Qt::Orientation::Horizontal</enum>

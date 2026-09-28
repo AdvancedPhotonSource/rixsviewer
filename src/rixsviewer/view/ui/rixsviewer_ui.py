@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright © UChicago Argonne LLC
-# See LICENSE file for details
+ # Copyright © UChicago Argonne LLC # See LICENSE file for details
 
 ################################################################################
 ## Form generated from reading UI file 'rixsviewer.ui'
@@ -488,6 +487,13 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_rxesmap.addWidget(self.spinBox_force_rxes_binning_points)
 
+        self.label_rxes_energy_interval = QLabel(self.groupBox_rxesmap)
+        self.label_rxes_energy_interval.setObjectName(u"label_rxes_energy_interval")
+        sizePolicy3.setHeightForWidth(self.label_rxes_energy_interval.sizePolicy().hasHeightForWidth())
+        self.label_rxes_energy_interval.setSizePolicy(sizePolicy3)
+
+        self.horizontalLayout_rxesmap.addWidget(self.label_rxes_energy_interval)
+
         self.horizontalSpacer_rxesmap = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_rxesmap.addItem(self.horizontalSpacer_rxesmap)
@@ -681,6 +687,7 @@ class Ui_MainWindow(object):
 
         self.checkBox_show_rixsprofile.setText(QCoreApplication.translate("MainWindow", u"Show RIXS Profile", None))
         self.checkBox_overwrite_rxes_binning_points.setText(QCoreApplication.translate("MainWindow", u"Force NEnergyBins", None))
+        self.label_rxes_energy_interval.setText(QCoreApplication.translate("MainWindow", u"Energy interval:", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_rxesmap), QCoreApplication.translate("MainWindow", u"RXES Map", None))
         self.groupBox_7.setTitle(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.comboBox_fit_target.setItemText(0, QCoreApplication.translate("MainWindow", u"DeltaD", None))

@@ -191,6 +191,7 @@ class RixsView:
         self._rxes_vline.setVisible(False)
         self._rxes_profile_curve.setData([], [])
         self._rxes_profile_plot.setTitle(None)
+        self.ui.label_rxes_energy_interval.setText("Energy interval:")
         self._rxes_last_result = None
         self._rxes_last_plot_target = None
         self._rxes_last_incident_len = None
@@ -359,6 +360,9 @@ class RixsView:
             emission_axis[0],
             incident_axis[-1] - incident_axis[0],
             emission_axis[-1] - emission_axis[0],
+        )
+        self.ui.label_rxes_energy_interval.setText(
+            f"Energy interval: [{result['energy_resolution']:.3f} meV]"
         )
 
         axis_bounds = (incident_axis[0], incident_axis[-1], emission_axis[0], emission_axis[-1])

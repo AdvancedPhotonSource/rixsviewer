@@ -117,6 +117,12 @@ class RixsViewerGUI(QMainWindow):
         )
         self.ui.checkBox_show_rixsprofile.toggled.connect(self.on_show_rixsprofile_toggled)
         self.ui.comboBox_rxes_cmap.currentIndexChanged.connect(self.on_rxes_cmap_changed)
+        self.ui.spinBox_force_rxes_binning_points.editingFinished.connect(
+            self.on_rxes_force_nenergybins_changed
+        )
+        self.ui.checkBox_overwrite_rxes_binning_points.toggled.connect(
+            self.on_rxes_force_nenergybins_changed
+        )
 
         self.timer = QTimer(self)
         self.timer.setInterval(int(heartbeat_s * 1000))
@@ -683,6 +689,15 @@ class RixsViewerGUI(QMainWindow):
 
     def on_rxes_cmap_changed(self):
         self.view.set_rxes_colormap(self.ui.comboBox_rxes_cmap.currentText())
+
+    def on_rxes_force_nenergybins_changed(self, *_):
+        """Re-bin immediately on Enter/focus-loss in the spinbox, or on
+        toggling the checkbox -- NEnergyBins is a calibration key, so
+        bin_data_wrap() replays the whole scan under the new bin count
+        rather than requiring a separate trip to the Process tab's Apply.
+        """
+        if self.current_rixs_dset is not None and self.current_rixs_dset.supports_rxes_map():
+            self.process_binning()
 
     def _route_binning_result(self, result, show_rawdata, plot_target):
         """
