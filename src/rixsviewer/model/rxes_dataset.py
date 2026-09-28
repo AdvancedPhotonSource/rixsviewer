@@ -62,6 +62,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
 
         self._n_processed = 0
         self._map_key = None
+        self._last_point_offset = None
         self._xsize = None
         self.emission_axis = None
         self.incident_axis = None
@@ -126,7 +127,10 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         e_min, e_max = min(emission_start, emission_end), max(emission_start, emission_end)
         if NEnergyBins >= 1:
             delta = (e_max - e_min) / NEnergyBins
-            if delta < delta_native and not force_NEnergyBins:
+            # delta <= 0 happens for a degenerate (single-point) emission
+            # range -- forcing a zero-width bin makes no sense even with
+            # force_NEnergyBins, and would ZeroDivisionError below.
+            if delta <= 0 or (delta < delta_native and not force_NEnergyBins):
                 delta = delta_native
         else:
             delta = delta_native
@@ -174,7 +178,30 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
 
         start_time = time.perf_counter()
         merged_kwargs = self._merge_binning_kwargs(metadata_source, kwargs)
-        key = self._calibration_key(merged_kwargs)
+
+        filenames = self.scan_info["filenames"]
+        # Filenames are numbered from an arbitrary start (e.g. "_point001"
+        # in production, "_point0000" in tests) -- normalize against the
+        # first file actually on record so frame_position is always a
+        # correct 0-based grid index regardless of that convention. This is
+        # folded into the accumulator's staleness key (below): if a
+        # lower-numbered file (e.g. point001) is NFS-lagged and arrives
+        # after point002+, this offset starts wrong and every frame binned
+        # under it lands one column off. Once the file arrives and the
+        # offset self-corrects, those already-summed bins must be replayed
+        # from scratch -- without detecting the shift, they'd stay silently
+        # and permanently misaligned.
+        point_offset = tiff_point_index(filenames[0]) if filenames else 0
+        if self._map_key is not None and point_offset != self._last_point_offset:
+            logger.warning(
+                "Scan %d: point_offset changed from %s to %d (a lower-numbered "
+                "TIFF file likely arrived late); rebuilding and replaying the "
+                "full RXES map to correct already-binned frames.",
+                self.scan_index, self._last_point_offset, point_offset,
+            )
+        self._last_point_offset = point_offset
+
+        key = self._calibration_key(merged_kwargs) + (point_offset,)
         if key != self._map_key or self.emission_axis is None:
             self._reset_accumulator(merged_kwargs)
             self._map_key = key
@@ -191,12 +218,6 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         n_incident = self.scan_info["incident_points"]
         total_points = self.scan_info["incident_points"] * self.scan_info["emission_points"]
         merixE_col = np.asarray(self.scan_info["scandata"]["merixE"], dtype=float)
-        filenames = self.scan_info["filenames"]
-        # Filenames are numbered from an arbitrary start (e.g. "_point001"
-        # in production, "_point0000" in tests) -- normalize against the
-        # first file actually on record so frame_position is always a
-        # correct 0-based grid index regardless of that convention.
-        point_offset = tiff_point_index(filenames[0]) if filenames else 0
 
         to_process = list(self.unloaded_filenames)
         self.unloaded_filenames = []
@@ -279,7 +300,10 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             "intensity": self.intensity.copy(),
             "sample": self.sample.copy(),
             "intensity_norm": intensity_norm,
-            "energy_resolution": round(float(self.emission_axis[1] - self.emission_axis[0]) * 1e6, 3),
+            "energy_resolution": (
+                round(float(self.emission_axis[1] - self.emission_axis[0]) * 1e6, 3)
+                if len(self.emission_axis) > 1 else 0.0
+            ),
             "emission_points": self.scan_info["emission_points"],
         }
         return self.bin_result
@@ -291,20 +315,42 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         Unlike :meth:`~.scan_dataset.BufferedTiffScanDatasetMixin.get_data_for_display`,
         this always reads directly from disk -- no raw stack is ever
         retained for RXES scans.
+
+        *frame_index* (when not the ``-1``/``-2`` "last"/"middle" sentinels)
+        is a grid-absolute position, i.e. the same ``frame_position`` space
+        used by :meth:`bin_data_wrap` and by the RXES map's click handler --
+        not a positional index into :attr:`scan_info` ``["filenames"]``.
+        Indexing that list directly would misalign every frame after any
+        gap (a point whose TIFF hasn't arrived, or never will), since the
+        list only contains files currently on disk. Returns ``None`` if the
+        requested grid position hasn't arrived yet, rather than silently
+        substituting the nearest arrived frame.
         """
         if self.scan_info is None or not self.scan_info["filenames"]:
             logger.debug("Scan %d has no TIFF frames yet; skipping display.", self.scan_index)
             return None
 
         filenames = self.scan_info["filenames"]
-        num_frames = len(filenames)
-        if frame_index == -2:
-            frame_index = num_frames // 2
-        elif frame_index == -1:
-            frame_index = num_frames - 1
-        frame_index = max(0, min(frame_index, num_frames - 1))
+        total_points = self.scan_info["incident_points"] * self.scan_info["emission_points"]
+        point_offset = tiff_point_index(filenames[0])
+        position_to_filename = {tiff_point_index(f) - point_offset: f for f in filenames}
+        arrived_positions = sorted(position_to_filename)
 
-        frame = tifffile.imread(filenames[frame_index]).astype(np.float32)
+        if frame_index == -2:
+            frame_index = arrived_positions[len(arrived_positions) // 2]
+        elif frame_index == -1:
+            frame_index = arrived_positions[-1]
+        frame_index = max(0, min(frame_index, total_points - 1))
+
+        fname = position_to_filename.get(frame_index)
+        if fname is None:
+            logger.debug(
+                "Scan %d: frame at grid position %d not yet available; skipping display.",
+                self.scan_index, frame_index,
+            )
+            return None
+
+        frame = tifffile.imread(fname).astype(np.float32)
         frame = fix_bad_pixels(frame[np.newaxis])[0]
         levels = percentile_clip(frame, percentile_cutoff)
 
@@ -324,7 +370,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         return {
             "data": frame,
             "levels": levels,
-            "num_frames": num_frames,
+            "num_frames": total_points,
             "frame_metadata": frame_metadata,
             "scan_index": self.scan_index,
             "frame_index": frame_index,

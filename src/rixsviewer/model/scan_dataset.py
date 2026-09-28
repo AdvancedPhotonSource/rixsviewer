@@ -443,7 +443,7 @@ class BufferedTiffScanDatasetMixin(TiffScanDatasetMixin):
             def _read_frame(fname):
                 return tifffile.imread(fname).astype(np.float32)
 
-            with ThreadPoolExecutor(max_workers=min(n_files, (cpu_count() or 2) // 2)) as ex:
+            with ThreadPoolExecutor(max_workers=min(n_files, max(1, (cpu_count() or 2) // 2))) as ex:
                 frames = list(ex.map(_read_frame, self.unloaded_filenames))
             chunk = fix_bad_pixels(np.stack(frames))
 

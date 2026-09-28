@@ -287,19 +287,40 @@ class RixsViewerGUI(QMainWindow):
             self.ui.pushButton_fit_pixel_size.setDisabled(True)
             self.ui.pushButton_fit_pixel_size.setChecked(False)
 
-            backfill = self.scan_model.get_unprocessed_scans() if self.scan_model else []
-            if backfill:
-                logger.info(
-                    "Auto-update enabled: catching up on %d unprocessed scan(s).",
-                    len(backfill),
-                )
-                self._catching_up = True
-                self._backfill_queue = backfill
-                self._backfill_index = 0
-                self._advance_backfill_queue()
-            else:
+            if self.scan_model is None:
                 logger.info("Auto-updating scan table from spec file...")
                 self.timer.start()
+                return
+
+            # get_unprocessed_scans() opens and parses the whole results SPEC
+            # file, which can be slow after a long beamtime session -- run it
+            # off the GUI thread like every other long operation here.
+            def on_result(backfill):
+                if not self.ui.checkBox_autoupdate.isChecked():
+                    return  # toggled off again while this was running
+                if backfill:
+                    logger.info(
+                        "Auto-update enabled: catching up on %d unprocessed scan(s).",
+                        len(backfill),
+                    )
+                    self._catching_up = True
+                    self._backfill_queue = backfill
+                    self._backfill_index = 0
+                    self._advance_backfill_queue()
+                else:
+                    logger.info("Auto-updating scan table from spec file...")
+                    self.timer.start()
+
+            def on_error(err_str):
+                logger.error("Failed to scan for unprocessed scans: %s", err_str)
+                if self.ui.checkBox_autoupdate.isChecked():
+                    self.timer.start()
+
+            worker = Worker(self.scan_model.get_unprocessed_scans)
+            self.backfill_scan_worker = worker  # Keep reference to prevent GC of signals
+            worker.signals.result.connect(on_result)
+            worker.signals.error.connect(on_error)
+            self.threadpool.start(worker)
         else:
             self.ui.pushButton_fit_pixel_size.setEnabled(True)
             logger.info("Auto-update disabled.")
@@ -673,6 +694,10 @@ class RixsViewerGUI(QMainWindow):
 
         self._binning_active = True
         self._binning_dset = self.current_rixs_dset
+        # Only RixsRxesScanDataset has _n_processed; None for EnergyScan/
+        # SnapshotScan, which always fully drain unloaded_filenames in one
+        # call, so "made progress" below is trivially true for them.
+        n_processed_before = getattr(self._binning_dset, "_n_processed", None)
         self.ui.pushButton_process.setEnabled(False)
 
         def worker_fn():
@@ -711,8 +736,21 @@ class RixsViewerGUI(QMainWindow):
                 ):
                     self.current_rixs_dset.save_to_file(self.save_filename)
                 if self.current_rixs_dset.unloaded_filenames:
-                    self.process_binning()
-                    return
+                    n_processed_after = getattr(self.current_rixs_dset, "_n_processed", None)
+                    made_progress = (
+                        n_processed_before is None
+                        or n_processed_after is None
+                        or n_processed_after > n_processed_before
+                    )
+                    if made_progress:
+                        self.process_binning()
+                        return
+                    # else: an RXES scan re-queued every pending frame without
+                    # processing any of it (SPEC scandata hasn't caught up
+                    # with the TIFF writer yet) -- retriggering immediately
+                    # would spin a tight, CPU/I/O-burning loop. Let the next
+                    # 1s timer tick retry once update_spec_record() refreshes
+                    # scandata instead.
             if self._catching_up:
                 self._advance_backfill_queue()
 
@@ -888,6 +926,22 @@ class RixsViewerGUI(QMainWindow):
         """
         self.current_rixs_dset = dset
         self._sync_rxes_map_tab(dset)
+        self._sync_calibration_tab(dset)
+
+    def _sync_calibration_tab(self, dset):
+        """Enable the Calibration tab only for scans that support it.
+
+        Mirrors :meth:`_sync_rxes_map_tab` so the tab's own tooltip claim
+        ("Disabled for scans that don't support calibration") is actually
+        true, instead of relying solely on the warning dialog in
+        :meth:`calibrate_parameters`.
+        """
+        supports_calibration = dset is not None and dset.supports_calibration()
+        idx = self.ui.tabWidget.indexOf(self.ui.tab)
+        was_current = self.ui.tabWidget.currentWidget() is self.ui.tab
+        self.ui.tabWidget.setTabEnabled(idx, supports_calibration)
+        if not supports_calibration and was_current:
+            self.ui.tabWidget.setCurrentWidget(self.ui.tab_2)
 
     def _sync_rxes_map_tab(self, dset):
         """Enable the RXES Map tab only for scans that produce a 2D map.
@@ -966,12 +1020,18 @@ class RixsViewerGUI(QMainWindow):
             **binning_kwargs,
         )
 
-        # Scan may be empty (no TIFF frames or no scandata rows yet)
+        # Scan may be empty (no TIFF frames or no scandata rows yet), or --
+        # for an RXES map click/jump to a specific grid position -- that
+        # position simply hasn't arrived yet.
         if frame_info is None:
             logger.debug(
                 "update_image: no data available for scan %s yet.",
                 self.current_rixs_dset.scan_index,
             )
+            if frame_index >= 0:
+                self.statusBar().showMessage(
+                    f"Frame {frame_index} is not available yet.", 3000
+                )
             return
 
         self.view.update_image(
