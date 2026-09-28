@@ -38,6 +38,20 @@ class TestSupportsCalibration:
         assert not hasattr(dset, "linesearch_to_optimize_parameter")
 
 
+class TestSupportsRxesMap:
+    def test_energy_scan_does_not_support_rxes_map(self, tmp_path):
+        beamline = FakeBeamline(str(tmp_path))
+        beamline.run_scan(1)
+        table = RixsSpecTable(beamline.spec, beamline.workdir, save_filename=None)
+        assert table.record[1].supports_rxes_map() is False
+
+    def test_snapshot_scan_does_not_support_rxes_map(self, tmp_path):
+        beamline = FakeBeamline(str(tmp_path))
+        beamline.run_snapshot_scan(1)
+        table = RixsSpecTable(beamline.spec, beamline.workdir, save_filename=None)
+        assert table.record[1].supports_rxes_map() is False
+
+
 class TestEnergyScanBinning:
     def test_bin_data_wrap_gives_every_frame_a_finite_energy_axis(self, tmp_path):
         # Regression test for a code-review finding: the fixture's E0 must

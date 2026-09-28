@@ -180,6 +180,21 @@ class RixsView:
         self._rxes_hist.gradient.setColorMap(pg.colormap.getFromMatplotlib(name))
         self._rxes_cmap_name = name
 
+    def clear_rxes_map(self):
+        """Reset the RXES Map tab to empty.
+
+        Called when the selected scan doesn't produce an RXES map, so a
+        stale map from a previously-selected RXES scan doesn't linger.
+        """
+        self.rxes_img_hdl.clear()
+        self._rxes_vline.setVisible(False)
+        self._rxes_profile_curve.setData([], [])
+        self._rxes_profile_plot.setTitle(None)
+        self._rxes_last_result = None
+        self._rxes_last_plot_target = None
+        self._rxes_last_incident_len = None
+        self._rxes_profile_index = None
+
     def set_rxes_profile_visible(self, visible):
         """Show/hide the RIXS-profile panel and its marker line on the map.
 

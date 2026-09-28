@@ -265,7 +265,7 @@ class RixsViewerGUI(QMainWindow):
 
         if self.current_rixs_dset is not None and self.current_rixs_dset is not dset:
             self._evict_scan_data(self.current_rixs_dset)
-        self.current_rixs_dset = dset
+        self._set_current_rixs_dset(dset)
         self.ui.tableView_image.setModel(dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
@@ -324,7 +324,7 @@ class RixsViewerGUI(QMainWindow):
                 # auto-update never fires on_selection_changed; evict here or
                 # every scan's stack stays resident for the whole session (OOM)
                 self._evict_scan_data(self.current_rixs_dset)
-                self.current_rixs_dset = new_dset
+                self._set_current_rixs_dset(new_dset)
 
             if has_updates:
                 self.process_binning()
@@ -771,6 +771,36 @@ class RixsViewerGUI(QMainWindow):
         self.scan_model = scan_model
         return
 
+    def _set_current_rixs_dset(self, dset):
+        """Set ``current_rixs_dset`` and keep the RXES Map tab in sync with it.
+
+        Centralizes the tab sync so every place that changes the current
+        dataset (manual row click, auto-update, backfill catch-up) gets it
+        for free rather than needing to remember to call it separately.
+        """
+        self.current_rixs_dset = dset
+        self._sync_rxes_map_tab(dset)
+
+    def _sync_rxes_map_tab(self, dset):
+        """Enable the RXES Map tab only for scans that produce a 2D map.
+
+        Otherwise clear any map left over from a previously-selected RXES
+        scan and, if that tab was the active one, switch back to Process --
+        without this a stale RXES map kept showing after selecting a plain
+        EnergyScan/SnapshotScan.
+        """
+        is_rxes = dset is not None and dset.supports_rxes_map()
+        idx = self.ui.tabWidget.indexOf(self.ui.tab_rxesmap)
+        # Capture this before disabling: Qt auto-switches away from a tab
+        # that's current the moment it's disabled, so checking afterwards
+        # would always see some other (arbitrary) tab as current.
+        was_current = self.ui.tabWidget.currentWidget() is self.ui.tab_rxesmap
+        self.ui.tabWidget.setTabEnabled(idx, is_rxes)
+        if not is_rxes:
+            self.view.clear_rxes_map()
+            if was_current:
+                self.ui.tabWidget.setCurrentWidget(self.ui.tab_2)
+
     def on_selection_changed(self, selected, deselected):
         """
         Called whenever the table's selection changes.
@@ -790,7 +820,7 @@ class RixsViewerGUI(QMainWindow):
         if self.current_rixs_dset is not None and self.current_rixs_dset is not dset:
             self._evict_scan_data(self.current_rixs_dset)
 
-        self.current_rixs_dset = dset
+        self._set_current_rixs_dset(dset)
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)

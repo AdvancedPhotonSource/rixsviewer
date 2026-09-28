@@ -26,6 +26,40 @@ def test_evicting_an_rxes_dataset_when_a_new_scan_arrives_does_not_crash(gui):
     gui.update_spec_record()  # evicts scan 1 (RXES) -> must not raise AttributeError
 
 
+def test_switching_from_rxes_to_a_plain_scan_disables_and_clears_the_rxes_map_tab(gui):
+    """Regression test: selecting a non-RXES scan right after an RXES scan
+    used to leave the previous RXES map on screen -- the tab should
+    instead be disabled, cleared, and focus moved back to Process."""
+    gui.beamline.run_rxes_scan(1, n_emission=2, n_incident=2)
+    gui.update_spec_record()
+    result = gui.current_rixs_dset.bin_data_wrap(metadata_source="SpecFile")
+    gui._route_binning_result(result, show_rawdata=False, plot_target="intensity_norm")
+
+    idx = gui.ui.tabWidget.indexOf(gui.ui.tab_rxesmap)
+    assert gui.ui.tabWidget.isTabEnabled(idx) is True
+    assert gui.ui.tabWidget.currentWidget() is gui.ui.tab_rxesmap
+    assert gui.view.rxes_img_hdl.image is not None
+
+    gui.beamline.run_scan(2)
+    gui.update_spec_record()
+
+    assert gui.ui.tabWidget.isTabEnabled(idx) is False
+    assert gui.ui.tabWidget.currentWidget() is gui.ui.tab_2
+    assert gui.view.rxes_img_hdl.image is None
+
+
+def test_switching_back_to_an_rxes_scan_reenables_the_rxes_map_tab(gui):
+    gui.beamline.run_scan(1)
+    gui.update_spec_record()
+    idx = gui.ui.tabWidget.indexOf(gui.ui.tab_rxesmap)
+    assert gui.ui.tabWidget.isTabEnabled(idx) is False
+
+    gui.beamline.run_rxes_scan(2, n_emission=2, n_incident=2)
+    gui.update_spec_record()
+
+    assert gui.ui.tabWidget.isTabEnabled(idx) is True
+
+
 def test_calibrate_parameters_consults_supports_calibration_predicate(gui, monkeypatch):
     from PySide6.QtWidgets import QMessageBox
 

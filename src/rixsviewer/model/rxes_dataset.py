@@ -326,6 +326,10 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         """Pixel-size/tilt calibration is not implemented for RXES scans."""
         return False
 
+    def supports_rxes_map(self):
+        """RXES scans produce a 2D incident x emission energy map."""
+        return True
+
     def release_data(self):
         """No large buffer is ever retained for RXES scans; nothing to release."""
         pass

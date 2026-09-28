@@ -56,6 +56,12 @@ class TestSupportsCalibration:
         assert dset.supports_calibration() is False
 
 
+class TestSupportsRxesMap:
+    def test_rxes_dataset_supports_rxes_map(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        assert dset.supports_rxes_map() is True
+
+
 class TestAccumulatorReset:
     def test_reset_builds_axes_and_zeroed_arrays(self, tmp_path):
         dset, _ = _make_dataset(tmp_path, n_emission=3, n_incident=2, n_points=0)

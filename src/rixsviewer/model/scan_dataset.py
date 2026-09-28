@@ -232,6 +232,10 @@ class BufferedTiffScanDatasetMixin(TiffScanDatasetMixin):
         """Whether pixel-size/tilt calibration is meaningful for this scan type."""
         return False
 
+    def supports_rxes_map(self):
+        """Whether bin_data_wrap() on this scan produces a 2D RXES map."""
+        return False
+
     def get_data_for_display(
         self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs
     ):
