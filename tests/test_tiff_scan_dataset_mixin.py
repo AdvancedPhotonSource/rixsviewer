@@ -1,10 +1,10 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
-from rixsviewer.model.scan_dataset import RixsScanTiffDataset
+from rixsviewer.model.scan_dataset import RixsEnergyScanDataset
 
 
 def _dset_with_scan_info(scan_info):
-    dset = RixsScanTiffDataset(0, "fake.spec", "/tmp", 1)
+    dset = RixsEnergyScanDataset(0, "fake.spec", "/tmp", 1)
     dset.scan_info = scan_info
     return dset
 
@@ -58,7 +58,7 @@ class TestRefreshTiffFilenames:
 
         spec_path = str(tmp_path / "fake.spec")
         (tmp_path / "fake.spec_scan1_point0000.tif")  # not written yet
-        dset = RixsScanTiffDataset(0, spec_path, str(tmp_path), 1)
+        dset = RixsEnergyScanDataset(0, spec_path, str(tmp_path), 1)
         dset.scan_info = {
             "tiff_points": 0,
             "spec_points": 2,

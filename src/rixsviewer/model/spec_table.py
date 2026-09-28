@@ -9,10 +9,16 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from silx.io.specfile import SpecFile
 
 from .rxes_dataset import RixsRxesScanDataset
-from .scan_dataset import RixsScanTiffDataset
+from .scan_dataset import RixsEnergyScanDataset, RixsSnapshotScanDataset
 from .spec_parsers import get_scan_header
 
 logger = logging.getLogger(__name__)
+
+_DATASET_CLASSES = {
+    "EnergyScan": RixsEnergyScanDataset,
+    "SnapshotScan": RixsSnapshotScanDataset,
+    "RXESScan": RixsRxesScanDataset,
+}
 
 
 class RixsSpecTable(QAbstractTableModel):
@@ -166,10 +172,7 @@ class RixsSpecTable(QAbstractTableModel):
                         self.last_scan_dset.save_to_file(self.save_filename)
                         self.last_scan_dset.bin_result = None
                     row = len(self.record)
-                    dataset_cls = (
-                        RixsRxesScanDataset if scan_type == "RXESScan" else RixsScanTiffDataset
-                    )
-                    scan_dset = dataset_cls(
+                    scan_dset = _DATASET_CLASSES[scan_type](
                         row, self.spec_fname, self.tif_folder, scan_number
                     )
                     scan_dset.update_scan_info(scan_pack)
@@ -210,7 +213,7 @@ class RixsSpecTable(QAbstractTableModel):
 
         Returns
         -------
-        list of RixsScanTiffDataset
+        list of RixsEnergyScanDataset, RixsSnapshotScanDataset, or RixsRxesScanDataset
             Complete, unsaved scans in ascending scan-number order.
         """
         already_saved = self._read_saved_scan_numbers()
@@ -242,7 +245,7 @@ class RixsSpecTable(QAbstractTableModel):
 
     def get_selected_dataset(self, row):
         """
-        Retrieve the :class:`RixsScanTiffDataset` for a given table row.
+        Retrieve the scan dataset object for a given table row.
 
         Parameters
         ----------
@@ -251,7 +254,7 @@ class RixsSpecTable(QAbstractTableModel):
 
         Returns
         -------
-        RixsScanTiffDataset
+        RixsEnergyScanDataset, RixsSnapshotScanDataset, or RixsRxesScanDataset
             Dataset object associated with the scan at *row*.
         """
         scan_index = self.get_scan_number(row)

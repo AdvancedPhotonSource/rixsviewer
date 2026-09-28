@@ -169,13 +169,13 @@ class TiffScanDatasetMixin:
         return self._model
 
 
-class RixsScanTiffDataset(TiffScanDatasetMixin):
+class BufferedTiffScanDatasetMixin(TiffScanDatasetMixin):
     """
-    Container for scan metadata and lazily-loaded TIFF image data.
-
-    Holds the parsed scan information and provides methods for loading
-    the associated TIFF stack, displaying it, and computing the binned
-    RIXS spectrum.
+    Shared behavior for scan-dataset classes that keep the entire raw TIFF
+    stack resident in memory, as opposed to
+    :class:`~.rxes_dataset.RixsRxesScanDataset`, which discards each frame
+    after reducing it. Used by :class:`RixsEnergyScanDataset` and
+    :class:`RixsSnapshotScanDataset`.
 
     Parameters
     ----------
@@ -227,6 +227,10 @@ class RixsScanTiffDataset(TiffScanDatasetMixin):
             "mmepin1": "mmepin1",
             "mmepin2": "mmepin2",
         }
+
+    def supports_calibration(self):
+        """Whether pixel-size/tilt calibration is meaningful for this scan type."""
+        return False
 
     def get_data_for_display(
         self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs
@@ -295,13 +299,6 @@ class RixsScanTiffDataset(TiffScanDatasetMixin):
             "scan_index": self.scan_index,
             "frame_index": frame_index,
         }
-
-    # def calibrate_parameters(self, method="AlignCenter", meta_source="SpecFile", **kwargs):
-    #     assert method in ("AlignCenter", "OptmizeFWHM"), "unsupported method"
-    #     if method == "AlignCenter":
-    #         return self.bin_data_wrap(metadata_source, fit_pixel_size=True, **kwargs)
-    #     elif method == "OptimizeFWHM":
-    #         return
 
     def _prepare_inputs(self, metadata_source, kwargs):
         """
@@ -417,6 +414,94 @@ class RixsScanTiffDataset(TiffScanDatasetMixin):
             data = np.column_stack([res[key] for key in self.file_save_keys.keys()])
             np.savetxt(f, data, fmt="%.18e")
             f.write("\n")
+
+    def read_tiff_data(self):
+        """
+        Load any pending TIFF files and return the complete image stack.
+
+        Only the filenames in :attr:`unloaded_filenames` are read from
+        disk.  New frames are appended in place into a preallocated
+        buffer so incremental loads during a live scan never reallocate
+        the whole stack; :attr:`_data` is a view into that buffer.
+
+        Bad pixels listed in :mod:`bad_pixels` are zeroed out after loading.
+
+        Returns
+        -------
+        numpy.ndarray
+            3-D array of shape ``(n_frames, height, width)`` with dtype
+            ``float32``, or ``None`` if no files have been loaded yet.
+        """
+        if len(self.unloaded_filenames) > 0:
+            n_files = len(self.unloaded_filenames)
+            t0 = time.perf_counter()
+
+            def _read_frame(fname):
+                return tifffile.imread(fname).astype(np.float32)
+
+            with ThreadPoolExecutor(max_workers=min(n_files, (cpu_count() or 2) // 2)) as ex:
+                frames = list(ex.map(_read_frame, self.unloaded_filenames))
+            chunk = fix_bad_pixels(np.stack(frames))
+
+            if self._buffer is None:
+                height, width = chunk.shape[1], chunk.shape[2]
+                capacity = n_files
+                if self.scan_info is not None:
+                    capacity = max(
+                        capacity,
+                        self.scan_info.get("spec_points", 0),
+                        self.scan_info.get("tiff_points", 0),
+                    )
+                self._buffer = np.empty((max(1, capacity), height, width), dtype=np.float32)
+                self._n_filled = 0
+
+            needed = self._n_filled + chunk.shape[0]
+            if needed > self._buffer.shape[0]:
+                # more frames than preallocated (e.g. snapshot scans or
+                # stray tiffs); regrow once and copy the filled portion
+                new_capacity = max(needed, 2 * self._buffer.shape[0])
+                grown = np.empty((new_capacity, *self._buffer.shape[1:]), dtype=np.float32)
+                grown[: self._n_filled] = self._buffer[: self._n_filled]
+                self._buffer = grown
+
+            self._buffer[self._n_filled : needed] = chunk  # noqa: E203
+            self._n_filled = needed
+            self._data = self._buffer[: self._n_filled]
+            self.unloaded_filenames = []
+            logger.info(f"Scan {self.scan_index}: Read {n_files} tiff file(s) in {time.perf_counter() - t0:.2f}s")
+        return self._data
+
+    def has_loaded_frames(self):
+        """Whether any TIFF data is currently resident in memory for this scan."""
+        return self._data is not None
+
+    def release_data(self):
+        """
+        Release the loaded frame buffer so memory returns to ~zero.
+
+        The frames can be reloaded from disk on demand:
+        :attr:`unloaded_filenames` is restored so the next
+        :meth:`read_tiff_data` call rebuilds the stack.
+        """
+        if self._data is not None:
+            logger.debug(f"Scan {self.scan_index}: evicting {self._data.nbytes // (1024 * 1024)} MB from memory")
+        self._buffer = None
+        self._data = None
+        self._n_filled = 0
+        if self.scan_info is not None:
+            self.unloaded_filenames = list(self.scan_info["filenames"])
+
+
+class RixsEnergyScanDataset(BufferedTiffScanDatasetMixin):
+    """
+    Dataset container for ``EnergyScan`` scans (1D scan over ``merixE``).
+
+    Adds pixel-size/tilt-angle calibration on top of the shared buffered
+    scan-dataset behavior in :class:`BufferedTiffScanDatasetMixin`.
+    """
+
+    def supports_calibration(self):
+        return True
 
     def fit_pixel_size_wrap(
         self,
@@ -557,84 +642,18 @@ class RixsScanTiffDataset(TiffScanDatasetMixin):
             "org_result": org_result,
         }
 
-    def __len__(self):
-        return len(self.fnames)
 
-    def read_tiff_data(self):
-        """
-        Load any pending TIFF files and return the complete image stack.
-
-        Only the filenames in :attr:`unloaded_filenames` are read from
-        disk.  New frames are appended in place into a preallocated
-        buffer so incremental loads during a live scan never reallocate
-        the whole stack; :attr:`_data` is a view into that buffer.
-
-        Bad pixels listed in :mod:`bad_pixels` are zeroed out after loading.
-
-        Returns
-        -------
-        numpy.ndarray
-            3-D array of shape ``(n_frames, height, width)`` with dtype
-            ``float32``, or ``None`` if no files have been loaded yet.
-        """
-        if len(self.unloaded_filenames) > 0:
-            n_files = len(self.unloaded_filenames)
-            t0 = time.perf_counter()
-
-            def _read_frame(fname):
-                return tifffile.imread(fname).astype(np.float32)
-
-            with ThreadPoolExecutor(max_workers=min(n_files, (cpu_count() or 2) // 2)) as ex:
-                frames = list(ex.map(_read_frame, self.unloaded_filenames))
-            chunk = fix_bad_pixels(np.stack(frames))
-
-            if self._buffer is None:
-                height, width = chunk.shape[1], chunk.shape[2]
-                capacity = n_files
-                if self.scan_info is not None:
-                    capacity = max(
-                        capacity,
-                        self.scan_info.get("spec_points", 0),
-                        self.scan_info.get("tiff_points", 0),
-                    )
-                self._buffer = np.empty((max(1, capacity), height, width), dtype=np.float32)
-                self._n_filled = 0
-
-            needed = self._n_filled + chunk.shape[0]
-            if needed > self._buffer.shape[0]:
-                # more frames than preallocated (e.g. snapshot scans or
-                # stray tiffs); regrow once and copy the filled portion
-                new_capacity = max(needed, 2 * self._buffer.shape[0])
-                grown = np.empty((new_capacity, *self._buffer.shape[1:]), dtype=np.float32)
-                grown[: self._n_filled] = self._buffer[: self._n_filled]
-                self._buffer = grown
-
-            self._buffer[self._n_filled : needed] = chunk  # noqa: E203
-            self._n_filled = needed
-            self._data = self._buffer[: self._n_filled]
-            self.unloaded_filenames = []
-            logger.info(f"Scan {self.scan_index}: Read {n_files} tiff file(s) in {time.perf_counter() - t0:.2f}s")
-        return self._data
-
-    def has_loaded_frames(self):
-        """Whether any TIFF data is currently resident in memory for this scan."""
-        return self._data is not None
-
-    def release_data(self):
-        """
-        Release the loaded frame buffer so memory returns to ~zero.
-
-        The frames can be reloaded from disk on demand:
-        :attr:`unloaded_filenames` is restored so the next
-        :meth:`read_tiff_data` call rebuilds the stack.
-        """
-        if self._data is not None:
-            logger.debug(f"Scan {self.scan_index}: evicting {self._data.nbytes // (1024 * 1024)} MB from memory")
-        self._buffer = None
-        self._data = None
-        self._n_filled = 0
-        if self.scan_info is not None:
-            self.unloaded_filenames = list(self.scan_info["filenames"])
+class RixsSnapshotScanDataset(BufferedTiffScanDatasetMixin):
+    """
+    Dataset container for ``SnapshotScan`` scans (repeat exposures at a
+    fixed incident energy). Uses :class:`BufferedTiffScanDatasetMixin`
+    unchanged -- the ``SnapshotScan``-specific branches (native pixel
+    axis, summed display image) live in the shared ``utils.py`` reduction
+    pipeline, not in this class. Pixel-size calibration is not supported
+    (see :meth:`BufferedTiffScanDatasetMixin.supports_calibration`), so
+    unlike :class:`RixsEnergyScanDataset` this class has no
+    ``fit_pixel_size_wrap``/``linesearch_to_optimize_parameter`` methods.
+    """
 
 
 class RixsScanImageTable(QAbstractTableModel):

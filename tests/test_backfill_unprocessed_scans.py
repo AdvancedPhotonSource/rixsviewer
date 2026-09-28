@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import tifffile
 
-from rixsviewer.model.scan_dataset import RixsScanTiffDataset
+from rixsviewer.model.scan_dataset import RixsEnergyScanDataset
 from rixsviewer.model.spec_table import RixsSpecTable
 
 from conftest import FakeBeamline, E0, E1, H, W, XB_FIELDS
@@ -55,7 +55,7 @@ def _write_complete_scan(spec_path, workdir, scan_no, n_points=3):
 
 class TestIsComplete:
     def test_true_when_tiff_points_match_spec_points_and_scandata_full(self):
-        dset = RixsScanTiffDataset(0, "fake.spec", "/tmp", 1)
+        dset = RixsEnergyScanDataset(0, "fake.spec", "/tmp", 1)
         dset.scan_info = {
             "tiff_points": 3,
             "spec_points": 3,
@@ -64,7 +64,7 @@ class TestIsComplete:
         assert dset.is_complete() is True
 
     def test_false_when_tiff_points_less_than_spec_points(self):
-        dset = RixsScanTiffDataset(0, "fake.spec", "/tmp", 1)
+        dset = RixsEnergyScanDataset(0, "fake.spec", "/tmp", 1)
         dset.scan_info = {
             "tiff_points": 2,
             "spec_points": 3,
@@ -73,7 +73,7 @@ class TestIsComplete:
         assert dset.is_complete() is False
 
     def test_false_when_scan_info_is_none(self):
-        dset = RixsScanTiffDataset(0, "fake.spec", "/tmp", 1)
+        dset = RixsEnergyScanDataset(0, "fake.spec", "/tmp", 1)
         assert dset.is_complete() is False
 
 
