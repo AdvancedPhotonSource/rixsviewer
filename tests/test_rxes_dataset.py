@@ -50,6 +50,26 @@ class TestHasLoadedFrames:
         assert dset.has_loaded_frames() is True
 
 
+class TestProcessingTimeLogging:
+    def test_logs_elapsed_time_when_frames_are_processed(self, caplog, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+
+        with caplog.at_level("INFO"):
+            dset.bin_data_wrap(metadata_source="SpecFile")
+
+        assert "processed 1 frame" in caplog.text
+
+    def test_does_not_log_timing_when_nothing_new_to_process(self, caplog, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        dset.bin_data_wrap(metadata_source="SpecFile")
+        caplog.clear()
+
+        with caplog.at_level("INFO"):
+            dset.bin_data_wrap(metadata_source="SpecFile")  # nothing new queued
+
+        assert "processed" not in caplog.text
+
+
 class TestSupportsCalibration:
     def test_rxes_dataset_does_not_support_calibration(self, tmp_path):
         dset, _ = _make_dataset(tmp_path, n_points=1)

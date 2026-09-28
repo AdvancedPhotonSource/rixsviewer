@@ -1,6 +1,7 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from os import cpu_count
 
@@ -169,6 +170,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
                 "cannot run processing on an empty dataset."
             )
 
+        start_time = time.perf_counter()
         merged_kwargs = self._merge_binning_kwargs(metadata_source, kwargs)
         key = self._calibration_key(merged_kwargs)
         if key != self._map_key or self.emission_axis is None:
@@ -261,6 +263,12 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
 
         with np.errstate(invalid="ignore", divide="ignore"):
             intensity_norm = self.intensity / np.clip(self.sample, 1, None)
+
+        if to_process:
+            logger.info(
+                "Scan %d: processed %d frame(s) in %.3fs",
+                self.scan_index, len(to_process), time.perf_counter() - start_time,
+            )
 
         self.bin_result = {
             "kind": "rxes_map",
