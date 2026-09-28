@@ -8,9 +8,11 @@ from os import cpu_count
 import numpy as np
 import tifffile
 
+from .process_parameters import unit_map
 from .scan_dataset import TiffScanDatasetMixin
 from .spec_parsers import tiff_point_index
 from .utils import _preprocess_frames, apply_subpixel_shear_3d, compute_frame_energy_axis, fix_bad_pixels, percentile_clip
+from .. import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -345,8 +347,41 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         pass
 
     def save_to_file(self, fname=None, force=False):
-        """RXES map persistence is not implemented yet (deferred by design)."""
-        logger.info(
-            "Scan %d: RXES map persistence is not implemented yet; skipping save.",
-            self.scan_index,
-        )
+        """Append the normalized 2D RXES map to *fname* as a SPEC-style block.
+
+        The map is stored with incident energy as rows and emission energy
+        as columns (transposed from :attr:`bin_result`'s in-memory
+        ``(emission, incident)`` layout), with calibration settings and
+        axis units recorded as ``#C`` header comments.
+        """
+        if self.bin_result is None or (self._saved and not force):
+            return
+        self._saved = True
+
+        if fname is None:
+            fname = "./test_rixsviewer_saving.spec"
+
+        res = self.bin_result
+        incident_axis = res["incident_axis"]
+        emission_axis = res["emission_axis"]
+        intensity_norm = res["intensity_norm"]
+
+        with open(fname, "a") as f:
+            f.write(f"\n#S {self.scan_index} {self.scan_info['scan_type']}\n")
+            f.write(f"#D {np.datetime64('now')}\n")
+            f.write(f"#C RixsViewerVersion = {__version__}\n")
+            for key, value in self.scan_info["metadata"].items():
+                unit = unit_map.get(key, "")
+                f.write(f"#C {key} = {value}{unit}\n")
+            f.write(f"#C energy_resolution = {res['energy_resolution']} meV\n")
+            f.write("#C incident_axis_unit = keV\n")
+            f.write("#C emission_axis_unit = keV\n")
+            f.write(
+                f"#C shape = {len(incident_axis)} x {len(emission_axis)} (incident x emission)\n"
+            )
+            f.write(f"#N {len(emission_axis) + 1}\n")
+            labels = ["Incident_keV"] + [f"E_{e:.4f}" for e in emission_axis]
+            f.write("#L  " + "  ".join(labels) + "\n")
+            data = np.column_stack([incident_axis, intensity_norm.T])
+            np.savetxt(f, data, fmt="%.18e")
+            f.write("\n")
