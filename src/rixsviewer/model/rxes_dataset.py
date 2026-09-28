@@ -3,9 +3,10 @@
 import logging
 
 import numpy as np
+import tifffile
 
 from .scan_dataset import TiffScanDatasetMixin
-from .utils import compute_frame_energy_axis
+from .utils import _preprocess_frames, apply_subpixel_shear_3d, compute_frame_energy_axis, fix_bad_pixels
 
 logger = logging.getLogger(__name__)
 
@@ -124,3 +125,101 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             "Scan %d: RXES accumulator (re)built: %d emission bins x %d incident columns",
             self.scan_index, n_bins, n_incident,
         )
+
+    def bin_data_wrap(self, metadata_source="SpecFile", progress_callback=None, **kwargs):
+        """(Re)process any newly-arrived frames into the 2D RXES map.
+
+        Parameters
+        ----------
+        metadata_source : {'SpecFile', 'PV', 'USER'}
+            Source of instrument parameters, matching
+            :meth:`~.scan_dataset.RixsScanTiffDataset.bin_data_wrap`.
+        progress_callback : callable, optional
+            Called with an integer percent-complete (0-100).
+        **kwargs
+            Additional/override keyword arguments (calibration params
+            when *metadata_source* is not ``'SpecFile'``).
+
+        Returns
+        -------
+        dict
+            Keys: ``kind`` (``'rxes_map'``), ``emission_axis``,
+            ``incident_axis``, ``intensity``, ``sample``, ``intensity_norm``.
+        """
+        if self.scan_info is None or self.scan_info["scandata"].empty:
+            raise ValueError(
+                f"Scan {self.scan_index} has no scandata rows; "
+                "cannot run processing on an empty dataset."
+            )
+
+        merged_kwargs = self._merge_binning_kwargs(metadata_source, kwargs)
+        key = tuple(merged_kwargs.get(k) for k in self._CALIBRATION_KEYS)
+        if key != self._map_key or self.emission_axis is None:
+            self._reset_accumulator(merged_kwargs)
+            self._map_key = key
+
+        Ylow = merged_kwargs["Ylow"]
+        Yhigh = merged_kwargs["Yhigh"]
+        RefL = merged_kwargs["RefL"]
+        Eb = merged_kwargs["Eb"]
+        Ra = merged_kwargs["Ra"]
+        DeltaD = merged_kwargs["DeltaD"]
+        TiltAngle = merged_kwargs.get("TiltAngle", 0)
+        TiltOrder = merged_kwargs.get("TiltOrder", 1)
+
+        n_incident = self.scan_info["incident_points"]
+        total_points = self.scan_info["incident_points"] * self.scan_info["emission_points"]
+        merixE_col = np.asarray(self.scan_info["scandata"]["merixE"], dtype=float)
+
+        to_process = list(self.unloaded_filenames)
+        self.unloaded_filenames = []
+        n_total_for_progress = max(total_points, 1)
+
+        for fname in to_process:
+            frame_position = self._n_processed
+            self._n_processed += 1
+            if frame_position >= total_points:
+                logger.warning(
+                    "Scan %d: frame position %d exceeds the expected grid size "
+                    "(%d); skipping %s",
+                    self.scan_index, frame_position, total_points, fname,
+                )
+                continue
+
+            j = frame_position % n_incident
+            merix_value = merixE_col[frame_position]
+
+            raw = tifffile.imread(fname).astype(np.float32)[np.newaxis]
+            raw = fix_bad_pixels(raw)
+            raw = apply_subpixel_shear_3d(raw, Ylow, Yhigh, TiltAngle, TiltOrder)
+            data_2d, xaxis, _, _ = _preprocess_frames(raw, Ylow, Yhigh, RefL, self._xsize)
+
+            local_axis = compute_frame_energy_axis(
+                np.array([merix_value]), xaxis, Eb, Ra, DeltaD
+            )[0]
+            sort_idx = np.argsort(local_axis)
+            local_axis = local_axis[sort_idx]
+            local_intensity = data_2d[0][sort_idx]
+
+            interp_vals = np.interp(
+                self.emission_axis, local_axis, local_intensity, left=np.nan, right=np.nan
+            )
+            valid = ~np.isnan(interp_vals)
+            self.intensity[valid, j] += interp_vals[valid]
+            self.sample[valid, j] += 1
+
+            if progress_callback is not None:
+                progress_callback(int(100 * self._n_processed / n_total_for_progress))
+
+        with np.errstate(invalid="ignore", divide="ignore"):
+            intensity_norm = self.intensity / np.clip(self.sample, 1, None)
+
+        self.bin_result = {
+            "kind": "rxes_map",
+            "emission_axis": self.emission_axis,
+            "incident_axis": self.incident_axis,
+            "intensity": self.intensity.copy(),
+            "sample": self.sample.copy(),
+            "intensity_norm": intensity_norm,
+        }
+        return self.bin_result
