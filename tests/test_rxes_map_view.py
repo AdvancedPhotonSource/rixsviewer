@@ -7,11 +7,14 @@ Switching between intensity / intensity_norm / sample is a pure replot of
 already-computed arrays -- it must not re-run bin_data_wrap.
 """
 import numpy as np
+import pytest
 
 
-def _synthetic_rxes_result(n_emission=3, n_incident=2):
-    emission_axis = np.linspace(11.190, 11.200, n_emission)
-    incident_axis = np.linspace(12.650, 12.660, n_incident)
+def _synthetic_rxes_result(
+    n_emission=3, n_incident=2, emission_range=(11.190, 11.200), incident_range=(12.650, 12.660)
+):
+    emission_axis = np.linspace(*emission_range, n_emission)
+    incident_axis = np.linspace(*incident_range, n_incident)
     intensity = np.arange(n_emission * n_incident, dtype=float).reshape(n_emission, n_incident)
     sample = np.ones((n_emission, n_incident))
     with np.errstate(invalid="ignore"):
@@ -58,6 +61,37 @@ def test_plot_rxes_map_does_not_show_a_title_on_the_2d_plot(gui):
     gui.view.plot_rxes_map(result, plot_target="intensity_norm")
 
     assert gui.view._rxes_plot.titleLabel.isVisible() is False
+
+
+def test_plot_rxes_map_resets_view_range_for_a_new_scans_axis_bounds(gui):
+    result1 = _synthetic_rxes_result(incident_range=(12.650, 12.660), emission_range=(11.190, 11.200))
+    gui.view.plot_rxes_map(result1, plot_target="intensity_norm")
+
+    # simulate the user having zoomed into a small sub-region of scan 1's map
+    gui.view._rxes_plot.getViewBox().setRange(xRange=(12.652, 12.654), yRange=(11.191, 11.193), padding=0)
+
+    result2 = _synthetic_rxes_result(incident_range=(13.000, 13.010), emission_range=(11.300, 11.310))
+    gui.view.plot_rxes_map(result2, plot_target="intensity_norm")
+
+    (xmin, xmax), (ymin, ymax) = gui.view._rxes_plot.getViewBox().viewRange()
+    assert (xmin, xmax) == pytest.approx((13.000, 13.010))
+    assert (ymin, ymax) == pytest.approx((11.300, 11.310))
+
+
+def test_plot_rxes_map_keeps_zoom_across_a_live_update_of_the_same_scan(gui):
+    result1 = _synthetic_rxes_result(incident_range=(12.650, 12.660), emission_range=(11.190, 11.200))
+    gui.view.plot_rxes_map(result1, plot_target="intensity_norm")
+
+    zoom_x, zoom_y = (12.652, 12.654), (11.191, 11.193)
+    gui.view._rxes_plot.getViewBox().setRange(xRange=zoom_x, yRange=zoom_y, padding=0)
+
+    # same scan polled again (unchanged axis bounds) -- e.g. more frames accumulated
+    result1_again = _synthetic_rxes_result(incident_range=(12.650, 12.660), emission_range=(11.190, 11.200))
+    gui.view.plot_rxes_map(result1_again, plot_target="intensity_norm")
+
+    (xmin, xmax), (ymin, ymax) = gui.view._rxes_plot.getViewBox().viewRange()
+    assert (xmin, xmax) == pytest.approx(zoom_x)
+    assert (ymin, ymax) == pytest.approx(zoom_y)
 
 
 def test_switching_rxes_plottarget_replots_the_cached_result_without_recomputing(gui, monkeypatch):

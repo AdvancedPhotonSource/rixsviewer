@@ -172,6 +172,7 @@ class RixsView:
         self._rxes_last_result = None
         self._rxes_last_plot_target = None
         self._rxes_last_incident_len = None
+        self._rxes_last_axis_bounds = None
         self._rxes_profile_visible = True
         self.set_rxes_profile_visible(self.ui.checkBox_show_rixsprofile.isChecked())
 
@@ -193,6 +194,7 @@ class RixsView:
         self._rxes_last_result = None
         self._rxes_last_plot_target = None
         self._rxes_last_incident_len = None
+        self._rxes_last_axis_bounds = None
         self._rxes_profile_index = None
 
     def set_rxes_profile_visible(self, visible):
@@ -358,6 +360,18 @@ class RixsView:
             incident_axis[-1] - incident_axis[0],
             emission_axis[-1] - emission_axis[0],
         )
+
+        axis_bounds = (incident_axis[0], incident_axis[-1], emission_axis[0], emission_axis[-1])
+        if axis_bounds != self._rxes_last_axis_bounds:
+            # A genuinely different scan (or a recalibration that changed the
+            # axis span) -- snap the view to fit it, rather than keep
+            # whatever zoom/pan was left over from the previous scan.
+            self._rxes_plot.getViewBox().setRange(
+                xRange=(incident_axis[0], incident_axis[-1]),
+                yRange=(emission_axis[0], emission_axis[-1]),
+                padding=0,
+            )
+            self._rxes_last_axis_bounds = axis_bounds
 
         if self._rxes_last_incident_len != len(incident_axis):
             self._rxes_profile_index = None  # different grid -- re-default to the median column
