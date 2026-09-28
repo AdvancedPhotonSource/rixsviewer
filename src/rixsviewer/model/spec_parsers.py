@@ -183,6 +183,12 @@ def parse_single_scan(scan, spec_fname, tif_folder):
         "metadata": _get_metadata(metadata_str),
         "scandata": _get_scandata(scan),
         "filenames": filenames,
+        "incident_start": header.get("incident_start"),
+        "incident_end": header.get("incident_end"),
+        "incident_points": header.get("incident_points"),
+        "emission_start": header.get("emission_start"),
+        "emission_end": header.get("emission_end"),
+        "emission_points": header.get("emission_points"),
     }
 
 
