@@ -24,64 +24,15 @@ from .. import __version__
 logger = logging.getLogger(__name__)
 
 
-class RixsScanTiffDataset:
+class TiffScanDatasetMixin:
+    """Shared scan-metadata/filename-tracking behavior for scan-dataset
+    classes that read TIFF files named ``<basename>_scan<N>_point<k>.tif``.
+
+    Host classes must set, in their own ``__init__``: ``scan_index``,
+    ``spec_fname``, ``tif_folder``, ``scan_info`` (``None`` initially),
+    ``unloaded_filenames`` (``[]`` initially), ``_saved`` (``False``
+    initially), ``_model`` (``None`` initially).
     """
-    Container for scan metadata and lazily-loaded TIFF image data.
-
-    Holds the parsed scan information and provides methods for loading
-    the associated TIFF stack, displaying it, and computing the binned
-    RIXS spectrum.
-
-    Parameters
-    ----------
-    row_position : int
-        Zero-based row index of this scan in the parent
-        :class:`RixsSpecTable` model.
-    spec_fname : str
-        Path to the SPEC data file.
-    tif_folder : str
-        Directory containing the TIFF image files.
-    """
-
-    def __init__(self, row_position, spec_fname, tif_folder, scan_index):
-        """
-        Initialise dataset with file paths; no images are loaded yet.
-
-        Parameters
-        ----------
-        row_position : int
-            Row index in the parent table model.
-        spec_fname : str
-            Path to the SPEC data file.
-        tif_folder : str
-            Directory containing the TIFF image files.
-        scan_index : int
-            Scan index in the SPEC file.
-        """
-        self.row_position = row_position
-        self.scan_index = scan_index
-        self.spec_fname = spec_fname
-        self.tif_folder = tif_folder
-        self._model = None
-        self._buffer = None
-        self._n_filled = 0
-        self._data = None
-        self.unloaded_filenames = []
-        self.scan_info = None
-        self.bin_result = None
-        self.bin_kwargs = None
-        self._saved = False
-        self.file_save_keys = {
-            "energy_axis": "Energy",
-            "intensity_norm": "Intensity_norm",
-            "intensity_norm_err": "Intensity_norm_err",
-            "intensity_raw": "Intensity_raw",
-            "sample": "A",
-            "i2": "i2",
-            "i0": "i0",
-            "mmepin1": "mmepin1",
-            "mmepin2": "mmepin2",
-        }
 
     def update_scan_info(self, scan_pack):
         """
@@ -89,7 +40,7 @@ class RixsScanTiffDataset:
 
         If the TIFF point count has changed since the last update,
         :attr:`unloaded_filenames` is populated with the filenames not
-        yet present in the cached data so that :meth:`read_tiff_data` can
+        yet present in the cached data so that a subsequent read can
         load only the new frames.
 
         Parameters
@@ -201,6 +152,81 @@ class RixsScanTiffDataset:
             return apply_subpixel_shear_3d(
                 data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order
             )
+
+    def get_table_model(self):
+        """
+        Return (or lazily create) the :class:`RixsScanImageTable` for this scan.
+
+        Returns
+        -------
+        RixsScanImageTable
+            Qt table model listing the TIFF filenames for this scan.
+        """
+        if self._model is None:
+            self._model = RixsScanImageTable(self.scan_info["filenames"])
+        else:
+            self._model.update_fnames(self.scan_info["filenames"])
+        return self._model
+
+
+class RixsScanTiffDataset(TiffScanDatasetMixin):
+    """
+    Container for scan metadata and lazily-loaded TIFF image data.
+
+    Holds the parsed scan information and provides methods for loading
+    the associated TIFF stack, displaying it, and computing the binned
+    RIXS spectrum.
+
+    Parameters
+    ----------
+    row_position : int
+        Zero-based row index of this scan in the parent
+        :class:`RixsSpecTable` model.
+    spec_fname : str
+        Path to the SPEC data file.
+    tif_folder : str
+        Directory containing the TIFF image files.
+    """
+
+    def __init__(self, row_position, spec_fname, tif_folder, scan_index):
+        """
+        Initialise dataset with file paths; no images are loaded yet.
+
+        Parameters
+        ----------
+        row_position : int
+            Row index in the parent table model.
+        spec_fname : str
+            Path to the SPEC data file.
+        tif_folder : str
+            Directory containing the TIFF image files.
+        scan_index : int
+            Scan index in the SPEC file.
+        """
+        self.row_position = row_position
+        self.scan_index = scan_index
+        self.spec_fname = spec_fname
+        self.tif_folder = tif_folder
+        self._model = None
+        self._buffer = None
+        self._n_filled = 0
+        self._data = None
+        self.unloaded_filenames = []
+        self.scan_info = None
+        self.bin_result = None
+        self.bin_kwargs = None
+        self._saved = False
+        self.file_save_keys = {
+            "energy_axis": "Energy",
+            "intensity_norm": "Intensity_norm",
+            "intensity_norm_err": "Intensity_norm_err",
+            "intensity_raw": "Intensity_raw",
+            "sample": "A",
+            "i2": "i2",
+            "i0": "i0",
+            "mmepin1": "mmepin1",
+            "mmepin2": "mmepin2",
+        }
 
     def get_data_for_display(
         self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs
@@ -533,21 +559,6 @@ class RixsScanTiffDataset:
 
     def __len__(self):
         return len(self.fnames)
-
-    def get_table_model(self):
-        """
-        Return (or lazily create) the :class:`RixsScanImageTable` for this scan.
-
-        Returns
-        -------
-        RixsScanImageTable
-            Qt table model listing the TIFF filenames for this scan.
-        """
-        if self._model is None:
-            self._model = RixsScanImageTable(self.scan_info["filenames"])
-        else:
-            self._model.update_fnames(self.scan_info["filenames"])
-        return self._model
 
     def read_tiff_data(self):
         """
