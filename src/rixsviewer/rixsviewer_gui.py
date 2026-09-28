@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
-from PySide6.QtCore import QTimer, QRunnable, Slot, QThreadPool, QObject, Signal
+from PySide6.QtCore import QByteArray, QTimer, QRunnable, Slot, QThreadPool, QObject, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -20,7 +20,14 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from .model import RixsBinningModel, RixsSpecTable, load_settings, save_settings
+from .model import (
+    RixsBinningModel,
+    RixsSpecTable,
+    load_settings,
+    save_settings,
+    save_splitter_state,
+    save_window_geometry,
+)
 from .view import RixsView
 from .view.ui import Ui_MainWindow
 from . import __version__
@@ -69,6 +76,9 @@ class RixsViewerGUI(QMainWindow):
     and coordinates between the model and view.
     """
 
+    # Top-level layout splitters whose sizes are persisted across restarts.
+    _SPLITTER_NAMES = ("splitter", "splitter_2", "splitter_3", "splitter_4", "splitter_rxesmap")
+
     def __init__(self, spec_filename=None, tiff_folder=None, heartbeat_s=1.0, force_reload_s=10.0):
         """
         Initialize the RixsViewerGUI.
@@ -86,6 +96,9 @@ class RixsViewerGUI(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.setWindowTitle(f"RixsViewer v{__version__}")
+        saved_settings = load_settings()
+        self._restore_splitter_state(saved_settings)
+        self._restore_window_geometry(saved_settings)
 
         self.scan_model = None
         self.current_rixs_dset = None
@@ -955,9 +968,38 @@ class RixsViewerGUI(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.timer.stop()
+            self._save_splitter_state()
+            self._save_window_geometry()
             super().closeEvent(event)
         else:
             event.ignore()
+
+    def _save_splitter_state(self):
+        """Persist the layout splitters' sizes for restore on next launch."""
+        encoded = {
+            name: bytes(getattr(self.ui, name).saveState().toBase64()).decode("ascii")
+            for name in self._SPLITTER_NAMES
+        }
+        save_splitter_state(encoded)
+
+    def _restore_splitter_state(self, saved):
+        """Apply previously-persisted splitter sizes, if any."""
+        splitter_state = saved.get("splitter_state") or {}
+        for name in self._SPLITTER_NAMES:
+            encoded = splitter_state.get(name)
+            if encoded:
+                getattr(self.ui, name).restoreState(QByteArray.fromBase64(encoded.encode("ascii")))
+
+    def _save_window_geometry(self):
+        """Persist the main window's size/position for restore on next launch."""
+        encoded = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        save_window_geometry(encoded)
+
+    def _restore_window_geometry(self, saved):
+        """Apply the previously-persisted window geometry, if any."""
+        encoded = saved.get("window_geometry")
+        if encoded:
+            self.restoreGeometry(QByteArray.fromBase64(encoded.encode("ascii")))
 
 
 def main():

@@ -123,9 +123,17 @@ class FakeBeamline:
 
 
 @pytest.fixture()
-def gui(qapp, tmp_path):
+def gui(qapp, tmp_path, monkeypatch):
+    from rixsviewer.model import user_settings
     from rixsviewer.model.binning_model import RixsBinningModel
     from rixsviewer.rixsviewer_gui import RixsViewerGUI
+
+    # RixsViewerGUI unconditionally reads/writes $HOME/.rixsviewer/settings.json
+    # (splitter sizes, last-used spec file/TIFF folder) -- redirect it to a
+    # throwaway path so tests never clobber the real user's settings.
+    settings_dir = tmp_path / ".rixsviewer"
+    monkeypatch.setattr(user_settings, "SETTINGS_DIR", settings_dir)
+    monkeypatch.setattr(user_settings, "SETTINGS_FILE", settings_dir / "settings.json")
 
     beamline = FakeBeamline(str(tmp_path))
 
