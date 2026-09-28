@@ -9,14 +9,76 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+_POINT_INDEX_PATTERN = re.compile(r"_point(\d+)\.tif$")
+
+
+def tiff_point_index(path):
+    """
+    Extract the numeric point index from a TIFF filename for natural sorting.
+
+    Filenames are zero-padded to 3 digits only (``point001``..``point999``,
+    then unpadded from ``point1000`` on), so a plain lexicographic sort
+    silently reorders frames once a scan exceeds ~100 points (e.g.
+    ``..._point182.tif`` sorts between ``_point1819.tif`` and
+    ``_point1820.tif``). Use as the ``key=`` for :func:`sorted`.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+
+    Returns
+    -------
+    int
+        The point index, or ``-1`` if the filename doesn't match the
+        expected pattern (sorts unmatched names first).
+    """
+    m = _POINT_INDEX_PATTERN.search(str(path))
+    return int(m.group(1)) if m else -1
+
+
+_ENERGY_SCAN_PATTERN = re.compile(
+    r"""^
+        \s*(\d+)\s+          # scan number
+        (\w*scan)\s+         # scan macro name (e.g. ascan, dscan)
+        merixE\s+            # motor name must be exactly 'merixE'
+        ([+-]?\d*\.?\d+)\s+  # start
+        ([+-]?\d*\.?\d+)\s+  # end
+        (\d+)\s+             # steps
+        ([+-]?\d*\.?\d+)\s*  # time
+    $""",
+    re.VERBOSE,
+)
+
+_RXES_SCAN_PATTERN = re.compile(
+    r"""^
+        \s*(\d+)\s+          # scan number
+        rxesamesh\s+         # nested 2D mesh macro
+        merixE\s+            # analyzer/emission energy motor (outer loop)
+        ([+-]?\d*\.?\d+)\s+  # emission start
+        ([+-]?\d*\.?\d+)\s+  # emission end
+        (\d+)\s+             # emission intervals
+        kohzuE\s+            # incident energy motor (inner loop)
+        ([+-]?\d*\.?\d+)\s+  # incident start
+        ([+-]?\d*\.?\d+)\s+  # incident end
+        (\d+)\s+             # incident intervals
+        ([+-]?\d*\.?\d+)\s*  # time
+    $""",
+    re.VERBOSE,
+)
+
 
 def get_scan_header(scan, tol=1e-6):
     """
-    Classify a silx SpecFile scan as ``'EnergyScan'``, ``'SnapshotScan'``, or ``'Unknown'``.
+    Classify a silx SpecFile scan's ``#S`` header line.
 
-    Parses the ``#S`` header line, which must have motor name ``merixE``.
-    A scan is a *SnapshotScan* when start and end energies are equal within
-    *tol*; otherwise it is an *EnergyScan*.
+    Recognises three shapes:
+
+    - ``rxesamesh merixE ... kohzuE ...`` -> ``'RXESScan'``, a nested 2D
+      mesh over analyzer/emission (``merixE``, outer loop) and incident
+      (``kohzuE``, inner loop) energy.
+    - ``<word>scan merixE ...`` -> ``'EnergyScan'``, or ``'SnapshotScan'``
+      when start and end are equal within *tol*.
+    - anything else -> ``'Unknown'``.
 
     Parameters
     ----------
@@ -28,21 +90,35 @@ def get_scan_header(scan, tol=1e-6):
     -------
     dict
         Keys: ``scan_type``, ``steps``, ``exposure_time``, ``start``, ``end``.
+        ``RXESScan`` additionally has ``incident_start``, ``incident_end``,
+        ``incident_points``, ``emission_start``, ``emission_end``,
+        ``emission_points``; ``steps`` is the total point count
+        (``incident_points * emission_points``).
         All values are zero/``'Unknown'`` when the header line cannot be parsed.
     """
-    pattern = re.compile(
-        r"""^
-            \s*(\d+)\s+          # scan number
-            (\w*scan)\s+         # scan macro name (e.g. ascan, dscan)
-            merixE\s+            # motor name must be exactly 'merixE'
-            ([+-]?\d*\.?\d+)\s+  # start
-            ([+-]?\d*\.?\d+)\s+  # end
-            (\d+)\s+             # steps
-            ([+-]?\d*\.?\d+)\s*  # time
-        $""",
-        re.VERBOSE,
-    )
-    m = pattern.search(scan.scan_header_dict["S"])
+    header_line = scan.scan_header_dict["S"]
+
+    m = _RXES_SCAN_PATTERN.search(header_line)
+    if m:
+        emission_start, emission_end = float(m.group(2)), float(m.group(3))
+        emission_points = int(m.group(4)) + 1
+        incident_start, incident_end = float(m.group(5)), float(m.group(6))
+        incident_points = int(m.group(7)) + 1
+        return {
+            "scan_type": "RXESScan",
+            "steps": incident_points * emission_points,
+            "exposure_time": float(m.group(8)),
+            "start": incident_start,
+            "end": incident_end,
+            "incident_start": incident_start,
+            "incident_end": incident_end,
+            "incident_points": incident_points,
+            "emission_start": emission_start,
+            "emission_end": emission_end,
+            "emission_points": emission_points,
+        }
+
+    m = _ENERGY_SCAN_PATTERN.search(header_line)
     if not m:
         return {
             "scan_type": "Unknown",
@@ -89,7 +165,8 @@ def parse_single_scan(scan, spec_fname, tif_folder):
 
     basename = Path(spec_fname).name
     filenames = sorted(
-        str(p) for p in Path(tif_folder).glob(f"{basename}_scan{scan.number}_point*.tif")
+        (str(p) for p in Path(tif_folder).glob(f"{basename}_scan{scan.number}_point*.tif")),
+        key=tiff_point_index,
     )
 
     # metadata key changed from "B" to "XB"; check both for backward compatibility

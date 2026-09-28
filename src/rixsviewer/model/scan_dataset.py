@@ -10,7 +10,7 @@ import numpy as np
 import tifffile
 from PySide6.QtCore import QAbstractTableModel, Qt
 
-from .spec_parsers import parse_single_scan
+from .spec_parsers import parse_single_scan, tiff_point_index
 from .utils import (
     bin_rixs_data,
     percentile_clip,
@@ -132,7 +132,8 @@ class RixsScanTiffDataset:
             return False
         basename = Path(self.spec_fname).name
         filenames = sorted(
-            str(p) for p in Path(self.tif_folder).glob(f"{basename}_scan{self.scan_index}_point*.tif")
+            (str(p) for p in Path(self.tif_folder).glob(f"{basename}_scan{self.scan_index}_point*.tif")),
+            key=tiff_point_index,
         )
         new_files = [fn for fn in filenames if fn not in self.scan_info["filenames"]]
         if not new_files:

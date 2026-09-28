@@ -18,8 +18,8 @@ class RixsSpecTable(QAbstractTableModel):
     """
     Qt table model that exposes SPEC scan metadata to a QTableView.
 
-    Each row corresponds to one RIXS scan (``EnergyScan`` or
-    ``SnapshotScan``) found in the SPEC file.  The model can be refreshed
+    Each row corresponds to one RIXS scan (``EnergyScan``,
+    ``SnapshotScan``, or ``RXESScan``) found in the SPEC file.  The model can be refreshed
     in-place by calling :meth:`process_spec_file` again; only new or
     updated scans are re-processed.
 
@@ -143,7 +143,7 @@ class RixsSpecTable(QAbstractTableModel):
             if scan_number < self.last_scan_index:
                 continue
 
-            if get_scan_header(scan_pack)["scan_type"] in ["EnergyScan", "SnapshotScan"]:
+            if get_scan_header(scan_pack)["scan_type"] in ["EnergyScan", "SnapshotScan", "RXESScan"]:
                 if scan_number in self.record:
                     scan_dset = self.record[scan_number]
                     prev_tiff = scan_dset.scan_info["tiff_points"] if scan_dset.scan_info else -1
