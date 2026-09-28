@@ -13,7 +13,8 @@ Follows MVC pattern:
 
 Key components:
 - `RixsBinningModel`: Parameter management with EPICS PV integration
-- `RixsScanTiffDataset`: Lazy TIFF loading and spectrum binning
+- `BufferedTiffScanDatasetMixin`: Shared lazy TIFF loading / raw-stack buffering behavior
+- `RixsEnergyScanDataset`, `RixsSnapshotScanDataset`: Concrete scan datasets built on the mixin above, plus spectrum binning
 - `RixsSpecTable`: Incremental SPEC file processing
 - `RixsView`: PyQtGraph visualization
 - `RixsViewerGUI`: Main application window

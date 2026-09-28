@@ -1,9 +1,11 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
+import numpy as np
+
 from rixsviewer.model.scan_dataset import RixsEnergyScanDataset, RixsSnapshotScanDataset
 from rixsviewer.model.spec_table import RixsSpecTable
 
-from conftest import FakeBeamline
+from conftest import FakeBeamline, POINTS
 
 
 class TestSpecTableDispatchForSnapshotScan:
@@ -34,6 +36,32 @@ class TestSupportsCalibration:
         assert dset.supports_calibration() is False
         assert not hasattr(dset, "fit_pixel_size_wrap")
         assert not hasattr(dset, "linesearch_to_optimize_parameter")
+
+
+class TestEnergyScanBinning:
+    def test_bin_data_wrap_gives_every_frame_a_finite_energy_axis(self, tmp_path):
+        # Regression test for a code-review finding: the fixture's E0 must
+        # satisfy merixE >= Eb (the Rowland near-backscattering formula's
+        # physical precondition), or a frame anchored below Eb gets an
+        # arcsin domain error -> a silently all-NaN local energy axis for
+        # that frame instead of a loud failure. Check each frame's own
+        # pre-aggregation axis directly, rather than aggregate bin
+        # coverage -- adjacent frames' narrow Rowland windows are not
+        # guaranteed to overlap in the same bin at all (they're often
+        # disjoint), so a per-bin coverage count isn't the right signal
+        # for "did every frame compute cleanly".
+        beamline = FakeBeamline(str(tmp_path))
+        beamline.run_scan(1)
+        table = RixsSpecTable(beamline.spec, beamline.workdir, save_filename=None)
+        dset = table.record[1]
+
+        result = dset.bin_data_wrap(metadata_source="SpecFile")
+
+        raw_lines = result["rawdata_lines"]
+        assert len(raw_lines) == POINTS
+        for energy_axis, _intensity in raw_lines:
+            assert np.isfinite(energy_axis).all()
+        assert np.isfinite(result["intensity_norm"]).all()
 
 
 class TestSnapshotScanBinning:

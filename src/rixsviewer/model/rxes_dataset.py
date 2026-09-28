@@ -18,7 +18,9 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
     """Incremental 2D (incident energy x emission energy) map builder for
     an ``RXESScan``.
 
-    Unlike :class:`~.scan_dataset.RixsScanTiffDataset`, this class never
+    Unlike :class:`~.scan_dataset.BufferedTiffScanDatasetMixin`
+    (used by :class:`~.scan_dataset.RixsEnergyScanDataset` and
+    :class:`~.scan_dataset.RixsSnapshotScanDataset`), this class never
     keeps a resident raw TIFF stack: each newly-arrived frame is reduced
     (ROI-sum + Rowland pixel-to-energy mapping anchored on that frame's
     own ``merixE`` value) and accumulated into a small persistent 2D map,
@@ -77,7 +79,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
 
     def _merge_binning_kwargs(self, metadata_source, kwargs):
         """Merge caller kwargs with SpecFile metadata, matching
-        :meth:`~.scan_dataset.RixsScanTiffDataset._prepare_inputs`'s
+        :meth:`~.scan_dataset.BufferedTiffScanDatasetMixin._prepare_inputs`'s
         merge order and force-override behavior."""
         assert metadata_source in ("SpecFile", "PV", "USER"), (
             "metadata_source not supported."
@@ -148,7 +150,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         ----------
         metadata_source : {'SpecFile', 'PV', 'USER'}
             Source of instrument parameters, matching
-            :meth:`~.scan_dataset.RixsScanTiffDataset.bin_data_wrap`.
+            :meth:`~.scan_dataset.BufferedTiffScanDatasetMixin.bin_data_wrap`.
         progress_callback : callable, optional
             Called with an integer percent-complete (0-100).
         **kwargs
@@ -274,7 +276,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         """
         Load one raw detector frame from disk for browsing.
 
-        Unlike :meth:`~.scan_dataset.RixsScanTiffDataset.get_data_for_display`,
+        Unlike :meth:`~.scan_dataset.BufferedTiffScanDatasetMixin.get_data_for_display`,
         this always reads directly from disk -- no raw stack is ever
         retained for RXES scans.
         """

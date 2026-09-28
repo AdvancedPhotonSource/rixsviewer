@@ -13,7 +13,7 @@ import tifffile  # noqa: E402
 # 256x256 keeps every coordinate in the global BAD_PIXELS list in-bounds
 # (fix_bad_pixels crashes on out-of-range bad pixels) while staying tiny.
 H = W = 256
-E0, E1 = 11.180, 11.200
+E0, E1 = 11.190, 11.200
 POINTS = 3
 
 RXES_EMISSION_START, RXES_EMISSION_END = 11.190, 11.200  # merixE (analyzer/emission)
@@ -76,7 +76,7 @@ class FakeBeamline:
         for pt in range(POINTS):
             self.add_point(scan_no, pt)
 
-    def run_snapshot_scan(self, scan_no, energy=E1):
+    def run_snapshot_scan(self, scan_no, energy=E0):
         self.start_scan(scan_no, e0=energy, e1=energy)
         for pt in range(POINTS):
             self.add_point(scan_no, pt)
