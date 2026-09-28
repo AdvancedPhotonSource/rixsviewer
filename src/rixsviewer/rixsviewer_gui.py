@@ -79,7 +79,9 @@ class RixsViewerGUI(QMainWindow):
     # Top-level layout splitters whose sizes are persisted across restarts.
     _SPLITTER_NAMES = ("splitter", "splitter_2", "splitter_3", "splitter_4", "splitter_rxesmap")
 
-    def __init__(self, spec_filename=None, tiff_folder=None, heartbeat_s=1.0, force_reload_s=10.0):
+    def __init__(
+        self, spec_filename=None, tiff_folder=None, heartbeat_s=1.0, force_reload_s=10.0, enable_tooltips=True
+    ):
         """
         Initialize the RixsViewerGUI.
 
@@ -89,6 +91,8 @@ class RixsViewerGUI(QMainWindow):
             Path to the initial SPEC file to load.
         tiff_folder : str, optional
             Path to the folder containing TIFF images.
+        enable_tooltips : bool, optional
+            Whether to set up widget tooltips (default: True).
         """
         super().__init__()
 
@@ -156,7 +160,8 @@ class RixsViewerGUI(QMainWindow):
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
         self.setup_scan_table()
-        self._setup_tooltips()
+        if enable_tooltips:
+            self._setup_tooltips()
 
     def _setup_tooltips(self):
         ui = self.ui
@@ -1033,6 +1038,11 @@ def main():
              " to bypass NFS attribute caching (default: 10.0)",
     )
     parser.add_argument(
+        "--no-tooltip",
+        action="store_true",
+        help="Disable widget tooltips",
+    )
+    parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
 
@@ -1080,6 +1090,7 @@ def main():
         tiff_folder=args.tiff_folder,
         heartbeat_s=args.heartbeat,
         force_reload_s=args.force_reload,
+        enable_tooltips=not args.no_tooltip,
     )
     gui.show()
 
