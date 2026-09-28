@@ -175,6 +175,14 @@ class RixsViewerGUI(QMainWindow):
             "Poll the SPEC file every second for new scans and process them automatically.\n"
             "Disables manual calibration."
         )
+        ui.tableView_scan.setToolTip(
+            "All scans found in the SPEC file. Select a row to load it;\n"
+            "in auto-update mode the newest scan is always shown."
+        )
+        # Single Scan panel
+        ui.tableView_image.setToolTip(
+            "Per-point metadata (energy, monitors, frame index) for the scan selected above."
+        )
         # 2D image display
         ui.doubleSpinBox_percentile_cutoff.setToolTip(
             "Percentile used to clip the colour scale (50–100).\n"
@@ -187,6 +195,10 @@ class RixsViewerGUI(QMainWindow):
             "  SpecFile — read from the scan header\n"
             "  PV       — live EPICS readback\n"
             "  USER     — manual entry in the parameter tree"
+        )
+        ui.widget_ptree.setToolTip(
+            "Rowland-circle binning parameters for the current scan.\n"
+            "Editable only when the metadata source above is set to USER."
         )
         ui.pushButton_3.setToolTip("Load binning parameters from a saved file")
         ui.pushButton_4.setToolTip("Save current binning parameters to a file")
@@ -204,6 +216,10 @@ class RixsViewerGUI(QMainWindow):
         )
         ui.pushButton_process.setToolTip("Run the Rowland-circle binning pipeline on the current scan")
         ui.progressBar_process.setToolTip("Binning progress (%)")
+        ui.label_energy_interval.setToolTip(
+            "Computed emission-energy bin width from the last binning run\n"
+            "(native pixel spacing, unless overridden by Force NEnergyBins)."
+        )
         # RXES Map tab
         ui.comboBox_rxes_plottarget.setToolTip(
             "Array to display for the current RXES map:\n"
@@ -223,7 +239,16 @@ class RixsViewerGUI(QMainWindow):
         ui.spinBox_force_rxes_binning_points.setToolTip(
             "Number of emission bins for the RXES map when the override checkbox is enabled"
         )
+        ui.checkBox_show_crosshair.setToolTip(
+            "Show a dashed crosshair on the RXES map marking the last-clicked point,\n"
+            "snapped to the nearest actually-scanned (incident, emission) grid point.\n"
+            "Clicking also shows that frame in 2D Scattering."
+        )
         ui.pushButton_save.setToolTip("Export the binned spectrum to a SPEC-format file")
+        ui.label_rxes_energy_interval.setToolTip(
+            "Computed emission-energy bin width for this map\n"
+            "(native pixel spacing, unless overridden by Force NEnergyBins)."
+        )
         # Calibration tab
         ui.comboBox_fit_target.setToolTip(
             "Parameter to optimise:\n"
@@ -241,6 +266,20 @@ class RixsViewerGUI(QMainWindow):
             "by minimising the elastic peak FWHM"
         )
         ui.progressBar_calibrate.setToolTip("Calibration progress (%)")
+        # Tab headers
+        ui.tabWidget.setTabToolTip(
+            ui.tabWidget.indexOf(ui.tab_2), "1D energy-binning workspace for EnergyScan/SnapshotScan data."
+        )
+        ui.tabWidget.setTabToolTip(
+            ui.tabWidget.indexOf(ui.tab_rxesmap),
+            "2D incident x emission energy map for RXES scans.\n"
+            "Disabled for scan types that don't produce a 2D map.",
+        )
+        ui.tabWidget.setTabToolTip(
+            ui.tabWidget.indexOf(ui.tab),
+            "Pixel-size/tilt-angle calibration via line search.\n"
+            "Disabled for scans that don't support calibration.",
+        )
 
     def start_stop_timer(self):
         """Auto-update the scan table with new scans from the spec file"""
