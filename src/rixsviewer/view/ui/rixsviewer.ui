@@ -797,6 +797,42 @@
               </widget>
              </item>
              <item>
+              <widget class="Line" name="line_rxesmap">
+               <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QCheckBox" name="checkBox_overwrite_rxes_binning_points">
+               <property name="text">
+                <string>Force NEnergyBins</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QSpinBox" name="spinBox_force_rxes_binning_points">
+               <property name="enabled">
+                <bool>true</bool>
+               </property>
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimum">
+                <number>2</number>
+               </property>
+               <property name="maximum">
+                <number>999999</number>
+               </property>
+              </widget>
+             </item>
+             <item>
               <spacer name="horizontalSpacer_rxesmap">
                <property name="orientation">
                 <enum>Qt::Orientation::Horizontal</enum>
@@ -1050,6 +1086,22 @@
    <sender>checkBox_overwrite_binning_points</sender>
    <signal>toggled(bool)</signal>
    <receiver>spinBox_force_binning_points</receiver>
+   <slot>setEnabled(bool)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>546</x>
+     <y>807</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>700</x>
+     <y>815</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>checkBox_overwrite_rxes_binning_points</sender>
+   <signal>toggled(bool)</signal>
+   <receiver>spinBox_force_rxes_binning_points</receiver>
    <slot>setEnabled(bool)</slot>
    <hints>
     <hint type="sourcelabel">

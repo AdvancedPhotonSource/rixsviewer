@@ -81,3 +81,68 @@ def test_calibrate_parameters_consults_supports_calibration_predicate(gui, monke
 
     assert calls == [True]  # the gate actually consulted the predicate
     assert warned == [True]  # ...and correctly denied calibration for RXES
+
+
+# ---------------------------------------------------------------------------
+# RXES Map tab's own "Force NEnergyBins" pair
+# ---------------------------------------------------------------------------
+
+
+def test_rxes_force_nenergybins_is_checked_by_default(gui):
+    assert gui.ui.checkBox_overwrite_rxes_binning_points.isChecked() is True
+    assert gui.ui.spinBox_force_rxes_binning_points.isEnabled() is True
+
+
+def test_toggling_rxes_force_checkbox_toggles_spinbox_enabled(gui):
+    gui.ui.checkBox_overwrite_rxes_binning_points.setChecked(False)
+    assert gui.ui.spinBox_force_rxes_binning_points.isEnabled() is False
+
+    gui.ui.checkBox_overwrite_rxes_binning_points.setChecked(True)
+    assert gui.ui.spinBox_force_rxes_binning_points.isEnabled() is True
+
+
+def test_selecting_a_new_rxes_scan_sets_spinbox_to_its_emission_points(gui):
+    gui.beamline.run_rxes_scan(1, n_emission=7, n_incident=3)
+    gui.beamline.run_scan(2)
+    gui.update_spec_record()
+
+    gui.ui.tableView_scan.selectRow(0)
+
+    assert gui.ui.spinBox_force_rxes_binning_points.value() == 7
+
+
+def test_reselecting_the_same_rxes_scan_does_not_reset_a_manually_changed_spinbox(gui):
+    gui.beamline.run_rxes_scan(1, n_emission=7, n_incident=3)
+    gui.update_spec_record()
+    gui.ui.tableView_scan.selectRow(0)
+
+    gui.ui.spinBox_force_rxes_binning_points.setValue(500)
+    gui.ui.tableView_scan.selectRow(0)  # re-select the same, already-current row
+
+    assert gui.ui.spinBox_force_rxes_binning_points.value() == 500
+
+
+def test_resolve_nenergybins_override_uses_rxes_controls_for_an_rxes_scan(gui):
+    gui.beamline.run_rxes_scan(1, n_emission=7, n_incident=3)
+    gui.update_spec_record()
+    gui.ui.tableView_scan.selectRow(0)
+    gui.ui.checkBox_overwrite_rxes_binning_points.setChecked(True)
+    gui.ui.spinBox_force_rxes_binning_points.setValue(42)
+
+    assert gui._resolve_nenergybins_override() == {"NEnergyBins": 42, "force_NEnergyBins": True}
+
+    gui.ui.checkBox_overwrite_rxes_binning_points.setChecked(False)
+    assert gui._resolve_nenergybins_override() == {"force_NEnergyBins": False}
+
+
+def test_resolve_nenergybins_override_uses_process_tab_controls_for_a_plain_scan(gui):
+    gui.beamline.run_scan(1)
+    gui.update_spec_record()
+    gui.ui.tableView_scan.selectRow(0)
+
+    assert gui.ui.checkBox_overwrite_binning_points.isChecked() is False
+    assert gui._resolve_nenergybins_override() == {"force_NEnergyBins": False}
+
+    gui.ui.checkBox_overwrite_binning_points.setChecked(True)
+    gui.ui.spinBox_force_binning_points.setValue(99)
+    assert gui._resolve_nenergybins_override() == {"NEnergyBins": 99, "force_NEnergyBins": True}

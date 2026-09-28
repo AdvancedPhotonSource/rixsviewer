@@ -190,6 +190,13 @@ class RixsViewerGUI(QMainWindow):
             "Show a 1D emission-energy profile at a fixed incident energy.\n"
             "Click anywhere on the map to pick the incident energy; defaults to the median."
         )
+        ui.checkBox_overwrite_rxes_binning_points.setToolTip(
+            "Override the automatic emission-bin spacing for the RXES map with a fixed bin count.\n"
+            "Defaults to this scan's own merixE point count; unchecking falls back to native pixel spacing."
+        )
+        ui.spinBox_force_rxes_binning_points.setToolTip(
+            "Number of emission bins for the RXES map when the override checkbox is enabled"
+        )
         ui.pushButton_save.setToolTip("Export the binned spectrum to a SPEC-format file")
         # Calibration tab
         ui.comboBox_fit_target.setToolTip(
@@ -553,6 +560,26 @@ class RixsViewerGUI(QMainWindow):
 
         self.statusBar().showMessage(f"Results saved to: {fname}", 5000)
 
+    def _resolve_nenergybins_override(self):
+        """Return the ``{NEnergyBins, force_NEnergyBins}`` binning kwargs
+        from whichever "Force NEnergyBins" checkbox/spinbox pair applies to
+        the current scan -- the RXES Map tab's pair for scans that produce a
+        2D map, the Process tab's pair for everything else. The two scan
+        kinds need very different default bin counts (a scan's own merixE
+        point count vs. an arbitrary 1D default), so they get separate
+        controls rather than sharing one.
+        """
+        if self.current_rixs_dset.supports_rxes_map():
+            checkbox = self.ui.checkBox_overwrite_rxes_binning_points
+            spinbox = self.ui.spinBox_force_rxes_binning_points
+        else:
+            checkbox = self.ui.checkBox_overwrite_binning_points
+            spinbox = self.ui.spinBox_force_binning_points
+
+        if checkbox.isChecked():
+            return {"NEnergyBins": spinbox.value(), "force_NEnergyBins": True}
+        return {"force_NEnergyBins": False}
+
     def process_binning(self):
         """
         Process the binning of the current dataset and display the result.
@@ -572,12 +599,7 @@ class RixsViewerGUI(QMainWindow):
         plot_target = self.ui.comboBox_plottarget.currentText()
 
         binning_kwargs = self._get_binning_kwargs(meta_source)
-
-        if self.ui.checkBox_overwrite_binning_points.isChecked():
-            binning_kwargs["NEnergyBins"] = self.ui.spinBox_force_binning_points.value()
-            binning_kwargs["force_NEnergyBins"] = True
-        else:
-            binning_kwargs["force_NEnergyBins"] = False
+        binning_kwargs.update(self._resolve_nenergybins_override())
 
         if len(self.current_rixs_dset.unloaded_filenames) == 0:
             if self.ui.checkBox_autoupdate.isChecked():
@@ -796,7 +818,13 @@ class RixsViewerGUI(QMainWindow):
         # would always see some other (arbitrary) tab as current.
         was_current = self.ui.tabWidget.currentWidget() is self.ui.tab_rxesmap
         self.ui.tabWidget.setTabEnabled(idx, is_rxes)
-        if not is_rxes:
+        if is_rxes:
+            # Default the RXES-specific bin-count override to this scan's
+            # own merixE point count -- a sensible starting point distinct
+            # per scan, without clobbering a value the user already tweaked
+            # for this same scan (this only runs on an actual scan switch).
+            self.ui.spinBox_force_rxes_binning_points.setValue(dset.scan_info["emission_points"])
+        else:
             self.view.clear_rxes_map()
             if was_current:
                 self.ui.tabWidget.setCurrentWidget(self.ui.tab_2)

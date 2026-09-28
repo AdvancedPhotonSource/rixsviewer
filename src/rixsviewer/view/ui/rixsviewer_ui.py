@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
- # Copyright © UChicago Argonne LLC # See LICENSE file for details
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 
 ################################################################################
 ## Form generated from reading UI file 'rixsviewer.ui'
@@ -464,6 +465,29 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_rxesmap.addWidget(self.checkBox_show_rixsprofile)
 
+        self.line_rxesmap = QFrame(self.groupBox_rxesmap)
+        self.line_rxesmap.setObjectName(u"line_rxesmap")
+        self.line_rxesmap.setFrameShape(QFrame.Shape.VLine)
+        self.line_rxesmap.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.horizontalLayout_rxesmap.addWidget(self.line_rxesmap)
+
+        self.checkBox_overwrite_rxes_binning_points = QCheckBox(self.groupBox_rxesmap)
+        self.checkBox_overwrite_rxes_binning_points.setObjectName(u"checkBox_overwrite_rxes_binning_points")
+        self.checkBox_overwrite_rxes_binning_points.setChecked(True)
+
+        self.horizontalLayout_rxesmap.addWidget(self.checkBox_overwrite_rxes_binning_points)
+
+        self.spinBox_force_rxes_binning_points = QSpinBox(self.groupBox_rxesmap)
+        self.spinBox_force_rxes_binning_points.setObjectName(u"spinBox_force_rxes_binning_points")
+        self.spinBox_force_rxes_binning_points.setEnabled(True)
+        sizePolicy9.setHeightForWidth(self.spinBox_force_rxes_binning_points.sizePolicy().hasHeightForWidth())
+        self.spinBox_force_rxes_binning_points.setSizePolicy(sizePolicy9)
+        self.spinBox_force_rxes_binning_points.setMinimum(2)
+        self.spinBox_force_rxes_binning_points.setMaximum(999999)
+
+        self.horizontalLayout_rxesmap.addWidget(self.spinBox_force_rxes_binning_points)
+
         self.horizontalSpacer_rxesmap = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_rxesmap.addItem(self.horizontalSpacer_rxesmap)
@@ -586,6 +610,7 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
         self.checkBox_autoupdate.toggled.connect(self.pushButton_fit_pixel_size.setDisabled)
         self.checkBox_overwrite_binning_points.toggled.connect(self.spinBox_force_binning_points.setEnabled)
+        self.checkBox_overwrite_rxes_binning_points.toggled.connect(self.spinBox_force_rxes_binning_points.setEnabled)
 
         self.tabWidget.setCurrentIndex(1)
 
@@ -655,6 +680,7 @@ class Ui_MainWindow(object):
         self.comboBox_rxes_cmap.setItemText(7, QCoreApplication.translate("MainWindow", u"coolwarm", None))
 
         self.checkBox_show_rixsprofile.setText(QCoreApplication.translate("MainWindow", u"Show RIXS Profile", None))
+        self.checkBox_overwrite_rxes_binning_points.setText(QCoreApplication.translate("MainWindow", u"Force NEnergyBins", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_rxesmap), QCoreApplication.translate("MainWindow", u"RXES Map", None))
         self.groupBox_7.setTitle(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.comboBox_fit_target.setItemText(0, QCoreApplication.translate("MainWindow", u"DeltaD", None))
