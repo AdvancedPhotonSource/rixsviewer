@@ -282,7 +282,7 @@ class RixsViewerGUI(QMainWindow):
         dset : RixsScanTiffDataset or None
             The dataset to release. ``None`` is a no-op.
         """
-        if dset is None or dset._data is None or dset.scan_info is None:
+        if dset is None or not dset.has_loaded_frames() or dset.scan_info is None:
             return
         if self._binning_active and dset is self._binning_dset:
             # a background worker is still reading/writing this dataset's
@@ -564,7 +564,7 @@ class RixsViewerGUI(QMainWindow):
 
         if len(self.current_rixs_dset.unloaded_filenames) == 0:
             if self.ui.checkBox_autoupdate.isChecked():
-                if self.current_rixs_dset._data is None:
+                if not self.current_rixs_dset.has_loaded_frames():
                     return  # nothing loaded yet, nothing to re-bin
 
         self._binning_active = True

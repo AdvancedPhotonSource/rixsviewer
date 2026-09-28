@@ -616,6 +616,10 @@ class RixsScanTiffDataset(TiffScanDatasetMixin):
             logger.info(f"Scan {self.scan_index}: Read {n_files} tiff file(s) in {time.perf_counter() - t0:.2f}s")
         return self._data
 
+    def has_loaded_frames(self):
+        """Whether any TIFF data is currently resident in memory for this scan."""
+        return self._data is not None
+
     def release_data(self):
         """
         Release the loaded frame buffer so memory returns to ~zero.

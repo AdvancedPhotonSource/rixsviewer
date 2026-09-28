@@ -4,6 +4,7 @@ import numpy as np
 from silx.io.specfile import SpecFile
 
 from rixsviewer.model.rxes_dataset import RixsRxesScanDataset
+from rixsviewer.model.spec_parsers import tiff_point_index
 
 from conftest import FakeBeamline, XB_FIELDS
 
@@ -36,6 +37,17 @@ class TestConstruction:
         assert dset.scan_info["scan_type"] == "RXESScan"
         assert dset.bin_result is None
         assert dset.emission_axis is None  # not built until first bin_data_wrap call
+
+
+class TestHasLoadedFrames:
+    def test_false_before_any_frame_processed(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        assert dset.has_loaded_frames() is False
+
+    def test_true_after_processing_a_frame(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        dset.bin_data_wrap(metadata_source="SpecFile")
+        assert dset.has_loaded_frames() is True
 
 
 class TestAccumulatorReset:
@@ -113,6 +125,88 @@ class TestIncrementalAccumulation:
         assert second_call_sum[0] > first_call_sum[0]
         assert second_call_sum[0] == second_call_sum[1]
         assert dset.sample.max() <= 1
+
+
+class TestFramePositionFromFilename:
+    def test_position_derived_from_filename_not_processing_order(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=4)
+        # Pre-warm the accumulator (as the first bin_data_wrap call normally
+        # would) so the manual unloaded_filenames override below survives --
+        # bin_data_wrap's own reset-on-first-call would otherwise clobber it
+        # back to the full file list.
+        merged = dset._merge_binning_kwargs("SpecFile", {})
+        dset._reset_accumulator(merged)
+        dset._map_key = dset._calibration_key(merged)
+
+        # Only queue points 2,3 (emission row i=1, anchored near the HIGH
+        # end of the emission axis at merixE=11.200) for processing --
+        # simulating an out-of-order arrival (e.g. NFS lag) where these
+        # land before points 0,1. A counter that numbers whatever it's
+        # given starting from 0 would wrongly anchor these on i=0's merixE
+        # (11.190, the LOW end) instead of their true i=1 value.
+        dset.unloaded_filenames = [
+            f for f in dset.scan_info["filenames"] if tiff_point_index(f) in (2, 3)
+        ]
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        touched_bins = np.where(dset.sample[:, 0] > 0)[0]
+        assert len(touched_bins) > 0
+        touched_energies = dset.emission_axis[touched_bins]
+        # i=0's and i=1's windows are far apart and disjoint (see
+        # TestRecalibration's docstring reasoning) -- only i=1's frames
+        # should ever appear here.
+        assert touched_energies.min() > 11.195
+
+
+class TestTiffAheadOfScandata:
+    def test_frame_beyond_scandata_rows_is_requeued_not_crashed(self, tmp_path):
+        import os
+
+        import tifffile
+
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=1)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)  # pre-warm; processes point 0
+        assert dset._n_processed == 1
+
+        # Simulate the detector outrunning SPEC's row flush: a TIFF for
+        # point 1 lands on disk, but scan_info["scandata"] still only has
+        # 1 row (as refresh_tiff_filenames()'s NFS-lag catch-up can produce).
+        fn = os.path.join(beamline.workdir, "fake.spec_scan1_point0001.tif")
+        tifffile.imwrite(fn, np.zeros((256, 256), dtype=np.uint16))
+        dset.scan_info["filenames"] = dset.scan_info["filenames"] + [fn]
+        dset.scan_info["tiff_points"] = len(dset.scan_info["filenames"])
+        dset.unloaded_filenames = [fn]
+
+        dset.bin_data_wrap(**SPECFILE_KWARGS)  # must not raise IndexError
+
+        assert dset.unloaded_filenames == [fn]  # re-queued for the next poll, not dropped
+
+
+class TestCalibrationKeyTolerance:
+    def test_tiny_float_jitter_does_not_trigger_a_replay(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        assert dset._n_processed == 2
+
+        # Simulates a PV readback returning a value that differs only in
+        # the last few significant digits from a previous read -- should
+        # not be treated as a real calibration change.
+        kwargs = dict(dset.scan_info["metadata"])
+        kwargs["DeltaD"] = kwargs["DeltaD"] + 1e-10
+        dset.bin_data_wrap(metadata_source="USER", **kwargs)
+
+        assert dset._n_processed == 2  # no replay: nothing was re-queued or reprocessed
+
+    def test_meaningful_change_still_triggers_reset(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        assert dset._n_processed == 2
+
+        kwargs = dict(dset.scan_info["metadata"])
+        kwargs["DeltaD"] = kwargs["DeltaD"] * 2
+        dset.bin_data_wrap(metadata_source="USER", **kwargs)
+
+        assert dset._n_processed == 2  # reset-and-replayed the 2 known files, not skipped
 
 
 class TestRecalibration:

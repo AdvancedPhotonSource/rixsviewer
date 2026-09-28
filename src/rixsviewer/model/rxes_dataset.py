@@ -1,11 +1,14 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from os import cpu_count
 
 import numpy as np
 import tifffile
 
 from .scan_dataset import TiffScanDatasetMixin
+from .spec_parsers import tiff_point_index
 from .utils import _preprocess_frames, apply_subpixel_shear_3d, compute_frame_energy_axis, fix_bad_pixels, percentile_clip
 
 logger = logging.getLogger(__name__)
@@ -59,6 +62,18 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         self.incident_axis = None
         self.intensity = None
         self.sample = None
+
+    def _calibration_key(self, merged_kwargs):
+        """Hashable snapshot of the calibration kwargs, rounded so that
+        last-digit jitter in PV readbacks doesn't trigger a spurious full
+        accumulator reset/replay on every poll."""
+        key = []
+        for name in self._CALIBRATION_KEYS:
+            value = merged_kwargs.get(name)
+            if isinstance(value, float):
+                value = round(value, 6)
+            key.append(value)
+        return tuple(key)
 
     def _merge_binning_kwargs(self, metadata_source, kwargs):
         """Merge caller kwargs with SpecFile metadata, matching
@@ -153,7 +168,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             )
 
         merged_kwargs = self._merge_binning_kwargs(metadata_source, kwargs)
-        key = tuple(merged_kwargs.get(k) for k in self._CALIBRATION_KEYS)
+        key = self._calibration_key(merged_kwargs)
         if key != self._map_key or self.emission_axis is None:
             self._reset_accumulator(merged_kwargs)
             self._map_key = key
@@ -170,27 +185,58 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         n_incident = self.scan_info["incident_points"]
         total_points = self.scan_info["incident_points"] * self.scan_info["emission_points"]
         merixE_col = np.asarray(self.scan_info["scandata"]["merixE"], dtype=float)
+        filenames = self.scan_info["filenames"]
+        # Filenames are numbered from an arbitrary start (e.g. "_point001"
+        # in production, "_point0000" in tests) -- normalize against the
+        # first file actually on record so frame_position is always a
+        # correct 0-based grid index regardless of that convention.
+        point_offset = tiff_point_index(filenames[0]) if filenames else 0
 
         to_process = list(self.unloaded_filenames)
         self.unloaded_filenames = []
         n_total_for_progress = max(total_points, 1)
 
-        for fname in to_process:
-            frame_position = self._n_processed
+        def _read_frame(fname):
+            return tifffile.imread(fname).astype(np.float32)
+
+        raw_frames = []
+        if to_process:
+            with ThreadPoolExecutor(
+                max_workers=min(len(to_process), max(1, (cpu_count() or 2) // 2))
+            ) as ex:
+                raw_frames = list(ex.map(_read_frame, to_process))
+
+        for fname, raw_frame in zip(to_process, raw_frames):
+            # Position comes from the filename itself, not from a counter of
+            # frames seen so far: a counter desynchronizes from the true
+            # grid position after any dropped/re-queued file (see below),
+            # silently writing later frames into the wrong column and
+            # anchoring them on the wrong merixE value.
+            frame_position = tiff_point_index(fname) - point_offset
             self._n_processed += 1
-            if frame_position >= total_points:
+            if frame_position < 0 or frame_position >= total_points:
                 logger.warning(
-                    "Scan %d: frame position %d exceeds the expected grid size "
-                    "(%d); skipping %s",
-                    self.scan_index, frame_position, total_points, fname,
+                    "Scan %d: frame position %d (from %s) is outside the "
+                    "expected grid size (%d); skipping",
+                    self.scan_index, frame_position, fname, total_points,
                 )
+                continue
+            if frame_position >= len(merixE_col):
+                # SPEC hasn't flushed this row yet even though the TIFF has
+                # landed (detector can outrun the SPEC writer); re-queue for
+                # the next poll instead of dropping it or crashing.
+                logger.debug(
+                    "Scan %d: scandata row for frame position %d not yet "
+                    "available; re-queueing %s",
+                    self.scan_index, frame_position, fname,
+                )
+                self.unloaded_filenames.append(fname)
                 continue
 
             j = frame_position % n_incident
             merix_value = merixE_col[frame_position]
 
-            raw = tifffile.imread(fname).astype(np.float32)[np.newaxis]
-            raw = fix_bad_pixels(raw)
+            raw = fix_bad_pixels(raw_frame[np.newaxis])
             raw = apply_subpixel_shear_3d(raw, Ylow, Yhigh, TiltAngle, TiltOrder)
             data_2d, xaxis, _, _ = _preprocess_frames(raw, Ylow, Yhigh, RefL, self._xsize)
 
@@ -269,6 +315,10 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             "scan_index": self.scan_index,
             "frame_index": frame_index,
         }
+
+    def has_loaded_frames(self):
+        """Whether at least one frame has been reduced into the accumulator yet."""
+        return self._n_processed > 0
 
     def release_data(self):
         """No large buffer is ever retained for RXES scans; nothing to release."""
