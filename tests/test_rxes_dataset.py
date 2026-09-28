@@ -50,6 +50,12 @@ class TestHasLoadedFrames:
         assert dset.has_loaded_frames() is True
 
 
+class TestSupportsCalibration:
+    def test_rxes_dataset_does_not_support_calibration(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        assert dset.supports_calibration() is False
+
+
 class TestAccumulatorReset:
     def test_reset_builds_axes_and_zeroed_arrays(self, tmp_path):
         dset, _ = _make_dataset(tmp_path, n_emission=3, n_incident=2, n_points=0)

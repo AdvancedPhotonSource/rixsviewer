@@ -279,7 +279,7 @@ class RixsViewerGUI(QMainWindow):
 
         Parameters
         ----------
-        dset : RixsScanTiffDataset or None
+        dset : RixsEnergyScanDataset, RixsSnapshotScanDataset, RixsRxesScanDataset, or None
             The dataset to release. ``None`` is a no-op.
         """
         if dset is None or not dset.has_loaded_frames() or dset.scan_info is None:
@@ -428,7 +428,7 @@ class RixsViewerGUI(QMainWindow):
         """
         if self.current_rixs_dset is None:
             return
-        if self.current_rixs_dset.scan_info["scan_type"] != "EnergyScan":
+        if not self.current_rixs_dset.supports_calibration():
             QMessageBox.warning(
                 self,
                 "Warning",

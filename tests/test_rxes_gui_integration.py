@@ -24,3 +24,26 @@ def test_evicting_an_rxes_dataset_when_a_new_scan_arrives_does_not_crash(gui):
 
     gui.beamline.run_scan(2)
     gui.update_spec_record()  # evicts scan 1 (RXES) -> must not raise AttributeError
+
+
+def test_calibrate_parameters_consults_supports_calibration_predicate(gui, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.append(True))
+
+    gui.beamline.run_rxes_scan(1, n_emission=2, n_incident=2)
+    gui.update_spec_record()
+    dset = gui.current_rixs_dset
+
+    calls = []
+    original = dset.supports_calibration
+    def spy():
+        calls.append(True)
+        return original()
+    monkeypatch.setattr(dset, "supports_calibration", spy)
+
+    gui.calibrate_parameters()
+
+    assert calls == [True]  # the gate actually consulted the predicate
+    assert warned == [True]  # ...and correctly denied calibration for RXES

@@ -320,6 +320,10 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         """Whether at least one frame has been reduced into the accumulator yet."""
         return self._n_processed > 0
 
+    def supports_calibration(self):
+        """Pixel-size/tilt calibration is not implemented for RXES scans."""
+        return False
+
     def release_data(self):
         """No large buffer is ever retained for RXES scans; nothing to release."""
         pass
