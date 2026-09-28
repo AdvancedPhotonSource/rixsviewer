@@ -7,6 +7,7 @@ import sys
 import traceback
 from pathlib import Path
 
+import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
 from PySide6.QtCore import QTimer, QRunnable, Slot, QThreadPool, QObject, Signal
@@ -579,11 +580,7 @@ class RixsViewerGUI(QMainWindow):
             )
 
         def on_result(result):
-            self.view.plot_binned_data(
-                result, show_rawdata, plot_target=plot_target, hdl_target="plot"
-            )
-            if result.get("warning"):
-                self.statusBar().showMessage(f"Warning: {result['warning']}", 5000)
+            self._route_binning_result(result, show_rawdata, plot_target)
 
         def on_error(err_str):
             if err_str.startswith("No frames") or "no scandata rows" in err_str:
@@ -626,6 +623,28 @@ class RixsViewerGUI(QMainWindow):
         worker.signals.error.connect(on_error)
         worker.signals.finished.connect(on_finished)
         self.threadpool.start(worker)
+
+    def _route_binning_result(self, result, show_rawdata, plot_target):
+        """
+        Route a ``bin_data_wrap()`` result to the right presentation.
+
+        A 2D RXES map (``result["kind"] == "rxes_map"``) has no view yet
+        (visualization is a follow-up); a 1D spectrum result is plotted
+        as before.
+        """
+        if result.get("kind") == "rxes_map":
+            filled = int(np.sum(result["sample"] > 0))
+            total = result["sample"].size
+            self.statusBar().showMessage(
+                f"RXES map updated: {filled}/{total} cells filled", 3000
+            )
+            return
+
+        self.view.plot_binned_data(
+            result, show_rawdata, plot_target=plot_target, hdl_target="plot"
+        )
+        if result.get("warning"):
+            self.statusBar().showMessage(f"Warning: {result['warning']}", 5000)
 
     # plot_binned_data is handled by RixsView
 
