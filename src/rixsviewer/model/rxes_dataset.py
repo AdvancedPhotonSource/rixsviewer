@@ -380,6 +380,17 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         """Whether at least one frame has been reduced into the accumulator yet."""
         return self._n_processed > 0
 
+    def processed_frame_count(self):
+        """Monotonic count of frames actually reduced into the accumulator.
+
+        Unlike :attr:`unloaded_filenames`, this doesn't go back up when a
+        frame is re-queued (SPEC scandata lagging the TIFF writer), so the
+        GUI can compare it before/after a :meth:`bin_data_wrap` call to
+        tell "nothing was processed this round" apart from "new frames
+        arrived, process again immediately".
+        """
+        return self._n_processed
+
     def supports_calibration(self):
         """Pixel-size/tilt calibration is not implemented for RXES scans."""
         return False

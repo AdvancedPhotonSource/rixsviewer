@@ -694,10 +694,10 @@ class RixsViewerGUI(QMainWindow):
 
         self._binning_active = True
         self._binning_dset = self.current_rixs_dset
-        # Only RixsRxesScanDataset has _n_processed; None for EnergyScan/
-        # SnapshotScan, which always fully drain unloaded_filenames in one
-        # call, so "made progress" below is trivially true for them.
-        n_processed_before = getattr(self._binning_dset, "_n_processed", None)
+        # None for EnergyScan/SnapshotScan (which always fully drain
+        # unloaded_filenames in one call), so "made progress" below is
+        # trivially true for them -- see processed_frame_count().
+        n_processed_before = self._binning_dset.processed_frame_count()
         self.ui.pushButton_process.setEnabled(False)
 
         def worker_fn():
@@ -736,7 +736,7 @@ class RixsViewerGUI(QMainWindow):
                 ):
                     self.current_rixs_dset.save_to_file(self.save_filename)
                 if self.current_rixs_dset.unloaded_filenames:
-                    n_processed_after = getattr(self.current_rixs_dset, "_n_processed", None)
+                    n_processed_after = self.current_rixs_dset.processed_frame_count()
                     made_progress = (
                         n_processed_before is None
                         or n_processed_after is None

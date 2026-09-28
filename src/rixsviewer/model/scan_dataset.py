@@ -479,6 +479,16 @@ class BufferedTiffScanDatasetMixin(TiffScanDatasetMixin):
         """Whether any TIFF data is currently resident in memory for this scan."""
         return self._data is not None
 
+    def processed_frame_count(self):
+        """No meaningful progress counter here: a single :meth:`read_tiff_data`
+        call always fully drains :attr:`unloaded_filenames`, unlike
+        :class:`~.rxes_dataset.RixsRxesScanDataset`, which can re-queue
+        frames without processing them. ``None`` tells callers (e.g. the
+        GUI's re-trigger-on-progress check) that progress tracking doesn't
+        apply and any non-empty re-queue should be treated as progress.
+        """
+        return None
+
     def release_data(self):
         """
         Release the loaded frame buffer so memory returns to ~zero.
