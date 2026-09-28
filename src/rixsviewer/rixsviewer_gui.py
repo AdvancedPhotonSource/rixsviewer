@@ -112,6 +112,10 @@ class RixsViewerGUI(QMainWindow):
         self.ui.pushButton_fit_pixel_size.clicked.connect(self.calibrate_parameters)
         self.ui.comboBox_metasource.currentIndexChanged.connect(self.update_meta_source)
         self.ui.horizontalSlider_frame_index.valueChanged.connect(self.update_image)
+        self.ui.comboBox_rxes_plottarget.currentIndexChanged.connect(
+            self.on_rxes_plottarget_changed
+        )
+        self.ui.checkBox_show_rixsprofile.toggled.connect(self.on_show_rixsprofile_toggled)
 
         self.timer = QTimer(self)
         self.timer.setInterval(int(heartbeat_s * 1000))
@@ -173,6 +177,17 @@ class RixsViewerGUI(QMainWindow):
         )
         ui.pushButton_process.setToolTip("Run the Rowland-circle binning pipeline on the current scan")
         ui.progressBar_process.setToolTip("Binning progress (%)")
+        # RXES Map tab
+        ui.comboBox_rxes_plottarget.setToolTip(
+            "Array to display for the current RXES map:\n"
+            "  intensity_norm — coverage-averaged intensity\n"
+            "  intensity      — raw accumulated intensity\n"
+            "  sample         — coverage count (frames per cell)"
+        )
+        ui.checkBox_show_rixsprofile.setToolTip(
+            "Show a 1D emission-energy profile at a fixed incident energy.\n"
+            "Click anywhere on the map to pick the incident energy; defaults to the median."
+        )
         ui.pushButton_save.setToolTip("Export the binned spectrum to a SPEC-format file")
         # Calibration tab
         ui.comboBox_fit_target.setToolTip(
@@ -624,15 +639,38 @@ class RixsViewerGUI(QMainWindow):
         worker.signals.finished.connect(on_finished)
         self.threadpool.start(worker)
 
+    def on_rxes_plottarget_changed(self):
+        """Replot the RXES map from its already-computed cached result.
+
+        intensity/intensity_norm/sample are all produced by the same
+        ``bin_data_wrap`` call, so switching between them is a free replot
+        -- no need to re-run the reduction pipeline.
+        """
+        dset = self.current_rixs_dset
+        bin_result = getattr(dset, "bin_result", None) if dset is not None else None
+        if bin_result is None or bin_result.get("kind") != "rxes_map":
+            return
+        self.view.plot_rxes_map(
+            bin_result, plot_target=self.ui.comboBox_rxes_plottarget.currentText()
+        )
+
+    def on_show_rixsprofile_toggled(self, checked):
+        self.view.set_rxes_profile_visible(checked)
+
     def _route_binning_result(self, result, show_rawdata, plot_target):
         """
         Route a ``bin_data_wrap()`` result to the right presentation.
 
-        A 2D RXES map (``result["kind"] == "rxes_map"``) has no view yet
-        (visualization is a follow-up); a 1D spectrum result is plotted
-        as before.
+        A 2D RXES map (``result["kind"] == "rxes_map"``) is rendered on the
+        "RXES Map" tab; *plot_target* (from the 1D-plot combo box) doesn't
+        apply there, so ``comboBox_rxes_plottarget`` is consulted instead.
+        A 1D spectrum result is plotted as before.
         """
         if result.get("kind") == "rxes_map":
+            self.view.plot_rxes_map(
+                result, plot_target=self.ui.comboBox_rxes_plottarget.currentText()
+            )
+            self.ui.tabWidget.setCurrentWidget(self.ui.tab_rxesmap)
             filled = int(np.sum(result["sample"] > 0))
             total = result["sample"].size
             self.statusBar().showMessage(
