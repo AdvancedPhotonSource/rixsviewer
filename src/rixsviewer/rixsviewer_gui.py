@@ -643,7 +643,12 @@ class RixsViewerGUI(QMainWindow):
         fname = dialog.selectedFiles()[0]
 
         try:
-            self.current_rixs_dset.save_to_file(fname, force=True)
+            if self.current_rixs_dset.supports_rxes_map():
+                self.current_rixs_dset.save_to_file(
+                    fname, force=True, cmap=self.ui.comboBox_rxes_cmap.currentText()
+                )
+            else:
+                self.current_rixs_dset.save_to_file(fname, force=True)
         except Exception as e:
             QMessageBox.critical(self, "Save failed", f"Could not save file:\n{e}")
             return

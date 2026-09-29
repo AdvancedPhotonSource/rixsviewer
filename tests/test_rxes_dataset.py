@@ -426,3 +426,41 @@ class TestSaveToFilePng:
             assert fig.axes[1].get_ylabel() == "Intensity (norm.)"  # colorbar axis
         finally:
             original_close(fig)
+
+    def test_png_defaults_to_viridis_colormap(self, tmp_path, monkeypatch):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        import matplotlib.pyplot as plt
+
+        original_close = plt.close
+        monkeypatch.setattr(plt, "close", lambda *a, **k: None)
+
+        dset.save_to_file(str(out))
+
+        fig = plt.gcf()
+        try:
+            image = fig.axes[0].get_images()[0]
+            assert image.get_cmap().name == "viridis"
+        finally:
+            original_close(fig)
+
+    def test_png_uses_the_requested_colormap(self, tmp_path, monkeypatch):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        import matplotlib.pyplot as plt
+
+        original_close = plt.close
+        monkeypatch.setattr(plt, "close", lambda *a, **k: None)
+
+        dset.save_to_file(str(out), cmap="turbo")
+
+        fig = plt.gcf()
+        try:
+            image = fig.axes[0].get_images()[0]
+            assert image.get_cmap().name == "turbo"
+        finally:
+            original_close(fig)

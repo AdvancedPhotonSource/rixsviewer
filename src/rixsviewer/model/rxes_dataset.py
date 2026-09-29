@@ -405,7 +405,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         """No large buffer is ever retained for RXES scans; nothing to release."""
         pass
 
-    def save_to_file(self, fname=None, force=False):
+    def save_to_file(self, fname=None, force=False, cmap="viridis"):
         """Append the normalized 2D RXES map to *fname* as a synthetic SPEC
         ``mesh`` scan, importable into PyMca and renderable there as a 2D
         image.
@@ -458,14 +458,15 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             np.savetxt(f, data, fmt="%.18e")
             f.write("\n")
 
-        self._save_png(fname, res)
+        self._save_png(fname, res, cmap)
 
-    def _save_png(self, fname, res):
+    def _save_png(self, fname, res, cmap="viridis"):
         """Render the 2D RXES map to a PNG alongside *fname*.
 
         Named ``S_{scan_index}_RXES.png`` in the same directory as the
         ``.spec`` export. Uses the same (incident=X, emission=Y) orientation
-        as the live RXES Map view (:meth:`~.view.view.RixsView.plot_rxes_map`).
+        and *cmap* as the live RXES Map view
+        (:meth:`~.view.view.RixsView.plot_rxes_map`).
         """
         incident_axis = res["incident_axis"]
         emission_axis = res["emission_axis"]
@@ -482,7 +483,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             extent=[incident_axis[0], incident_axis[-1], emission_axis[0], emission_axis[-1]],
             origin="lower",
             aspect="auto",
-            cmap="viridis",
+            cmap=cmap,
         )
         ax.set_xlabel("Incident Energy (keV)")
         ax.set_ylabel("Emission Energy (keV)")
