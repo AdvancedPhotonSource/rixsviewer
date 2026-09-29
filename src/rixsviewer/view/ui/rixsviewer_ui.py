@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
- # Copyright © UChicago Argonne LLC # See LICENSE file for details
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
 
 ################################################################################
 ## Form generated from reading UI file 'rixsviewer.ui'
@@ -513,6 +514,11 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_rxesmap.addItem(self.horizontalSpacer_rxesmap)
 
+        self.pushButton_rxes_save = QPushButton(self.groupBox_rxesmap)
+        self.pushButton_rxes_save.setObjectName(u"pushButton_rxes_save")
+
+        self.horizontalLayout_rxesmap.addWidget(self.pushButton_rxes_save)
+
 
         self.gridLayout_rxesmap.addWidget(self.groupBox_rxesmap, 1, 0, 1, 1)
 
@@ -704,6 +710,7 @@ class Ui_MainWindow(object):
 
         self.checkBox_show_rixsprofile.setText(QCoreApplication.translate("MainWindow", u"Show RIXS Profile", None))
         self.checkBox_show_crosshair.setText(QCoreApplication.translate("MainWindow", u"Show crosshair", None))
+        self.pushButton_rxes_save.setText(QCoreApplication.translate("MainWindow", u"Export", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_rxesmap), QCoreApplication.translate("MainWindow", u"RXES Map", None))
         self.groupBox_7.setTitle(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.comboBox_fit_target.setItemText(0, QCoreApplication.translate("MainWindow", u"DeltaD", None))

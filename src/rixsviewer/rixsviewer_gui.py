@@ -126,6 +126,7 @@ class RixsViewerGUI(QMainWindow):
         self.view = RixsView(self.ui)
         self.ui.pushButton_process.clicked.connect(self.process_binning)
         self.ui.pushButton_save.clicked.connect(self.save_bin_results)
+        self.ui.pushButton_rxes_save.clicked.connect(self.save_bin_results)
         self.ui.pushButton_fit_pixel_size.clicked.connect(self.calibrate_parameters)
         self.ui.comboBox_metasource.currentIndexChanged.connect(self.update_meta_source)
         self.ui.horizontalSlider_frame_index.valueChanged.connect(self.update_image)
@@ -245,6 +246,9 @@ class RixsViewerGUI(QMainWindow):
             "Clicking also shows that frame in 2D Scattering."
         )
         ui.pushButton_save.setToolTip("Export the binned spectrum to a SPEC-format file")
+        ui.pushButton_rxes_save.setToolTip(
+            "Export the RXES map to a SPEC-format file, importable into PyMca as a 2D image"
+        )
         ui.label_rxes_energy_interval.setToolTip(
             "Computed emission-energy bin width for this map\n"
             "(native pixel spacing, unless overridden by Force NEnergyBins)."
