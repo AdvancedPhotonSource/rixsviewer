@@ -350,7 +350,14 @@ class TestSaveToFile:
         assert float(tokens[9]) == pytest.approx(emission_axis[-1])
         assert int(tokens[10]) == len(emission_axis) - 1
 
-    def test_columns_and_rows_match_incident_fastest_emission_slowest(self, tmp_path):
+    def test_columns_are_emission_incident_intensity_with_incident_fastest_row_order(
+        self, tmp_path
+    ):
+        """Column order (Emission, Incident, Intensity) is deliberately the
+        reverse of the #S header's motor order (Incident, Emission): PyMca's
+        '2D On' counter view orients itself from whichever counter is
+        checked first as X, and only reshapes correctly if that one is the
+        slow/outer axis (Emission here) -- see save_to_file's docstring."""
         dset, _ = _make_dataset(tmp_path, n_points=2)
         dset.bin_data_wrap(**SPECFILE_KWARGS)
         out = tmp_path / "out.spec"
@@ -360,7 +367,7 @@ class TestSaveToFile:
 
         assert "#N 3" in lines
         label_line = next(line for line in lines if line.startswith("#L"))
-        assert label_line.split() == ["#L", "Incident_keV", "Emission_keV", "Intensity_norm"]
+        assert label_line.split() == ["#L", "Emission_keV", "Incident_keV", "Intensity_norm"]
 
         incident_axis, emission_axis = dset.incident_axis, dset.emission_axis
         n_incident, n_emission = len(incident_axis), len(emission_axis)
@@ -368,8 +375,8 @@ class TestSaveToFile:
         assert len(data_lines) == n_incident * n_emission
 
         data = np.array([[float(tok) for tok in line.split()] for line in data_lines])
-        np.testing.assert_allclose(data[:, 0], np.tile(incident_axis, n_emission))
-        np.testing.assert_allclose(data[:, 1], np.repeat(emission_axis, n_incident))
+        np.testing.assert_allclose(data[:, 0], np.repeat(emission_axis, n_incident))
+        np.testing.assert_allclose(data[:, 1], np.tile(incident_axis, n_emission))
         np.testing.assert_allclose(data[:, 2], dset.bin_result["intensity_norm"].flatten())
 
 
