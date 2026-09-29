@@ -404,12 +404,21 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         pass
 
     def save_to_file(self, fname=None, force=False):
-        """Append the normalized 2D RXES map to *fname* as a SPEC-style block.
+        """Append the normalized 2D RXES map to *fname* as a synthetic SPEC
+        ``mesh`` scan, importable into PyMca and renderable there as a 2D
+        image.
 
-        The map is stored with incident energy as rows and emission energy
-        as columns (transposed from :attr:`bin_result`'s in-memory
-        ``(emission, incident)`` layout), with calibration settings and
-        axis units recorded as ``#C`` header comments.
+        Unlike a real scan command, the ``#S`` line always reads
+        ``mesh Incident_keV ... Emission_keV ...`` regardless of the
+        original ``rxesamesh`` macro. Incident is listed first (fast/inner
+        loop) and emission second (slow/outer loop) to match how a genuine
+        SPEC ``mesh`` scan orders its two motors -- PyMca's mesh-to-image
+        tools (e.g. the "Show mesh as image" plugin) assume the first-listed
+        motor varies fastest, and reshape/label accordingly. Data rows are
+        ordered to match: incident fastest, emission slowest, i.e. plain
+        ``intensity_norm.flatten()`` with no transpose needed since
+        ``intensity_norm`` is already shaped ``(emission, incident)``.
+        Calibration settings are recorded as ``#C`` header comments.
         """
         if self.bin_result is None or (self._saved and not force):
             return
@@ -422,23 +431,27 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         incident_axis = res["incident_axis"]
         emission_axis = res["emission_axis"]
         intensity_norm = res["intensity_norm"]
+        n_incident = len(incident_axis)
+        n_emission = len(emission_axis)
 
         with open(fname, "a") as f:
-            f.write(f"\n#S {self.scan_index} {self.scan_info['scan_type']}\n")
+            f.write(
+                f"\n#S {self.scan_index} mesh "
+                f"Incident_keV {incident_axis[0]} {incident_axis[-1]} {n_incident - 1} "
+                f"Emission_keV {emission_axis[0]} {emission_axis[-1]} {n_emission - 1} "
+                f"{self.scan_info['exposure_time']}\n"
+            )
             f.write(f"#D {np.datetime64('now')}\n")
             f.write(f"#C RixsViewerVersion = {__version__}\n")
             for key, value in self.scan_info["metadata"].items():
                 unit = unit_map.get(key, "")
                 f.write(f"#C {key} = {value}{unit}\n")
             f.write(f"#C energy_resolution = {res['energy_resolution']} meV\n")
-            f.write("#C incident_axis_unit = keV\n")
-            f.write("#C emission_axis_unit = keV\n")
-            f.write(
-                f"#C shape = {len(incident_axis)} x {len(emission_axis)} (incident x emission)\n"
-            )
-            f.write(f"#N {len(emission_axis) + 1}\n")
-            labels = ["Incident_keV"] + [f"E_{e:.4f}" for e in emission_axis]
-            f.write("#L  " + "  ".join(labels) + "\n")
-            data = np.column_stack([incident_axis, intensity_norm.T])
+            f.write(f"#C shape = {n_emission} x {n_incident} (emission x incident)\n")
+            f.write("#N 3\n")
+            f.write("#L  Incident_keV  Emission_keV  Intensity_norm\n")
+            incident_col = np.tile(incident_axis, n_emission)
+            emission_col = np.repeat(emission_axis, n_incident)
+            data = np.column_stack([incident_col, emission_col, intensity_norm.flatten()])
             np.savetxt(f, data, fmt="%.18e")
             f.write("\n")

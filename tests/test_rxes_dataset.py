@@ -1,6 +1,7 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
 import numpy as np
+import pytest
 from silx.io.specfile import SpecFile
 
 from rixsviewer.model.rxes_dataset import RixsRxesScanDataset
@@ -314,8 +315,59 @@ class TestReleaseData:
 
 
 class TestSaveToFile:
-    def test_save_to_file_is_a_no_op(self, tmp_path):
+    def test_second_save_without_force_is_a_no_op(self, tmp_path):
         dset, _ = _make_dataset(tmp_path, n_points=2)
         dset.bin_data_wrap(**SPECFILE_KWARGS)
-        dset.save_to_file(str(tmp_path / "out.spec"))  # must not raise
-        assert not (tmp_path / "out.spec").exists()
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+        first_write = out.read_text()
+        dset.save_to_file(str(out))  # already saved -- no-op without force
+
+        assert out.read_text() == first_write
+
+    def test_header_is_a_mesh_scan_with_incident_first_emission_second(self, tmp_path):
+        """Incident must be listed first (fast/inner loop) and emission
+        second (slow/outer loop) to match how a genuine SPEC ``mesh`` scan
+        orders its motors -- PyMca's mesh-to-image tools assume the
+        first-listed motor varies fastest."""
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+
+        header = next(line for line in out.read_text().splitlines() if line.startswith("#S"))
+        tokens = header.split()
+        incident_axis, emission_axis = dset.incident_axis, dset.emission_axis
+        assert tokens[1:3] == [str(dset.scan_index), "mesh"]
+        assert tokens[3] == "Incident_keV"
+        assert tokens[7] == "Emission_keV"
+        assert float(tokens[4]) == pytest.approx(incident_axis[0])
+        assert float(tokens[5]) == pytest.approx(incident_axis[-1])
+        assert int(tokens[6]) == len(incident_axis) - 1
+        assert float(tokens[8]) == pytest.approx(emission_axis[0])
+        assert float(tokens[9]) == pytest.approx(emission_axis[-1])
+        assert int(tokens[10]) == len(emission_axis) - 1
+
+    def test_columns_and_rows_match_incident_fastest_emission_slowest(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+        lines = out.read_text().splitlines()
+
+        assert "#N 3" in lines
+        label_line = next(line for line in lines if line.startswith("#L"))
+        assert label_line.split() == ["#L", "Incident_keV", "Emission_keV", "Intensity_norm"]
+
+        incident_axis, emission_axis = dset.incident_axis, dset.emission_axis
+        n_incident, n_emission = len(incident_axis), len(emission_axis)
+        data_lines = [line for line in lines if line and not line.startswith("#")]
+        assert len(data_lines) == n_incident * n_emission
+
+        data = np.array([[float(tok) for tok in line.split()] for line in data_lines])
+        np.testing.assert_allclose(data[:, 0], np.tile(incident_axis, n_emission))
+        np.testing.assert_allclose(data[:, 1], np.repeat(emission_axis, n_incident))
+        np.testing.assert_allclose(data[:, 2], dset.bin_result["intensity_norm"].flatten())
