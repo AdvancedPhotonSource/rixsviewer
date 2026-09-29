@@ -1,5 +1,7 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
+import os
+
 import numpy as np
 import pytest
 from silx.io.specfile import SpecFile
@@ -380,36 +382,39 @@ class TestSaveToFile:
         np.testing.assert_allclose(data[:, 2], dset.bin_result["intensity_norm"].flatten())
 
 
-class TestSaveToFilePng:
-    def test_png_created_next_to_spec_file_with_expected_name_and_size(self, tmp_path):
+class TestSaveToFilePdf:
+    def _pdf_path(self, tmp_path, dset):
+        spec_stem = os.path.splitext(os.path.basename(dset.spec_fname))[0]
+        return tmp_path / f"{spec_stem}_S{dset.scan_index}_RXES.pdf"
+
+    def test_pdf_created_next_to_spec_file_with_expected_name_and_page_size(self, tmp_path):
         dset, _ = _make_dataset(tmp_path, n_emission=3, n_incident=2, n_points=2)
         dset.bin_data_wrap(**SPECFILE_KWARGS)
         out = tmp_path / "out.spec"
 
         dset.save_to_file(str(out))
 
-        png_path = tmp_path / f"S_{dset.scan_index}_RXES.png"
-        assert png_path.exists()
+        pdf_path = self._pdf_path(tmp_path, dset)
+        assert pdf_path.exists()
 
-        import matplotlib.image as mpimg
+        raw = pdf_path.read_bytes()
+        assert raw.startswith(b"%PDF")
+        # figsize=(8, 6) inches -> 576 x 432 points (72 points/inch), independent of dpi
+        assert b"/MediaBox [ 0 0 576 432 ]" in raw
 
-        image = mpimg.imread(str(png_path))
-        assert image.shape[1] == 8 * 300  # width = figsize[0] (inches) * dpi
-        assert image.shape[0] == 6 * 300  # height = figsize[1] (inches) * dpi
-
-    def test_png_not_rewritten_by_a_second_save_without_force(self, tmp_path):
+    def test_pdf_not_rewritten_by_a_second_save_without_force(self, tmp_path):
         dset, _ = _make_dataset(tmp_path, n_points=2)
         dset.bin_data_wrap(**SPECFILE_KWARGS)
         out = tmp_path / "out.spec"
-        png_path = tmp_path / f"S_{dset.scan_index}_RXES.png"
+        pdf_path = self._pdf_path(tmp_path, dset)
 
         dset.save_to_file(str(out))
-        first_mtime = png_path.stat().st_mtime_ns
+        first_mtime = pdf_path.stat().st_mtime_ns
         dset.save_to_file(str(out))  # already saved -- no-op without force
 
-        assert png_path.stat().st_mtime_ns == first_mtime
+        assert pdf_path.stat().st_mtime_ns == first_mtime
 
-    def test_png_has_incident_x_emission_y_labels_and_title_from_the_scan_command(
+    def test_pdf_has_incident_x_emission_y_labels_and_title_from_the_scan_command(
         self, tmp_path, monkeypatch
     ):
         dset, _ = _make_dataset(tmp_path, n_points=2)
@@ -434,7 +439,7 @@ class TestSaveToFilePng:
         finally:
             original_close(fig)
 
-    def test_png_defaults_to_viridis_colormap(self, tmp_path, monkeypatch):
+    def test_pdf_defaults_to_viridis_colormap(self, tmp_path, monkeypatch):
         dset, _ = _make_dataset(tmp_path, n_points=2)
         dset.bin_data_wrap(**SPECFILE_KWARGS)
         out = tmp_path / "out.spec"
@@ -453,7 +458,7 @@ class TestSaveToFilePng:
         finally:
             original_close(fig)
 
-    def test_png_uses_the_requested_colormap(self, tmp_path, monkeypatch):
+    def test_pdf_uses_the_requested_colormap(self, tmp_path, monkeypatch):
         dset, _ = _make_dataset(tmp_path, n_points=2)
         dset.bin_data_wrap(**SPECFILE_KWARGS)
         out = tmp_path / "out.spec"

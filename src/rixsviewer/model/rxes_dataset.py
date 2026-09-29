@@ -477,14 +477,15 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             np.savetxt(f, data, fmt="%.18e")
             f.write("\n")
 
-        self._save_png(fname, res, cmap)
+        self._save_pdf(fname, res, cmap)
 
-    def _save_png(self, fname, res, cmap="viridis"):
-        """Render the 2D RXES map to a PNG alongside *fname*.
+    def _save_pdf(self, fname, res, cmap="viridis"):
+        """Render the 2D RXES map to a PDF alongside *fname*.
 
-        Named ``S_{scan_index}_RXES.png`` in the same directory as the
-        ``.spec`` export. Uses the same (incident=X, emission=Y) orientation
-        and *cmap* as the live RXES Map view
+        Named ``{spec_stem}_S{scan_index}_RXES.pdf`` (*spec_stem* being the
+        SPEC data file's basename without extension) in the same directory
+        as the ``.spec`` export. Uses the same (incident=X, emission=Y)
+        orientation and *cmap* as the live RXES Map view
         (:meth:`~.view.view.RixsView.plot_rxes_map`).
         """
         incident_axis = res["incident_axis"]
@@ -511,6 +512,9 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         cbar.set_label("Intensity (norm.)")
         fig.tight_layout()
 
-        png_path = os.path.join(os.path.dirname(fname), f"S_{self.scan_index}_RXES.png")
-        fig.savefig(png_path, dpi=300)
+        spec_stem = os.path.splitext(os.path.basename(self.spec_fname))[0]
+        pdf_path = os.path.join(
+            os.path.dirname(fname), f"{spec_stem}_S{self.scan_index}_RXES.pdf"
+        )
+        fig.savefig(pdf_path, dpi=300)
         plt.close(fig)
