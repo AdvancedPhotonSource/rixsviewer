@@ -89,7 +89,8 @@ def get_scan_header(scan, tol=1e-6):
     Returns
     -------
     dict
-        Keys: ``scan_type``, ``steps``, ``exposure_time``, ``start``, ``end``.
+        Keys: ``scan_type``, ``steps``, ``exposure_time``, ``start``, ``end``,
+        ``command`` (the raw ``#S`` header line, unparsed).
         ``RXESScan`` additionally has ``incident_start``, ``incident_end``,
         ``incident_points``, ``emission_start``, ``emission_end``,
         ``emission_points``; ``steps`` is the total point count
@@ -116,6 +117,7 @@ def get_scan_header(scan, tol=1e-6):
             "emission_start": emission_start,
             "emission_end": emission_end,
             "emission_points": emission_points,
+            "command": header_line,
         }
 
     m = _ENERGY_SCAN_PATTERN.search(header_line)
@@ -126,6 +128,7 @@ def get_scan_header(scan, tol=1e-6):
             "exposure_time": 0,
             "start": 0.0,
             "end": 0.0,
+            "command": header_line,
         }
 
     start, end = float(m.group(3)), float(m.group(4))
@@ -140,6 +143,7 @@ def get_scan_header(scan, tol=1e-6):
         "exposure_time": float(m.group(6)),
         "start": start,
         "end": end,
+        "command": header_line,
     }
 
 
@@ -159,7 +163,8 @@ def parse_single_scan(scan, spec_fname, tif_folder):
     -------
     dict
         Keys: ``scan_number``, ``scan_type``, ``spec_points``, ``tiff_points``,
-        ``metadata``, ``scandata``, ``filenames``, ``exposure_time``.
+        ``metadata``, ``scandata``, ``filenames``, ``exposure_time``, ``command``
+        (the raw ``#S`` header line, unparsed).
     """
     header = get_scan_header(scan)
 
@@ -179,6 +184,7 @@ def parse_single_scan(scan, spec_fname, tif_folder):
         "exposure_time": header["exposure_time"],
         "start": header["start"],
         "end": header["end"],
+        "command": header["command"],
         "tiff_points": len(filenames),
         "metadata": _get_metadata(metadata_str),
         "scandata": _get_scandata(scan),

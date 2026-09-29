@@ -371,3 +371,58 @@ class TestSaveToFile:
         np.testing.assert_allclose(data[:, 0], np.tile(incident_axis, n_emission))
         np.testing.assert_allclose(data[:, 1], np.repeat(emission_axis, n_incident))
         np.testing.assert_allclose(data[:, 2], dset.bin_result["intensity_norm"].flatten())
+
+
+class TestSaveToFilePng:
+    def test_png_created_next_to_spec_file_with_expected_name_and_size(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_emission=3, n_incident=2, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+
+        png_path = tmp_path / f"S_{dset.scan_index}_RXES.png"
+        assert png_path.exists()
+
+        import matplotlib.image as mpimg
+
+        image = mpimg.imread(str(png_path))
+        assert image.shape[1] == 8 * 300  # width = figsize[0] (inches) * dpi
+        assert image.shape[0] == 6 * 300  # height = figsize[1] (inches) * dpi
+
+    def test_png_not_rewritten_by_a_second_save_without_force(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+        png_path = tmp_path / f"S_{dset.scan_index}_RXES.png"
+
+        dset.save_to_file(str(out))
+        first_mtime = png_path.stat().st_mtime_ns
+        dset.save_to_file(str(out))  # already saved -- no-op without force
+
+        assert png_path.stat().st_mtime_ns == first_mtime
+
+    def test_png_has_incident_x_emission_y_labels_and_title_from_the_scan_command(
+        self, tmp_path, monkeypatch
+    ):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        import matplotlib.pyplot as plt
+
+        original_close = plt.close
+        monkeypatch.setattr(plt, "close", lambda *a, **k: None)  # keep the figure alive to inspect
+
+        dset.save_to_file(str(out))
+
+        fig = plt.gcf()
+        try:
+            ax = fig.axes[0]
+            assert ax.get_xlabel() == "Incident Energy (keV)"
+            assert ax.get_ylabel() == "Emission Energy (keV)"
+            expected_command = " ".join(dset.scan_info["command"].split()[1:])
+            assert ax.get_title() == f"Scan {dset.scan_index}: {expected_command}"
+            assert fig.axes[1].get_ylabel() == "Intensity (norm.)"  # colorbar axis
+        finally:
+            original_close(fig)

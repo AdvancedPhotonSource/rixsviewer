@@ -1,10 +1,12 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from os import cpu_count
 
+import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
 
@@ -455,3 +457,40 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             data = np.column_stack([incident_col, emission_col, intensity_norm.flatten()])
             np.savetxt(f, data, fmt="%.18e")
             f.write("\n")
+
+        self._save_png(fname, res)
+
+    def _save_png(self, fname, res):
+        """Render the 2D RXES map to a PNG alongside *fname*.
+
+        Named ``S_{scan_index}_RXES.png`` in the same directory as the
+        ``.spec`` export. Uses the same (incident=X, emission=Y) orientation
+        as the live RXES Map view (:meth:`~.view.view.RixsView.plot_rxes_map`).
+        """
+        incident_axis = res["incident_axis"]
+        emission_axis = res["emission_axis"]
+        intensity_norm = res["intensity_norm"]
+
+        # The raw "#S" header line always starts with the scan number
+        # (e.g. "11 rxesamesh merixE ..."), which the title states
+        # separately -- drop that first token so it isn't shown twice.
+        command = " ".join(self.scan_info["command"].split()[1:])
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        im = ax.imshow(
+            intensity_norm,
+            extent=[incident_axis[0], incident_axis[-1], emission_axis[0], emission_axis[-1]],
+            origin="lower",
+            aspect="auto",
+            cmap="viridis",
+        )
+        ax.set_xlabel("Incident Energy (keV)")
+        ax.set_ylabel("Emission Energy (keV)")
+        ax.set_title(f"Scan {self.scan_index}: {command}")
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.set_label("Intensity (norm.)")
+        fig.tight_layout()
+
+        png_path = os.path.join(os.path.dirname(fname), f"S_{self.scan_index}_RXES.png")
+        fig.savefig(png_path, dpi=300)
+        plt.close(fig)

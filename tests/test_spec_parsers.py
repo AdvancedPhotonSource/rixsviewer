@@ -112,6 +112,15 @@ def test_parse_single_scan_propagates_rxes_axis_fields(tmp_path):
     assert info["emission_points"] == 3
 
 
+def test_parse_single_scan_propagates_raw_command_line(tmp_path):
+    spec_path = _write_rxes_spec(tmp_path)
+    scan = next(iter(SpecFile(spec_path)))
+
+    info = parse_single_scan(scan, spec_path, str(tmp_path))
+
+    assert info["command"] == "1  rxesamesh merixE 11.190 11.200 2 kohzuE 12.650 12.660 3 0.1"
+
+
 def test_parse_single_scan_leaves_rxes_fields_none_for_energy_scan(tmp_path):
     spec_path = tmp_path / "fake.spec"
     spec_path.write_text(
