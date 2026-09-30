@@ -68,6 +68,29 @@ class Worker(QRunnable):
             self.signals.finished.emit()
 
 
+class _LogBridge(QObject):
+    message = Signal(str)
+
+
+class StatusBarLogHandler(logging.Handler):
+    """Forward log records to the status bar via a Qt signal.
+
+    Records may come from worker threads; the signal is queued onto the GUI
+    thread, so the status bar is only ever touched from there.
+    """
+
+    def __init__(self, level=logging.WARNING):
+        super().__init__(level)
+        self.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+        self.bridge = _LogBridge()
+
+    def emit(self, record):
+        try:
+            self.bridge.message.emit(self.format(record))
+        except Exception:
+            self.handleError(record)
+
+
 class RixsViewerGUI(QMainWindow):
     """
     Main GUI class for the RIXS Viewer application.
@@ -157,6 +180,15 @@ class RixsViewerGUI(QMainWindow):
         self._catching_up = False
         self._backfill_queue = []
         self._backfill_index = 0
+
+        # Mirror WARNING+ records from the whole package onto the status bar
+        self._statusbar_log_handler = StatusBarLogHandler()
+        self._statusbar_log_handler.bridge.message.connect(
+            lambda msg: self.statusBar().showMessage(msg, 10000)
+        )
+        logging.getLogger("rixsviewer").addHandler(self._statusbar_log_handler)
+        handler = self._statusbar_log_handler
+        self.destroyed.connect(lambda: logging.getLogger("rixsviewer").removeHandler(handler))
 
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
@@ -1081,11 +1113,16 @@ class RixsViewerGUI(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.timer.stop()
+            self._detach_statusbar_log_handler()
             self._save_splitter_state()
             self._save_window_geometry()
             super().closeEvent(event)
         else:
             event.ignore()
+
+    def _detach_statusbar_log_handler(self):
+        """Stop forwarding log records to this window's status bar."""
+        logging.getLogger("rixsviewer").removeHandler(self._statusbar_log_handler)
 
     def _save_splitter_state(self):
         """Persist the layout splitters' sizes for restore on next launch."""
