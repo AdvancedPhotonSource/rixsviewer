@@ -575,8 +575,8 @@ def _compute_energy_axis(
             if delta_energy_keV < delta_energy_keV_native:
                 logger.warning(
                     f"Requested NEnergyBins={NEnergyBins} leads to delta_energy_keV={delta_energy_keV * 1e6:.3f} meV, "
-                    f"which is smaller than the native pixel spacing of {delta_energy_keV_native * 1e6:.3f} meV;"
-                    "overwriteping to native spacing"
+                    f"which is smaller than the native pixel spacing of {delta_energy_keV_native * 1e6:.3f} meV; "
+                    "falling back to native spacing"
                 )
             else:
                 fallback_flag = False
