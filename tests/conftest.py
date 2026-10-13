@@ -32,6 +32,15 @@ XB_FIELDS = [
 ]
 
 
+def drain_workers(gui):
+    """Block until the GUI's QThreadPool workers finish and their queued
+    result signals have been delivered on the GUI thread."""
+    from PySide6.QtCore import QCoreApplication
+
+    gui.threadpool.waitForDone()
+    QCoreApplication.processEvents()
+
+
 @pytest.fixture(scope="session")
 def qapp():
     from PySide6.QtWidgets import QApplication

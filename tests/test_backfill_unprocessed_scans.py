@@ -15,7 +15,7 @@ import tifffile
 from rixsviewer.model.scan_dataset import RixsEnergyScanDataset
 from rixsviewer.model.spec_table import RixsSpecTable
 
-from conftest import FakeBeamline, E0, E1, H, W, XB_FIELDS
+from conftest import FakeBeamline, E0, E1, H, W, XB_FIELDS, drain_workers
 
 FILE_SAVE_KEYS = [
     "energy_axis",
@@ -123,6 +123,7 @@ class TestAutoUpdateBackfill:
         gui.update_spec_record()
 
         gui.ui.checkBox_autoupdate.setChecked(True)
+        drain_workers(gui)  # get_unprocessed_scans() runs on a worker thread
 
         assert gui.timer.isActive()
         assert gui._backfill_queue == []
@@ -147,6 +148,7 @@ class TestAutoUpdateBackfill:
         gui.process_binning = fake_process_binning
 
         gui.ui.checkBox_autoupdate.setChecked(True)
+        drain_workers(gui)  # get_unprocessed_scans() runs on a worker thread
 
         assert processed_order == [1, 2, 3]
         assert gui.timer.isActive()

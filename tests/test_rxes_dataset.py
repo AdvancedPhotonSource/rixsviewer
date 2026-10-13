@@ -186,7 +186,11 @@ class TestFramePositionFromFilename:
         # back to the full file list.
         merged = dset._merge_binning_kwargs("SpecFile", {})
         dset._reset_accumulator(merged)
-        dset._map_key = dset._calibration_key(merged)
+        # the staleness key also folds in point_offset (see bin_data_wrap);
+        # omitting it would look stale and trigger the very reset we avoid.
+        point_offset = tiff_point_index(dset.scan_info["filenames"][0])
+        dset._map_key = dset._calibration_key(merged) + (point_offset,)
+        dset._last_point_offset = point_offset
 
         # Only queue points 2,3 (emission row i=1, anchored near the HIGH
         # end of the emission axis at merixE=11.200) for processing --
@@ -300,7 +304,9 @@ class TestGetDataForDisplay:
 
         assert result is not None
         assert result["frame_index"] == 2
-        assert result["num_frames"] == 3
+        # grid size (2x2), not the 3 arrived files: frame_index is a
+        # grid-absolute position, so the slider must span the whole grid
+        assert result["num_frames"] == 4
         assert result["data"].shape == (256, 256)
 
     def test_returns_none_when_no_files_yet(self, tmp_path):
