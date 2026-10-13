@@ -1054,6 +1054,12 @@ class RixsViewerGUI(QMainWindow):
         percentile_cutoff = self.ui.doubleSpinBox_percentile_cutoff.value()
 
         binning_kwargs = self.binning_model.get_kwargs()
+        meta_source = self.ui.comboBox_metasource.currentText()
+        if meta_source == "SpecFile":
+            # The tree still holds the previously displayed scan's values
+            # until _put_params below runs, so a just-selected scan would be
+            # sheared with the old scan's TiltAngle -- use its own metadata.
+            binning_kwargs.update(self.current_rixs_dset.scan_info.get("metadata", {}))
 
         frame_info = self.current_rixs_dset.get_data_for_display(
             frame_index=frame_index,
@@ -1091,7 +1097,6 @@ class RixsViewerGUI(QMainWindow):
         slider.setValue(frame_info["frame_index"])
         slider.blockSignals(False)
 
-        meta_source = self.ui.comboBox_metasource.currentText()
         if meta_source == "SpecFile":
             self._put_params(frame_info["frame_metadata"])
 

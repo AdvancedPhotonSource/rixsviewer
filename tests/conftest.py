@@ -49,17 +49,20 @@ class FakeBeamline:
         with open(self.spec, "w") as f:
             f.write("#F fake session\n")
 
-    def start_scan(self, scan_no, e0=None, e1=None):
+    def start_scan(self, scan_no, e0=None, e1=None, tilt_angle=None):
         e0 = E0 if e0 is None else e0
         e1 = E1 if e1 is None else e1
         if not hasattr(self, "_scan_energy_range"):
             self._scan_energy_range = {}
         self._scan_energy_range[scan_no] = (e0, e1)
+        xb_fields = list(XB_FIELDS)
+        if tilt_angle is not None:
+            xb_fields.append(f"TiltAngle_deg = {tilt_angle}")
         with open(self.spec, "a") as f:
             f.write(f"#S {scan_no} ascan merixE {e0} {e1} {POINTS} 0.1\n")
             f.write("#N 5\n")
             f.write("#L merixE i0 i2 mmepin1 mmepin2\n")
-            f.write(f"#B {' '.join(XB_FIELDS)}\n")
+            f.write(f"#B {' '.join(xb_fields)}\n")
             f.write("#D 2026-08-27 12:00:00\n")
 
     def add_point(self, scan_no, pt):
@@ -76,8 +79,8 @@ class FakeBeamline:
         for pt in range(POINTS):
             self.add_point(scan_no, pt)
 
-    def run_snapshot_scan(self, scan_no, energy=E0):
-        self.start_scan(scan_no, e0=energy, e1=energy)
+    def run_snapshot_scan(self, scan_no, energy=E0, tilt_angle=None):
+        self.start_scan(scan_no, e0=energy, e1=energy, tilt_angle=tilt_angle)
         for pt in range(POINTS):
             self.add_point(scan_no, pt)
 
