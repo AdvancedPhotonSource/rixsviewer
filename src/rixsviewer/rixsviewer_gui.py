@@ -31,6 +31,7 @@ from .view import RixsView
 from .view.ui import Ui_MainWindow
 from . import __version__
 from .log_setup import setup_file_logging
+from .memory_monitor import start_memory_logging
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -1250,6 +1251,9 @@ def main():
         enable_tooltips=not args.no_tooltip,
     )
     gui.show()
+
+    # RAM usage of the app and the system, logged now and every 2 minutes
+    start_memory_logging(parent=app)
 
     exit_code = app.exec()
     # A log file that does not end with this line belongs to a run that crashed

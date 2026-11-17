@@ -87,4 +87,5 @@ Every launch of ``rixsviewer`` writes its own log file to ``$HOME/.rixsviewer/lo
 
 - **Contents**: Everything shown in the terminal, plus tracebacks of uncaught errors, Qt's own warnings, and -- if the application crashes outright (e.g. a segmentation fault) -- the Python traceback of every thread at the moment of the crash.
 - **Reporting a crash**: Send the newest file in that folder. A run that ended cleanly finishes with the line ``RixsViewer exited normally``; a file without it belongs to a run that crashed or was killed.
-- **No traceback at the end?** If the file simply stops, the process was most likely killed from outside -- typically by the operating system when memory ran out while loading large TIFF stacks.
+- **Memory usage**: At startup and then every 2 minutes, a ``Memory:`` line records the RAM held by the viewer itself (current and peak since startup) and by the whole machine (used, available, swap).
+- **No traceback at the end?** If the file simply stops, the process was most likely killed from outside -- typically by the operating system when memory ran out while loading large TIFF stacks. Check the last ``Memory:`` lines: a large ``app`` figure, or little ``available`` memory on the system, points to exactly that.
