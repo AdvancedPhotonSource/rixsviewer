@@ -69,7 +69,7 @@ You may save the processed, 1D binned spectra to disk for external analysis.
 - **Save**: Click the **Save** button in the lower-left corner.
 - **File Location**: By default, the result is written alongside the original SPEC file, named ``<original_spec_filename>_bindata_rixsviewer.spec``.
 - **Format**: The file uses the standard SPEC format. Each saved spectrum is a new scan with standard headers (e.g., ``#S``, ``#L``). 
-- **Columns**: The saved data generally includes ``Energy``, ``Intensity`` (normalized), ``Error``, ``Signal``, and ``Norm`` (total counts).
+- **Columns**: A 1D spectrum (EnergyScan/SnapshotScan) is saved as ``Energy_keV`` followed by ``Intensity_norm``, ``Intensity_norm_err``, ``Intensity_raw``, ``A`` (number of contributing frames) and the monitor counters ``i2``, ``i0``, ``mmepin1``, ``mmepin2``. An RXES map is saved one row per map cell, with ``EmissionEnergy_keV`` and ``IncidentEnergy_keV`` in place of ``Energy_keV``, followed by the same columns (a monitor counter the scan did not record is left out). The header of every saved scan explains each column in ``#C`` comment lines.
 
 6. GUI Navigation (Scans and Frames)
 ====================================

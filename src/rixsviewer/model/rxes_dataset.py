@@ -10,11 +10,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
 
-from .process_parameters import unit_map
-from .scan_dataset import TiffScanDatasetMixin
+from .scan_dataset import MONITOR_KEYS, TiffScanDatasetMixin
 from .spec_parsers import tiff_point_index
 from .utils import _preprocess_frames, apply_subpixel_shear_3d, compute_frame_energy_axis, fix_bad_pixels, percentile_clip
-from .. import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +68,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         self.incident_axis = None
         self.intensity = None
         self.sample = None
+        self.monitors = {}
 
     def _calibration_key(self, merged_kwargs):
         """Hashable snapshot of the calibration kwargs, rounded so that
@@ -144,6 +143,10 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         )
         self.intensity = np.zeros((n_bins, n_incident))
         self.sample = np.zeros((n_bins, n_incident))
+        # one map per monitor counter the SPEC scan actually recorded
+        self.monitors = {
+            key: np.zeros((n_bins, n_incident)) for key in MONITOR_KEYS if key in si["scandata"].columns
+        }
         self._xsize = xsize
         self._n_processed = 0
         self.unloaded_filenames = list(si["filenames"])
@@ -170,7 +173,11 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         -------
         dict
             Keys: ``kind`` (``'rxes_map'``), ``emission_axis``,
-            ``incident_axis``, ``intensity``, ``sample``, ``intensity_norm``.
+            ``incident_axis``, ``intensity`` (also as ``intensity_raw``),
+            ``sample``, ``intensity_norm``, ``intensity_norm_err``, and one
+            map per recorded monitor counter (``i2``, ``i0``, ``mmepin1``,
+            ``mmepin2``) summed over the frames that contributed to each
+            cell. All maps are shaped ``(emission, incident)``.
         """
         if self.scan_info is None or self.scan_info["scandata"].empty:
             raise ValueError(
@@ -219,7 +226,9 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
 
         n_incident = self.scan_info["incident_points"]
         total_points = self.scan_info["incident_points"] * self.scan_info["emission_points"]
-        merixE_col = np.asarray(self.scan_info["scandata"]["merixE"], dtype=float)
+        scandata = self.scan_info["scandata"]
+        merixE_col = np.asarray(scandata["merixE"], dtype=float)
+        monitor_cols = {key: np.asarray(scandata[key], dtype=float) for key in self.monitors}
 
         to_process = list(self.unloaded_filenames)
         self.unloaded_filenames = []
@@ -282,6 +291,8 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
             valid = ~np.isnan(interp_vals)
             self.intensity[valid, j] += interp_vals[valid]
             self.sample[valid, j] += 1
+            for key, column in monitor_cols.items():
+                self.monitors[key][valid, j] += column[frame_position]
 
             if progress_callback is not None:
                 progress_callback(int(100 * self._n_processed / n_total_for_progress))
@@ -295,13 +306,19 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
                 self.scan_index, len(to_process), time.perf_counter() - start_time,
             )
 
+        intensity = self.intensity.copy()
         self.bin_result = {
             "kind": "rxes_map",
             "emission_axis": self.emission_axis,
             "incident_axis": self.incident_axis,
-            "intensity": self.intensity.copy(),
+            "intensity": intensity,
+            # same names as the 1D (EnergyScan/SnapshotScan) result, so both
+            # are saved through the same column definitions
+            "intensity_raw": intensity,
             "sample": self.sample.copy(),
             "intensity_norm": intensity_norm,
+            "intensity_norm_err": np.zeros_like(intensity_norm),  # placeholder, as in the 1D result
+            **{key: acc.copy() for key, acc in self.monitors.items()},
             "energy_resolution": (
                 round(float(self.emission_axis[1] - self.emission_axis[0]) * 1e6, 3)
                 if len(self.emission_axis) > 1 else 0.0
@@ -411,7 +428,7 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         image.
 
         Unlike a real scan command, the ``#S`` line always reads
-        ``mesh Incident_keV ... Emission_keV ...`` regardless of the
+        ``mesh IncidentEnergy_keV ... EmissionEnergy_keV ...`` regardless of the
         original ``rxesamesh`` macro. Incident is listed first (fast/inner
         loop) and emission second (slow/outer loop) to match how a genuine
         SPEC ``mesh`` scan orders its two motors -- PyMca's "Show mesh as
@@ -419,9 +436,11 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         first-listed motor varies fastest, labeling X=Incident, Y=Emission
         to match the live RXES Map view.
 
-        The ``#L``/data column order is independently set to
-        ``Emission_keV, Incident_keV, Intensity_norm`` -- deliberately
-        *not* matching the header's motor order. PyMca's "2D On" counter
+        The ``#L``/data columns start with ``EmissionEnergy_keV, IncidentEnergy_keV``
+        -- deliberately *not* matching the header's motor order -- followed
+        by the same result columns a 1D (EnergyScan/SnapshotScan) save
+        writes (``Intensity_norm``, ``Intensity_norm_err``,
+        ``Intensity_raw``, ``A`` and the recorded monitor counters). PyMca's "2D On" counter
         checkbox view (``PyMcaImageWindow._addSelection``) ignores the
         header and instead guesses orientation from whichever counter is
         checked first as X: if that one is constant across the first two
@@ -430,10 +449,10 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         scrambles the image. Listing Emission (slow/outer) first means
         checking counters in the table's natural top-to-bottom order hits
         the correct branch. Row order itself is unchanged: incident
-        fastest, emission slowest, i.e. plain ``intensity_norm.flatten()``
-        with no transpose needed since ``intensity_norm`` is already shaped
-        ``(emission, incident)``. Calibration settings are recorded as
-        ``#C`` header comments.
+        fastest, emission slowest, i.e. each map plainly flattened with no
+        transpose needed since they are already shaped
+        ``(emission, incident)``. Calibration settings and the meaning of
+        each column are recorded as ``#C`` header comments.
         """
         if self.bin_result is None or (self._saved and not force):
             return
@@ -445,37 +464,28 @@ class RixsRxesScanDataset(TiffScanDatasetMixin):
         res = self.bin_result
         incident_axis = res["incident_axis"]
         emission_axis = res["emission_axis"]
-        intensity_norm = res["intensity_norm"]
         n_incident = len(incident_axis)
         n_emission = len(emission_axis)
 
-        with open(fname, "a") as f:
-            f.write(
-                f"\n#S {self.scan_index} mesh "
-                f"Incident_keV {incident_axis[0]} {incident_axis[-1]} {n_incident - 1} "
-                f"Emission_keV {emission_axis[0]} {emission_axis[-1]} {n_emission - 1} "
-                f"{self.scan_info['exposure_time']}\n"
-            )
-            f.write(f"#D {np.datetime64('now')}\n")
-            f.write(f"#C RixsViewerVersion = {__version__}\n")
-            for key, value in self.scan_info["metadata"].items():
-                unit = unit_map.get(key, "")
-                f.write(f"#C {key} = {value}{unit}\n")
-            f.write(f"#C energy_resolution = {res['energy_resolution']} meV\n")
-            f.write(f"#C shape = {n_emission} x {n_incident} (emission x incident)\n")
-            f.write(
-                "#C PyMca tip: for the '2D On' counter view, check X on "
-                "Emission_keV then Incident_keV (in that order), Y on "
+        self._write_spec_block(
+            fname,
+            f"mesh IncidentEnergy_keV {incident_axis[0]} {incident_axis[-1]} {n_incident - 1} "
+            f"EmissionEnergy_keV {emission_axis[0]} {emission_axis[-1]} {n_emission - 1} "
+            f"{self.scan_info['exposure_time']}",
+            {
+                "EmissionEnergy_keV": (np.repeat(emission_axis, n_incident), "Emission bin energy in keV"),
+                "IncidentEnergy_keV": (np.tile(incident_axis, n_emission), "Incident energy in keV (commanded grid)"),
+            },
+            res,
+            extra_comments=(
+                f"energy_resolution = {res['energy_resolution']} meV",
+                f"shape = {n_emission} x {n_incident} (emission x incident)",
+                "PyMca tip: for the '2D On' counter view, check X on "
+                "EmissionEnergy_keV then IncidentEnergy_keV (in that order), Y on "
                 "Intensity_norm -- or use Tools > Show mesh as image, "
-                "which works regardless of check order\n"
-            )
-            f.write("#N 3\n")
-            f.write("#L  Emission_keV  Incident_keV  Intensity_norm\n")
-            incident_col = np.tile(incident_axis, n_emission)
-            emission_col = np.repeat(emission_axis, n_incident)
-            data = np.column_stack([emission_col, incident_col, intensity_norm.flatten()])
-            np.savetxt(f, data, fmt="%.18e")
-            f.write("\n")
+                "which works regardless of check order",
+            ),
+        )
 
         self._save_pdf(fname, res, cmap)
 

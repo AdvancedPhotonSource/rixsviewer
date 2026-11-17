@@ -7,6 +7,7 @@ import pytest
 from silx.io.specfile import SpecFile
 
 from rixsviewer.model.rxes_dataset import RixsRxesScanDataset
+from rixsviewer.model.scan_dataset import MONITOR_DESCRIPTION, RESULT_COLUMN_DESCRIPTIONS, RESULT_COLUMNS
 from rixsviewer.model.spec_parsers import tiff_point_index
 
 from conftest import FakeBeamline, XB_FIELDS
@@ -349,8 +350,8 @@ class TestSaveToFile:
         tokens = header.split()
         incident_axis, emission_axis = dset.incident_axis, dset.emission_axis
         assert tokens[1:3] == [str(dset.scan_index), "mesh"]
-        assert tokens[3] == "Incident_keV"
-        assert tokens[7] == "Emission_keV"
+        assert tokens[3] == "IncidentEnergy_keV"
+        assert tokens[7] == "EmissionEnergy_keV"
         assert float(tokens[4]) == pytest.approx(incident_axis[0])
         assert float(tokens[5]) == pytest.approx(incident_axis[-1])
         assert int(tokens[6]) == len(incident_axis) - 1
@@ -358,14 +359,15 @@ class TestSaveToFile:
         assert float(tokens[9]) == pytest.approx(emission_axis[-1])
         assert int(tokens[10]) == len(emission_axis) - 1
 
-    def test_columns_are_emission_incident_intensity_with_incident_fastest_row_order(
+    def test_columns_are_emission_incident_then_results_with_incident_fastest_row_order(
         self, tmp_path
     ):
-        """Column order (Emission, Incident, Intensity) is deliberately the
-        reverse of the #S header's motor order (Incident, Emission): PyMca's
-        '2D On' counter view orients itself from whichever counter is
-        checked first as X, and only reshapes correctly if that one is the
-        slow/outer axis (Emission here) -- see save_to_file's docstring."""
+        """The two axis columns come first, Emission before Incident --
+        deliberately the reverse of the #S header's motor order (Incident,
+        Emission): PyMca's '2D On' counter view orients itself from
+        whichever counter is checked first as X, and only reshapes correctly
+        if that one is the slow/outer axis (Emission here) -- see
+        save_to_file's docstring. The result columns follow."""
         dset, _ = _make_dataset(tmp_path, n_points=2)
         dset.bin_data_wrap(**SPECFILE_KWARGS)
         out = tmp_path / "out.spec"
@@ -373,9 +375,15 @@ class TestSaveToFile:
         dset.save_to_file(str(out))
         lines = out.read_text().splitlines()
 
-        assert "#N 3" in lines
+        # FakeBeamline's rxesamesh scans record i0, i2 and mmepin1 only
+        expected_labels = [
+            "EmissionEnergy_keV", "IncidentEnergy_keV",
+            "Intensity_norm", "Intensity_norm_err", "Intensity_raw", "A",
+            "i2", "i0", "mmepin1",
+        ]
+        assert f"#N {len(expected_labels)}" in lines
         label_line = next(line for line in lines if line.startswith("#L"))
-        assert label_line.split() == ["#L", "Emission_keV", "Incident_keV", "Intensity_norm"]
+        assert label_line.split() == ["#L"] + expected_labels
 
         incident_axis, emission_axis = dset.incident_axis, dset.emission_axis
         n_incident, n_emission = len(incident_axis), len(emission_axis)
@@ -383,9 +391,88 @@ class TestSaveToFile:
         assert len(data_lines) == n_incident * n_emission
 
         data = np.array([[float(tok) for tok in line.split()] for line in data_lines])
+        res = dset.bin_result
         np.testing.assert_allclose(data[:, 0], np.repeat(emission_axis, n_incident))
         np.testing.assert_allclose(data[:, 1], np.tile(incident_axis, n_emission))
-        np.testing.assert_allclose(data[:, 2], dset.bin_result["intensity_norm"].flatten())
+        np.testing.assert_allclose(data[:, 2], res["intensity_norm"].flatten())
+        np.testing.assert_allclose(data[:, 3], 0.0)  # Intensity_norm_err placeholder
+        np.testing.assert_allclose(data[:, 4], res["intensity"].flatten())
+        np.testing.assert_allclose(data[:, 5], res["sample"].flatten())
+        for column, key in zip(data[:, 6:].T, ("i2", "i0", "mmepin1")):
+            np.testing.assert_allclose(column, res[key].flatten())
+
+    def test_result_columns_match_the_1d_scan_save(self, tmp_path):
+        """After its energy axes, an RXES block carries the same result
+        columns, in the same order, as an EnergyScan/SnapshotScan block --
+        minus any monitor counter the SPEC scan did not record."""
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+
+        scan = SpecFile(str(out))[0]
+        assert scan.labels[:2] == ["EmissionEnergy_keV", "IncidentEnergy_keV"]
+        assert scan.labels[2:] == [
+            label for key, label in RESULT_COLUMNS.items() if key in dset.bin_result
+        ]
+        assert "mmepin2" not in dset.bin_result  # not recorded by this scan -> skipped
+        assert "mmepin2" not in scan.labels
+
+    def test_header_describes_every_saved_column(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+
+        header = [line for line in out.read_text().splitlines() if line.startswith("#")]
+        start = header.index("#C Columns:")
+        end = header.index("#N 9")
+        assert header[start + 1 : end] == [  # noqa: E203
+            "#C   EmissionEnergy_keV: Emission bin energy in keV",
+            "#C   IncidentEnergy_keV: Incident energy in keV (commanded grid)",
+            *(f"#C   {label}: {text}" for label, text in RESULT_COLUMN_DESCRIPTIONS.items()),
+            f"#C   i2, i0, mmepin1: {MONITOR_DESCRIPTION}",
+        ]
+
+
+class TestMonitorAccumulation:
+    def test_each_cell_sums_the_monitor_over_its_contributing_frames(self, tmp_path):
+        # FakeBeamline writes the same monitor readings on every row
+        # (i0=1, i2=100, mmepin1=10), so a cell that N frames contributed
+        # to must hold N times the reading.
+        dset, _ = _make_dataset(tmp_path, n_emission=3, n_incident=2)
+
+        res = dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        assert res["sample"].max() >= 1
+        for key, reading in (("i0", 1.0), ("i2", 100.0), ("mmepin1", 10.0)):
+            assert res[key].shape == res["sample"].shape
+            np.testing.assert_allclose(res[key], reading * res["sample"])
+
+    def test_monitor_sums_are_not_double_counted_across_incremental_calls(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=3, n_incident=2, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        for pt in range(2, 6):
+            beamline.add_rxes_point(1, pt)
+        dset.update_scan_info(_scan_pack(beamline.spec, 1))
+
+        incremental = dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        (tmp_path / "one_shot").mkdir()
+        one_shot, _ = _make_dataset(tmp_path / "one_shot", n_emission=3, n_incident=2)
+        expected = one_shot.bin_data_wrap(**SPECFILE_KWARGS)
+        for key in ("sample", "i0", "i2", "mmepin1"):
+            np.testing.assert_allclose(incremental[key], expected[key])
+
+    def test_result_carries_the_1d_result_names(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+
+        res = dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        np.testing.assert_array_equal(res["intensity_raw"], res["intensity"])
+        np.testing.assert_array_equal(res["intensity_norm_err"], np.zeros_like(res["intensity_norm"]))
 
 
 class TestSaveToFilePdf:

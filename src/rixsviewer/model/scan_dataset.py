@@ -23,6 +23,36 @@ from .. import __version__
 
 logger = logging.getLogger(__name__)
 
+# Saved-file column layout, shared by every scan type so the files stay
+# consistent: each scan type writes its own energy axis column(s) first, each
+# labelled ``<Name>_keV``, followed by the result columns below.
+
+#: label of the single energy column of a 1D (EnergyScan/SnapshotScan) spectrum
+ENERGY_LABEL = "Energy_keV"
+
+#: per-frame SPEC monitor counters carried into the saved result
+MONITOR_KEYS = ("i2", "i0", "mmepin1", "mmepin2")
+
+#: ``bin_result`` key -> ``#L`` label of the result columns, in saved order
+RESULT_COLUMNS = {
+    "intensity_norm": "Intensity_norm",
+    "intensity_norm_err": "Intensity_norm_err",
+    "intensity_raw": "Intensity_raw",
+    "sample": "A",
+    **{key: key for key in MONITOR_KEYS},
+}
+
+# What each result column means, written as ``#C`` lines into every saved scan
+# block so the file documents itself. Avoid "=" in the text: the parameter
+# comments in the same header are ``#C key = value`` lines.
+RESULT_COLUMN_DESCRIPTIONS = {
+    "Intensity_norm": "Summed counts divided by A (mean counts per contributing frame)",
+    "Intensity_norm_err": "Placeholder, currently all zeros",
+    "Intensity_raw": "Summed counts over all frames covering this bin",
+    "A": "Number of frames that contributed to this bin",
+}
+MONITOR_DESCRIPTION = "Each monitor counter summed over the frames that contributed to this bin"
+
 
 class TiffScanDatasetMixin:
     """Shared scan-metadata/filename-tracking behavior for scan-dataset
@@ -168,6 +198,60 @@ class TiffScanDatasetMixin:
             self._model.update_fnames(self.scan_info["filenames"])
         return self._model
 
+    def _write_spec_block(self, fname, command, axes, result, extra_comments=()):
+        """Append one reduced-scan block to the SPEC-format file *fname*.
+
+        The single writer behind every scan type's ``save_to_file``, so the
+        header layout, column names and number format cannot drift apart.
+
+        Parameters
+        ----------
+        fname : str
+            File to append to.
+        command : str
+            Text following the scan number on the ``#S`` line.
+        axes : dict
+            ``#L`` label -> ``(values, description)`` for the scan type's own
+            energy axis column(s), written first, in this order.
+        result : dict
+            The scan's ``bin_result``. Every :data:`RESULT_COLUMNS` key it
+            holds is written (flattened) after the axes; keys it lacks --
+            e.g. a monitor counter the SPEC scan did not record -- are
+            skipped.
+        extra_comments : iterable of str, optional
+            Additional ``#C`` lines, written after the instrument parameters.
+        """
+        columns = {label: values for label, (values, _) in axes.items()}
+        descriptions = {label: text for label, (_, text) in axes.items()}
+        monitor_labels = []
+        for key, label in RESULT_COLUMNS.items():
+            if key not in result:
+                continue
+            columns[label] = np.ravel(result[key])
+            if key in MONITOR_KEYS:
+                monitor_labels.append(label)
+            else:
+                descriptions[label] = RESULT_COLUMN_DESCRIPTIONS[label]
+        if monitor_labels:
+            descriptions[", ".join(monitor_labels)] = MONITOR_DESCRIPTION
+
+        with open(fname, "a") as f:
+            f.write(f"\n#S {self.scan_index} {command}\n")
+            f.write(f"#D {np.datetime64('now')}\n")
+            f.write(f"#C RixsViewerVersion = {__version__}\n")
+            for key, value in self.scan_info["metadata"].items():
+                unit = unit_map.get(key, "")
+                f.write(f"#C {key} = {value}{unit}\n")
+            for comment in extra_comments:
+                f.write(f"#C {comment}\n")
+            f.write("#C Columns:\n")
+            for label, text in descriptions.items():
+                f.write(f"#C   {label}: {text}\n")
+            f.write(f"#N {len(columns)}\n")
+            f.write("#L  " + "  ".join(columns) + "\n")
+            np.savetxt(f, np.column_stack(list(columns.values())), fmt="%.18e")
+            f.write("\n")
+
 
 class BufferedTiffScanDatasetMixin(TiffScanDatasetMixin):
     """
@@ -216,17 +300,6 @@ class BufferedTiffScanDatasetMixin(TiffScanDatasetMixin):
         self.bin_result = None
         self.bin_kwargs = None
         self._saved = False
-        self.file_save_keys = {
-            "energy_axis": "Energy",
-            "intensity_norm": "Intensity_norm",
-            "intensity_norm_err": "Intensity_norm_err",
-            "intensity_raw": "Intensity_raw",
-            "sample": "A",
-            "i2": "i2",
-            "i0": "i0",
-            "mmepin1": "mmepin1",
-            "mmepin2": "mmepin2",
-        }
 
     def supports_calibration(self):
         """Whether pixel-size/tilt calibration is meaningful for this scan type."""
@@ -404,20 +477,12 @@ class BufferedTiffScanDatasetMixin(TiffScanDatasetMixin):
             fname = "./test_rixsviewer_saving.spec"
 
         res = self.bin_result
-
-        with open(fname, "a") as f:
-            f.write(f"\n#S {self.scan_index} {self.scan_info['scan_type']}\n")
-            f.write(f"#D {np.datetime64('now')}\n")
-            f.write(f"#C RixsViewerVersion = {__version__}\n")
-            for key, value in self.scan_info["metadata"].items():
-                unit = unit_map.get(key, "")
-                f.write(f"#C {key} = {value}{unit}\n")
-            f.write(f"#N {len(self.file_save_keys)}\n")
-            header = "#L  " + "  ".join(list(self.file_save_keys.values()))
-            f.write(header + "\n")
-            data = np.column_stack([res[key] for key in self.file_save_keys.keys()])
-            np.savetxt(f, data, fmt="%.18e")
-            f.write("\n")
+        self._write_spec_block(
+            fname,
+            self.scan_info["scan_type"],
+            {ENERGY_LABEL: (res["energy_axis"], "Bin energy in keV")},
+            res,
+        )
 
     def read_tiff_data(self):
         """
