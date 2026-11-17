@@ -59,3 +59,16 @@ def test_handler_detached_on_close(qapp, tmp_path, monkeypatch):
     gui._detach_statusbar_log_handler()
 
     assert gui._statusbar_log_handler not in pkg_logger.handlers
+
+
+def test_traceback_not_shown_on_statusbar(qapp, tmp_path, monkeypatch):
+    """A record logged with a traceback still shows as one status bar line."""
+    gui = _make_gui(tmp_path, monkeypatch)
+
+    try:
+        raise ValueError("bad frame")
+    except ValueError:
+        logging.getLogger("rixsviewer.model.utils").exception("binning failed")
+    QApplication.processEvents()
+
+    assert gui.statusBar().currentMessage() == "ERROR: binning failed"

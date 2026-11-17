@@ -79,3 +79,12 @@ The user interface is broken up into several interactable views.
 - **Select Dataset**: The top pane contains a scan table displaying the Scan Number, Type, SPEC Points, and TIFF Points. Click any row to load and display that specific scan.
 - **Select Frames**: Once a scan dataset is loaded, a 2D view of the detector is displayed on the right. Below this view is a horizontal slider. Use this slider to scroll through the individual detector frames (TIFF images) contained within the scan.
 - By default, selecting a new dataset resets the frame view to the middle frame of the scan.
+
+7. Log Files and Crash Reports
+==============================
+
+Every launch of ``rixsviewer`` writes its own log file to ``$HOME/.rixsviewer/logs/`` (next to ``settings.json``), named ``rixsviewer_<date>_<time>_<host>_<pid>.log``. The path is printed at startup; the 20 most recent files are kept.
+
+- **Contents**: Everything shown in the terminal, plus tracebacks of uncaught errors, Qt's own warnings, and -- if the application crashes outright (e.g. a segmentation fault) -- the Python traceback of every thread at the moment of the crash.
+- **Reporting a crash**: Send the newest file in that folder. A run that ended cleanly finishes with the line ``RixsViewer exited normally``; a file without it belongs to a run that crashed or was killed.
+- **No traceback at the end?** If the file simply stops, the process was most likely killed from outside -- typically by the operating system when memory ran out while loading large TIFF stacks.

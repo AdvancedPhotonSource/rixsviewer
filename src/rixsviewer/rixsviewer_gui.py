@@ -4,7 +4,6 @@ import argparse
 import logging
 import os
 import sys
-import traceback
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +30,7 @@ from .model import (
 from .view import RixsView
 from .view.ui import Ui_MainWindow
 from . import __version__
+from .log_setup import setup_file_logging
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -60,7 +60,8 @@ class Worker(QRunnable):
         try:
             result = self.fn(*self.args, **self.kwargs)
         except Exception as e:
-            traceback.print_exc()
+            # logged (not just printed) so the traceback reaches the log file too
+            logger.exception("%s failed in a worker thread", getattr(self.fn, "__qualname__", self.fn))
             self.signals.error.emit(str(e))
         else:
             self.signals.result.emit(result)
@@ -86,7 +87,9 @@ class StatusBarLogHandler(logging.Handler):
 
     def emit(self, record):
         try:
-            self.bridge.message.emit(self.format(record))
+            # first line only: a record logged with a traceback formats to
+            # many lines, which the single-line status bar cannot show
+            self.bridge.message.emit(self.format(record).splitlines()[0])
         except Exception:
             self.handleError(record)
 
@@ -932,8 +935,7 @@ class RixsViewerGUI(QMainWindow):
                 force_reload_s=self.force_reload_s,
             )
         except Exception as e:
-            traceback.print_exc()
-            logger.error(f"Error loading SPEC file: {e}")
+            logger.exception(f"Error loading SPEC file: {e}")
             QMessageBox.critical(
                 self,
                 "Error",
@@ -1202,6 +1204,11 @@ def main():
     if unrecognized_opts:
         parser.error(f"unrecognized arguments: {' '.join(unrecognized_opts)}")
 
+    # Record this run -- and any crash traceback -- under $HOME/.rixsviewer/logs.
+    # Done here rather than at import time so that merely importing the package
+    # (tests, scripts) never creates log files.
+    setup_file_logging()
+
     # Fall back to the last-used spec file / TIFF folder for any field not
     # given on the command line.
     saved = load_settings()
@@ -1244,7 +1251,11 @@ def main():
     )
     gui.show()
 
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    # A log file that does not end with this line belongs to a run that crashed
+    # or was killed.
+    logger.info("RixsViewer exited normally (code %s)", exit_code)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
