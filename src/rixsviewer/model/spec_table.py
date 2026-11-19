@@ -144,11 +144,16 @@ class RixsSpecTable(QAbstractTableModel):
 
         has_updates = False
         scan_dset = None
-        for scan_pack in self.spec_container:
-            scan_number = scan_pack.number
+        for scan_idx in range(len(self.spec_container)):
+            # Check the number before building the Scan: silx leaks native
+            # memory (motor names/positions) for every Scan object it creates,
+            # and this runs on every re-read during a live scan -- iterating
+            # the whole file here grew the app ~1 GB/hour on a long beamtime.
+            scan_number = self.spec_container.number(scan_idx)
             # no need to re-process old scans
             if scan_number < self.last_scan_index:
                 continue
+            scan_pack = self.spec_container[scan_idx]
 
             scan_type = get_scan_header(scan_pack)["scan_type"]
             if scan_type in ["EnergyScan", "SnapshotScan", "RXESScan"]:

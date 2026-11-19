@@ -177,3 +177,40 @@ class TestPreallocatedStack:
 
         assert len(d1._data) == POINTS + 2
         assert np.all(d1._data[POINTS + 1][:, W // 2] == 60000)
+
+
+class TestSpecRereadDoesNotRebuildOldScans:
+    """silx (2.2.x) leaks ~5 KB of native memory (the ``#O``/``#P`` motor
+    names/positions) for every ``silx.io.specfile.Scan`` object it builds,
+    and ``gc`` never reclaims it. Auto-update re-reads the SPEC file on every
+    mtime change and every ``force_reload_s`` while a scan runs, so building a
+    ``Scan`` for *every* scan in the file on each re-read grew the app by
+    ~1.6 MB per re-read on a 308-scan beamtime file (~1 GB/hour of live
+    acquisition). Scans below ``last_scan_index`` are skipped anyway, so a
+    re-read must only build ``Scan`` objects for the scans it processes."""
+
+    def test_reread_builds_scan_objects_only_for_unprocessed_scans(self, qapp, tmp_path, monkeypatch):
+        from silx.io import specfile
+
+        from conftest import FakeBeamline
+        from rixsviewer.model.spec_table import RixsSpecTable
+
+        beamline = FakeBeamline(str(tmp_path))
+        for n in range(1, 6):
+            beamline.run_scan(n)
+        table = RixsSpecTable(beamline.spec, beamline.workdir, str(tmp_path / "bindata.spec"))
+        assert table.last_scan_index == 5
+
+        built = []
+        real_init = specfile.Scan.__init__
+
+        def counting_init(self, sf, index, *args, **kwargs):
+            real_init(self, sf, index, *args, **kwargs)
+            built.append(self.number)
+
+        monkeypatch.setattr(specfile.Scan, "__init__", counting_init)
+
+        table.last_modtime = -1  # force a re-read, as the NFS-bypass timer does
+        table.process_spec_file()
+
+        assert built == [5], f"re-read rebuilt Scan objects for already-processed scans: {built}"
