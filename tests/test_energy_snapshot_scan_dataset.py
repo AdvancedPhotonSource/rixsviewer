@@ -2,8 +2,6 @@
 # See LICENSE file for details
 import numpy as np
 import pytest
-from silx.io.specfile import SpecFile
-
 from rixsviewer.model.scan_dataset import (
     ENERGY_LABEL,
     MONITOR_DESCRIPTION,
@@ -12,6 +10,7 @@ from rixsviewer.model.scan_dataset import (
     RixsEnergyScanDataset,
     RixsSnapshotScanDataset,
 )
+from rixsviewer.model.spec_reader import SpecReader
 from rixsviewer.model.spec_table import RixsSpecTable
 
 from conftest import FakeBeamline, POINTS
@@ -118,7 +117,7 @@ class TestSavedFileColumns:
     def test_columns_are_the_energy_axis_then_the_shared_result_columns(self, tmp_path, snapshot):
         dset, out = self._save_scan(tmp_path, snapshot)
 
-        scan = SpecFile(str(out))[0]
+        scan = SpecReader(str(out))[0]
 
         assert scan.number == 1
         # the energy column carries its unit, like the RXES axes do

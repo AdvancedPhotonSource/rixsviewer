@@ -75,7 +75,7 @@ class TiffScanDatasetMixin:
 
         Parameters
         ----------
-        scan_pack : silx.io.specfile.Scan
+        scan_pack : rixsviewer.model.spec_reader.SpecScan
             Current state of the scan from the SPEC file.
         """
         scan_info = parse_single_scan(

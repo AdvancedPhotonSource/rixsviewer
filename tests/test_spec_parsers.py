@@ -1,13 +1,12 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
-from silx.io.specfile import SpecFile
-
 from rixsviewer.model.spec_parsers import (
     _get_metadata,
     get_scan_header,
     parse_single_scan,
     tiff_point_index,
 )
+from rixsviewer.model.spec_reader import SpecReader
 
 REQUIRED_FIELDS = (
     "Analyzer_EB_keV = 11.184\n"
@@ -40,7 +39,7 @@ def test_get_scan_header_classifies_rxesamesh_as_rxesscan(tmp_path):
         "#N 5\n"
         "#L KohzuE merixE i0 i2 mmepin1\n"
     )
-    scan = next(iter(SpecFile(str(spec_path))))
+    scan = next(iter(SpecReader(str(spec_path))))
 
     header = get_scan_header(scan)
 
@@ -100,7 +99,7 @@ def _write_rxes_spec(tmp_path):
 
 def test_parse_single_scan_propagates_rxes_axis_fields(tmp_path):
     spec_path = _write_rxes_spec(tmp_path)
-    scan = next(iter(SpecFile(spec_path)))
+    scan = next(iter(SpecReader(spec_path)))
 
     info = parse_single_scan(scan, spec_path, str(tmp_path))
 
@@ -114,7 +113,7 @@ def test_parse_single_scan_propagates_rxes_axis_fields(tmp_path):
 
 def test_parse_single_scan_propagates_raw_command_line(tmp_path):
     spec_path = _write_rxes_spec(tmp_path)
-    scan = next(iter(SpecFile(spec_path)))
+    scan = next(iter(SpecReader(spec_path)))
 
     info = parse_single_scan(scan, spec_path, str(tmp_path))
 
@@ -131,7 +130,7 @@ def test_parse_single_scan_leaves_rxes_fields_none_for_energy_scan(tmp_path):
         "#L merixE i0 i2 mmepin1\n"
         + _required_fields_as_b_lines()
     )
-    scan = next(iter(SpecFile(str(spec_path))))
+    scan = next(iter(SpecReader(str(spec_path))))
 
     info = parse_single_scan(scan, str(spec_path), str(tmp_path))
 

@@ -4,17 +4,16 @@ import os
 
 import numpy as np
 import pytest
-from silx.io.specfile import SpecFile
-
 from rixsviewer.model.rxes_dataset import RixsRxesScanDataset
 from rixsviewer.model.scan_dataset import MONITOR_DESCRIPTION, RESULT_COLUMN_DESCRIPTIONS, RESULT_COLUMNS
 from rixsviewer.model.spec_parsers import tiff_point_index
+from rixsviewer.model.spec_reader import SpecReader
 
 from conftest import FakeBeamline, XB_FIELDS
 
 
 def _scan_pack(spec_path, scan_no):
-    for scan in SpecFile(spec_path):
+    for scan in SpecReader(spec_path):
         if scan.number == scan_no:
             return scan
     raise ValueError(f"scan {scan_no} not found in {spec_path}")
@@ -411,7 +410,7 @@ class TestSaveToFile:
 
         dset.save_to_file(str(out))
 
-        scan = SpecFile(str(out))[0]
+        scan = SpecReader(str(out))[0]
         assert scan.labels[:2] == ["EmissionEnergy_keV", "IncidentEnergy_keV"]
         assert scan.labels[2:] == [
             label for key, label in RESULT_COLUMNS.items() if key in dset.bin_result

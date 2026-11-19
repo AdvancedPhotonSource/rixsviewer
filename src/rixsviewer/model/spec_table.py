@@ -6,11 +6,11 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
-from silx.io.specfile import SpecFile
 
 from .rxes_dataset import RixsRxesScanDataset
 from .scan_dataset import RixsEnergyScanDataset, RixsSnapshotScanDataset
 from .spec_parsers import get_scan_header
+from .spec_reader import SpecReader, read_scan_numbers
 
 logger = logging.getLogger(__name__)
 
@@ -69,16 +69,18 @@ class RixsSpecTable(QAbstractTableModel):
 
     def read_latest_spec_file(self):
         """
-        (Re-)load the SPEC file if it has been modified since the last read.
+        Bring :attr:`spec_container` up to date if the SPEC file changed.
 
-        Compares the file's modification time against the cached value.  If
-        unchanged the existing :attr:`spec_container` is kept.
+        Compares the file's modification time against the cached value (and
+        forces a check every ``force_reload_s`` to get past NFS attribute
+        caching).  The first call reads the whole file; later calls only parse
+        the bytes SPEC appended since the previous read.
 
         Returns
         -------
         bool
-            ``True`` when the file was (re-)loaded; ``False`` when the
-            cached version is still current.
+            ``True`` when the file was checked for new content; ``False`` when
+            the cached version is still current.
         """
         now = time.time()
         current_mtime = Path(self.spec_fname).stat().st_mtime
@@ -101,8 +103,10 @@ class RixsSpecTable(QAbstractTableModel):
         self.last_modtime = current_mtime
         self.last_read_wall_time = time.time()
         self._drop_page_cache(self.spec_fname)
-        self.spec_container = None  # release before allocating to avoid peak spike
-        self.spec_container = SpecFile(self.spec_fname)
+        if self.spec_container is None:
+            self.spec_container = SpecReader(self.spec_fname)
+        else:
+            self.spec_container.refresh()
         return True
 
     @staticmethod
@@ -145,10 +149,6 @@ class RixsSpecTable(QAbstractTableModel):
         has_updates = False
         scan_dset = None
         for scan_idx in range(len(self.spec_container)):
-            # Check the number before building the Scan: silx leaks native
-            # memory (motor names/positions) for every Scan object it creates,
-            # and this runs on every re-read during a live scan -- iterating
-            # the whole file here grew the app ~1 GB/hour on a long beamtime.
             scan_number = self.spec_container.number(scan_idx)
             # no need to re-process old scans
             if scan_number < self.last_scan_index:
@@ -233,8 +233,7 @@ class RixsSpecTable(QAbstractTableModel):
         if self.save_filename is None or not Path(self.save_filename).is_file():
             return set()
         try:
-            saved = SpecFile(str(self.save_filename))
-            return {scan.number for scan in saved}
+            return set(read_scan_numbers(str(self.save_filename)))
         except Exception as e:
             logger.warning(f"Could not read saved results file {self.save_filename}: {e}")
             return set()

@@ -69,7 +69,7 @@ _RXES_SCAN_PATTERN = re.compile(
 
 def get_scan_header(scan, tol=1e-6):
     """
-    Classify a silx SpecFile scan's ``#S`` header line.
+    Classify a SPEC scan's ``#S`` header line.
 
     Recognises three shapes:
 
@@ -82,7 +82,7 @@ def get_scan_header(scan, tol=1e-6):
 
     Parameters
     ----------
-    scan : silx.io.specfile.Scan
+    scan : rixsviewer.model.spec_reader.SpecScan
     tol : float, optional
         Absolute tolerance for comparing start and end energies, by default ``1e-6``.
 
@@ -153,7 +153,7 @@ def parse_single_scan(scan, spec_fname, tif_folder):
 
     Parameters
     ----------
-    scan : silx.io.specfile.Scan
+    scan : rixsviewer.model.spec_reader.SpecScan
     spec_fname : str
         Absolute path to the SPEC data file.
     tif_folder : str
