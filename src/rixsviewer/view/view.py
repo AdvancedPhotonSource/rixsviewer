@@ -122,6 +122,192 @@ class RixsView:
         cmap = pg.colormap.get("plasma")
         self.img2d_hdl.setColorMap(cmap)
 
+        self._setup_rxes_map_handler()
+
+    def _setup_rxes_map_handler(self):
+        """Build the incident-energy x emission-energy map view on the
+        "RXES Map" tab: an image + its own colorbar in ``widget_rxeshdl``,
+        and an optional 1D emission-energy profile at a fixed incident
+        energy in its own ``widget_rxesprofilehdl`` pane -- the two live in
+        a user-resizable splitter (``splitter_rxesmap``) so the profile pane
+        can be fully hidden (not just shrunk) when "Show RIXS Profile" is
+        unchecked. Unlike ``widget_img`` there is no detector ROI or
+        marginal projections, since this isn't a raw detector frame."""
+        plot = self.ui.widget_rxeshdl.addPlot(row=0, col=0)
+        vb = plot.getViewBox()
+        vb.setDefaultPadding(0)
+        plot.setLabel("bottom", "Incident Energy (keV)")
+        plot.setLabel("left", "Emission Energy (keV)")
+        plot.showAxis("top")
+        plot.showAxis("right")
+        plot.getAxis("top").setStyle(showValues=False)
+        plot.getAxis("right").setStyle(showValues=False)
+
+        self.rxes_img_hdl = pg.ImageItem(axisOrder="row-major")
+        plot.addItem(self.rxes_img_hdl)
+        self._rxes_plot = plot
+
+        self._rxes_hist = pg.HistogramLUTItem()
+        self._rxes_hist.setImageItem(self.rxes_img_hdl)
+        self.ui.widget_rxeshdl.addItem(self._rxes_hist, row=0, col=1)
+        self.set_rxes_colormap("jet")
+
+        dashed_white = pg.mkPen(color=(255, 255, 255), width=1, style=pg.QtCore.Qt.DashLine)
+        self._rxes_crosshair_vline = pg.InfiniteLine(angle=90, movable=False, pen=dashed_white)
+        self._rxes_crosshair_vline.setVisible(False)
+        plot.addItem(self._rxes_crosshair_vline)
+        self._rxes_crosshair_hline = pg.InfiniteLine(angle=0, movable=False, pen=dashed_white)
+        self._rxes_crosshair_hline.setVisible(False)
+        plot.addItem(self._rxes_crosshair_hline)
+
+        plot.scene().sigMouseClicked.connect(self._on_rxes_map_scene_clicked)
+
+        self._rxes_profile_plot = self.ui.widget_rxesprofilehdl.addPlot(row=0, col=0)
+        self._rxes_profile_plot.setLabel("bottom", "Emission Energy (keV)")
+        self._rxes_profile_plot.setLabel("left", "Intensity")
+        self._rxes_profile_plot.showAxis("top")
+        self._rxes_profile_plot.showAxis("right")
+        self._rxes_profile_plot.getAxis("top").setStyle(showValues=False)
+        self._rxes_profile_plot.getAxis("right").setStyle(showValues=False)
+        self._rxes_profile_curve = self._rxes_profile_plot.plot(pen=pg.mkPen(color=(31, 119, 180), width=1))
+
+        layout = self.ui.widget_rxeshdl.ci.layout
+        layout.setColumnStretchFactor(0, 1)
+        layout.setColumnStretchFactor(1, 0)
+
+        self._rxes_last_result = None
+        self._rxes_last_plot_target = None
+        self._rxes_last_incident_len = None
+        self._rxes_last_axis_bounds = None
+        self._rxes_last_emission_points = None
+        self._rxes_selected_row_index = None
+        self._rxes_selected_col_index = None
+        self.on_rxes_map_clicked = None
+        self._rxes_profile_visible = True
+        self._rxes_crosshair_visible = True
+        self.set_rxes_profile_visible(self.ui.checkBox_show_rixsprofile.isChecked())
+        self.set_rxes_crosshair_visible(self.ui.checkBox_show_crosshair.isChecked())
+
+    def set_rxes_colormap(self, name):
+        """Set the RXES map's colorbar to the named matplotlib colormap."""
+        self._rxes_hist.gradient.setColorMap(pg.colormap.getFromMatplotlib(name))
+        self._rxes_cmap_name = name
+
+    def clear_rxes_map(self):
+        """Reset the RXES Map tab to empty.
+
+        Called when the selected scan doesn't produce an RXES map, so a
+        stale map from a previously-selected RXES scan doesn't linger.
+        """
+        self.rxes_img_hdl.clear()
+        self._rxes_crosshair_vline.setVisible(False)
+        self._rxes_crosshair_hline.setVisible(False)
+        self._rxes_profile_curve.setData([], [])
+        self._rxes_profile_plot.setTitle(None)
+        self.ui.label_rxes_energy_interval.setText("Energy interval:")
+        self._rxes_last_result = None
+        self._rxes_last_plot_target = None
+        self._rxes_last_incident_len = None
+        self._rxes_last_axis_bounds = None
+        self._rxes_last_emission_points = None
+        self._rxes_selected_row_index = None
+        self._rxes_selected_col_index = None
+
+    def set_rxes_profile_visible(self, visible):
+        """Show/hide the RIXS-profile panel.
+
+        Toggling on redraws immediately from the last plotted RXES result
+        (if any); toggling off leaves that cached result untouched so it's
+        ready to redraw next time. The map-overlay crosshair marking the
+        selected point is controlled separately (see
+        ``set_rxes_crosshair_visible``) since both a click and a live update
+        drive the same selected point regardless of which panel is shown.
+        """
+        self._rxes_profile_visible = visible
+        self._rxes_profile_plot.setVisible(visible)
+        self.ui.widget_rxesprofilehdl.setVisible(visible)
+        if visible:
+            self._refresh_rxes_profile()
+
+    def set_rxes_crosshair_visible(self, visible):
+        """Show/hide the crosshair: a dashed vertical + horizontal line pair
+        marking the last-clicked (incident, emission) point -- independent
+        of the solid vertical line used for RIXS-profile column selection.
+        """
+        self._rxes_crosshair_visible = visible
+        if visible:
+            self._refresh_rxes_crosshair_click_marker()
+        else:
+            self._rxes_crosshair_vline.setVisible(False)
+            self._rxes_crosshair_hline.setVisible(False)
+
+    def _on_rxes_map_scene_clicked(self, event):
+        if self._rxes_last_result is None:
+            return
+        if not self._rxes_plot.sceneBoundingRect().contains(event.scenePos()):
+            return
+        point = self._rxes_plot.getViewBox().mapSceneToView(event.scenePos())
+        self._select_rxes_frame_near(point.x(), point.y())
+
+    def _select_rxes_frame_near(self, incident_energy_value, emission_energy_value):
+        """Snap a click to the nearest actually-scanned (incident, emission)
+        raster point -- not the display bin grid, which can be coarser or
+        finer thanks to the Force-NEnergyBins override -- refresh the RIXS
+        profile and the crosshair to it (each independently gated on its own
+        visibility), and notify the controller (via ``on_rxes_map_clicked``)
+        so it can show that frame in "2D Scattering".
+        """
+        if self._rxes_last_result is None:
+            return
+        incident_axis = self._rxes_last_result["incident_axis"]
+        n_incident = len(incident_axis)
+        n_emission_points = self._rxes_last_result["emission_points"]
+        emission_axis = self._rxes_last_result["emission_axis"]
+        raster_emission_axis = np.linspace(emission_axis[0], emission_axis[-1], n_emission_points)
+
+        j = int(np.argmin(np.abs(incident_axis - incident_energy_value)))
+        i = int(np.argmin(np.abs(raster_emission_axis - emission_energy_value)))
+        self._rxes_selected_row_index = i
+        self._rxes_selected_col_index = j
+        self._refresh_rxes_profile()
+        self._refresh_rxes_crosshair_click_marker()
+
+        if self.on_rxes_map_clicked is not None:
+            self.on_rxes_map_clicked(i * n_incident + j)
+
+    def _refresh_rxes_crosshair_click_marker(self):
+        if not self._rxes_crosshair_visible or self._rxes_last_result is None:
+            return
+        n_emission_points = self._rxes_last_result["emission_points"]
+        emission_axis = self._rxes_last_result["emission_axis"]
+        incident_axis = self._rxes_last_result["incident_axis"]
+
+        if self._rxes_selected_row_index is None or self._rxes_selected_row_index >= n_emission_points:
+            self._rxes_selected_row_index = n_emission_points // 2
+        if self._rxes_selected_col_index is None or self._rxes_selected_col_index >= len(incident_axis):
+            self._rxes_selected_col_index = len(incident_axis) // 2
+        raster_emission_axis = np.linspace(emission_axis[0], emission_axis[-1], n_emission_points)
+
+        self._rxes_crosshair_hline.setPos(raster_emission_axis[self._rxes_selected_row_index])
+        self._rxes_crosshair_hline.setVisible(True)
+        self._rxes_crosshair_vline.setPos(incident_axis[self._rxes_selected_col_index])
+        self._rxes_crosshair_vline.setVisible(True)
+
+    def _refresh_rxes_profile(self):
+        if not self._rxes_profile_visible or self._rxes_last_result is None:
+            return
+        result = self._rxes_last_result
+        incident_axis = result["incident_axis"]
+        emission_axis = result["emission_axis"]
+        data = result[self._rxes_last_plot_target]
+
+        if self._rxes_selected_col_index is None or self._rxes_selected_col_index >= len(incident_axis):
+            self._rxes_selected_col_index = len(incident_axis) // 2
+        index = self._rxes_selected_col_index
+
+        self._rxes_profile_curve.setData(emission_axis, data[:, index])
+        self._rxes_profile_plot.setTitle(f"Incident: {incident_axis[index]:.4f} keV")
+
     # ------------------------------------------------------------------
     # Plotting / visualization
     # ------------------------------------------------------------------
@@ -209,6 +395,63 @@ class RixsView:
         self.ui.label_energy_interval.setText(
             f"Energy interval: [{result['energy_resolution']:.3f} meV]"
         )
+
+    def plot_rxes_map(self, result, plot_target="intensity_norm"):
+        """Render a 2D RXES map (incident energy x emission energy) onto
+        ``widget_rxeshdl``.
+
+        Parameters
+        ----------
+        result : dict
+            Output from ``RixsRxesScanDataset.bin_data_wrap``. Expected keys:
+            ``emission_axis``, ``incident_axis``, ``sample``, and whichever
+            key *plot_target* names.
+        plot_target : {'intensity_norm', 'intensity', 'sample'}, optional
+        """
+        assert plot_target in result, (
+            f"plot_target {plot_target} not found in result {list(result.keys())}"
+        )
+        data = result[plot_target]
+        emission_axis = result["emission_axis"]
+        incident_axis = result["incident_axis"]
+
+        self.rxes_img_hdl.setImage(data, autoLevels=True)
+        self.rxes_img_hdl.setRect(
+            incident_axis[0],
+            emission_axis[0],
+            incident_axis[-1] - incident_axis[0],
+            emission_axis[-1] - emission_axis[0],
+        )
+        self.ui.label_rxes_energy_interval.setText(
+            f"Energy interval: [{result['energy_resolution']:.3f} meV]"
+        )
+
+        axis_bounds = (incident_axis[0], incident_axis[-1], emission_axis[0], emission_axis[-1])
+        if axis_bounds != self._rxes_last_axis_bounds:
+            # A genuinely different scan (or a recalibration that changed the
+            # axis span) -- snap the view to fit it, rather than keep
+            # whatever zoom/pan was left over from the previous scan.
+            self._rxes_plot.getViewBox().setRange(
+                xRange=(incident_axis[0], incident_axis[-1]),
+                yRange=(emission_axis[0], emission_axis[-1]),
+                padding=0,
+            )
+            self._rxes_last_axis_bounds = axis_bounds
+
+        is_new_scan = (
+            self._rxes_last_incident_len != len(incident_axis)
+            or self._rxes_last_emission_points != result["emission_points"]
+        )
+        if is_new_scan:
+            # different grid -- re-default the selected point to the median
+            self._rxes_selected_row_index = None
+            self._rxes_selected_col_index = None
+        self._rxes_last_result = result
+        self._rxes_last_plot_target = plot_target
+        self._rxes_last_incident_len = len(incident_axis)
+        self._rxes_last_emission_points = result["emission_points"]
+        self._refresh_rxes_profile()
+        self._refresh_rxes_crosshair_click_marker()
 
     def plot_linesearch(self, ls):
         """Render the DeltaD vs FWHM line-search curve on ``linesearch_hdl``.

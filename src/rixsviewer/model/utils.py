@@ -466,6 +466,38 @@ def fit_pixel_size(
     return effective_pixel_size
 
 
+def compute_frame_energy_axis(energy_ref, xaxis, Eb, Ra, DeltaD):
+    """Map detector pixel offsets to photon energy via Rowland-circle geometry.
+
+    Parameters
+    ----------
+    energy_ref : array-like, shape (n,)
+        Per-frame analyzer/reference energy (keV) -- the physical energy
+        the reference pixel (offset 0 in *xaxis*) corresponds to for that
+        frame.
+    xaxis : array-like, shape (width,)
+        Pixel offset from the reference pixel.
+    Eb : float
+        Analyzer backscattering energy (keV).
+    Ra : float
+        Rowland circle radius (mm).
+    DeltaD : float
+        Nominal pixel pitch (mm).
+
+    Returns
+    -------
+    ndarray, shape (n, width)
+        Per-frame energy axis (keV), in the same (unsorted) pixel order
+        as *xaxis*.
+    """
+    energy_ref = np.asarray(energy_ref, dtype=float)
+    xaxis = np.asarray(xaxis, dtype=float)
+    theta_b = np.arcsin(Eb / energy_ref)
+    energy_cen = energy_ref.reshape(-1, 1)
+    scale = Eb / (2 * Ra) / np.tan(theta_b)
+    return energy_cen - np.outer(scale, xaxis) * DeltaD
+
+
 def _compute_energy_axis(
     data_2d,
     xaxis,
@@ -518,11 +550,7 @@ def _compute_energy_axis(
     if n == 0:
         raise ValueError("No frames to process: merixE and data are both empty")
 
-    theta_b = np.arcsin(Eb / merixE)
-    energy_cen = merixE.reshape(-1, 1)
-    scale = Eb / (2 * Ra) / np.tan(theta_b)
-
-    energy_axis = energy_cen - np.outer(scale, xaxis) * DeltaD
+    energy_axis = compute_frame_energy_axis(merixE, xaxis, Eb, Ra, DeltaD)
     idx = np.argsort(energy_axis, axis=1)
     energy_axis = np.take_along_axis(energy_axis, idx, axis=1)
     data_2d = np.take_along_axis(data_2d, idx, axis=1)
@@ -545,10 +573,16 @@ def _compute_energy_axis(
         if NEnergyBins >= 1:
             delta_energy_keV = (e_max - e_min) / NEnergyBins
             if delta_energy_keV < delta_energy_keV_native:
+                # say what actually happens below: a forced bin count is kept
+                outcome = (
+                    "keeping it because Force NEnergyBins is on (frames are oversampled by interpolation)"
+                    if force_NEnergyBins
+                    else "falling back to native spacing"
+                )
                 logger.warning(
                     f"Requested NEnergyBins={NEnergyBins} leads to delta_energy_keV={delta_energy_keV * 1e6:.3f} meV, "
-                    f"which is smaller than the native pixel spacing of {delta_energy_keV_native * 1e6:.3f} meV;"
-                    "overwriteping to native spacing"
+                    f"which is smaller than the native pixel spacing of {delta_energy_keV_native * 1e6:.3f} meV; "
+                    f"{outcome}"
                 )
             else:
                 fallback_flag = False
@@ -565,7 +599,7 @@ def _compute_energy_axis(
         def _interp_frame(i):
             return np.interp(bin_energy_axis, energy_axis[i], data_2d[i], left=np.nan, right=np.nan)
 
-        with ThreadPoolExecutor(max_workers=min(n, (cpu_count() or 2) // 2)) as ex:
+        with ThreadPoolExecutor(max_workers=min(n, max(1, (cpu_count() or 2) // 2))) as ex:
             bin_data = np.stack(list(ex.map(_interp_frame, range(n))))
 
     return lines, bin_energy_axis, np.array(bin_data)

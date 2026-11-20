@@ -6,20 +6,27 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
-from silx.io.specfile import SpecFile
 
-from .scan_dataset import RixsScanTiffDataset
+from .rxes_dataset import RixsRxesScanDataset
+from .scan_dataset import RixsEnergyScanDataset, RixsSnapshotScanDataset
 from .spec_parsers import get_scan_header
+from .spec_reader import SpecReader, read_scan_numbers
 
 logger = logging.getLogger(__name__)
+
+_DATASET_CLASSES = {
+    "EnergyScan": RixsEnergyScanDataset,
+    "SnapshotScan": RixsSnapshotScanDataset,
+    "RXESScan": RixsRxesScanDataset,
+}
 
 
 class RixsSpecTable(QAbstractTableModel):
     """
     Qt table model that exposes SPEC scan metadata to a QTableView.
 
-    Each row corresponds to one RIXS scan (``EnergyScan`` or
-    ``SnapshotScan``) found in the SPEC file.  The model can be refreshed
+    Each row corresponds to one RIXS scan (``EnergyScan``,
+    ``SnapshotScan``, or ``RXESScan``) found in the SPEC file.  The model can be refreshed
     in-place by calling :meth:`process_spec_file` again; only new or
     updated scans are re-processed.
 
@@ -62,16 +69,18 @@ class RixsSpecTable(QAbstractTableModel):
 
     def read_latest_spec_file(self):
         """
-        (Re-)load the SPEC file if it has been modified since the last read.
+        Bring :attr:`spec_container` up to date if the SPEC file changed.
 
-        Compares the file's modification time against the cached value.  If
-        unchanged the existing :attr:`spec_container` is kept.
+        Compares the file's modification time against the cached value (and
+        forces a check every ``force_reload_s`` to get past NFS attribute
+        caching).  The first call reads the whole file; later calls only parse
+        the bytes SPEC appended since the previous read.
 
         Returns
         -------
         bool
-            ``True`` when the file was (re-)loaded; ``False`` when the
-            cached version is still current.
+            ``True`` when the file was checked for new content; ``False`` when
+            the cached version is still current.
         """
         now = time.time()
         current_mtime = Path(self.spec_fname).stat().st_mtime
@@ -94,8 +103,10 @@ class RixsSpecTable(QAbstractTableModel):
         self.last_modtime = current_mtime
         self.last_read_wall_time = time.time()
         self._drop_page_cache(self.spec_fname)
-        self.spec_container = None  # release before allocating to avoid peak spike
-        self.spec_container = SpecFile(self.spec_fname)
+        if self.spec_container is None:
+            self.spec_container = SpecReader(self.spec_fname)
+        else:
+            self.spec_container.refresh()
         return True
 
     @staticmethod
@@ -137,13 +148,15 @@ class RixsSpecTable(QAbstractTableModel):
 
         has_updates = False
         scan_dset = None
-        for scan_pack in self.spec_container:
-            scan_number = scan_pack.number
+        for scan_idx in range(len(self.spec_container)):
+            scan_number = self.spec_container.number(scan_idx)
             # no need to re-process old scans
             if scan_number < self.last_scan_index:
                 continue
+            scan_pack = self.spec_container[scan_idx]
 
-            if get_scan_header(scan_pack)["scan_type"] in ["EnergyScan", "SnapshotScan"]:
+            scan_type = get_scan_header(scan_pack)["scan_type"]
+            if scan_type in ["EnergyScan", "SnapshotScan", "RXESScan"]:
                 if scan_number in self.record:
                     scan_dset = self.record[scan_number]
                     prev_tiff = scan_dset.scan_info["tiff_points"] if scan_dset.scan_info else -1
@@ -164,7 +177,7 @@ class RixsSpecTable(QAbstractTableModel):
                         self.last_scan_dset.save_to_file(self.save_filename)
                         self.last_scan_dset.bin_result = None
                     row = len(self.record)
-                    scan_dset = RixsScanTiffDataset(
+                    scan_dset = _DATASET_CLASSES[scan_type](
                         row, self.spec_fname, self.tif_folder, scan_number
                     )
                     scan_dset.update_scan_info(scan_pack)
@@ -193,6 +206,38 @@ class RixsSpecTable(QAbstractTableModel):
 
         return has_updates
 
+    def get_unprocessed_scans(self):
+        """
+        Find scans that are complete but were never saved to the results file.
+
+        Compares every complete scan currently in :attr:`record` against the
+        scan numbers already present in :attr:`save_filename` (if it exists)
+        to find scans that were binned in a previous session but never
+        reached ``save_to_file`` -- e.g. because the application crashed
+        before getting to them.
+
+        Returns
+        -------
+        list of RixsEnergyScanDataset, RixsSnapshotScanDataset, or RixsRxesScanDataset
+            Complete, unsaved scans in ascending scan-number order.
+        """
+        already_saved = self._read_saved_scan_numbers()
+        return [
+            self.record[n]
+            for n in sorted(self.record)
+            if n not in already_saved and self.record[n].is_complete()
+        ]
+
+    def _read_saved_scan_numbers(self):
+        """Return the set of scan numbers already written to :attr:`save_filename`."""
+        if self.save_filename is None or not Path(self.save_filename).is_file():
+            return set()
+        try:
+            return set(read_scan_numbers(str(self.save_filename)))
+        except Exception as e:
+            logger.warning(f"Could not read saved results file {self.save_filename}: {e}")
+            return set()
+
     def rowCount(self, parent=None):
         return len(self.record)
 
@@ -204,7 +249,7 @@ class RixsSpecTable(QAbstractTableModel):
 
     def get_selected_dataset(self, row):
         """
-        Retrieve the :class:`RixsScanTiffDataset` for a given table row.
+        Retrieve the scan dataset object for a given table row.
 
         Parameters
         ----------
@@ -213,7 +258,7 @@ class RixsSpecTable(QAbstractTableModel):
 
         Returns
         -------
-        RixsScanTiffDataset
+        RixsEnergyScanDataset, RixsSnapshotScanDataset, or RixsRxesScanDataset
             Dataset object associated with the scan at *row*.
         """
         scan_index = self.get_scan_number(row)

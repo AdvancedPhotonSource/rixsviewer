@@ -36,7 +36,7 @@ Or launch without arguments and use the file browser buttons in the GUI.
 ## Requirements
 
 - Python >= 3.8
-- PySide6, numpy, scipy, pyqtgraph, silx, tifffile, pandas, matplotlib
+- PySide6, numpy, scipy, pyqtgraph, tifffile, pandas, matplotlib
 
 ## License
 

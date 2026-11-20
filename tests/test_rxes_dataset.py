@@ -1,0 +1,570 @@
+# Copyright © UChicago Argonne LLC
+# See LICENSE file for details
+import os
+
+import numpy as np
+import pytest
+from rixsviewer.model.rxes_dataset import RixsRxesScanDataset
+from rixsviewer.model.scan_dataset import MONITOR_DESCRIPTION, RESULT_COLUMN_DESCRIPTIONS, RESULT_COLUMNS
+from rixsviewer.model.spec_parsers import tiff_point_index
+from rixsviewer.model.spec_reader import SpecReader
+
+from conftest import FakeBeamline, XB_FIELDS
+
+
+def _scan_pack(spec_path, scan_no):
+    for scan in SpecReader(spec_path):
+        if scan.number == scan_no:
+            return scan
+    raise ValueError(f"scan {scan_no} not found in {spec_path}")
+
+
+def _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=None):
+    beamline = FakeBeamline(str(tmp_path))
+    beamline.start_rxes_scan(1, n_emission=n_emission, n_incident=n_incident)
+    total = n_emission * n_incident
+    for pt in range(total if n_points is None else n_points):
+        beamline.add_rxes_point(1, pt)
+
+    dset = RixsRxesScanDataset(0, beamline.spec, beamline.workdir, 1)
+    dset.update_scan_info(_scan_pack(beamline.spec, 1))
+    return dset, beamline
+
+
+SPECFILE_KWARGS = dict(metadata_source="SpecFile")
+
+
+class TestConstruction:
+    def test_scan_info_reflects_rxes_scan_type(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        assert dset.scan_info["scan_type"] == "RXESScan"
+        assert dset.bin_result is None
+        assert dset.emission_axis is None  # not built until first bin_data_wrap call
+
+
+class TestHasLoadedFrames:
+    def test_false_before_any_frame_processed(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        assert dset.has_loaded_frames() is False
+
+    def test_true_after_processing_a_frame(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        dset.bin_data_wrap(metadata_source="SpecFile")
+        assert dset.has_loaded_frames() is True
+
+
+class TestProcessingTimeLogging:
+    def test_logs_elapsed_time_when_frames_are_processed(self, caplog, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+
+        with caplog.at_level("INFO"):
+            dset.bin_data_wrap(metadata_source="SpecFile")
+
+        assert "processed 1 frame" in caplog.text
+
+    def test_does_not_log_timing_when_nothing_new_to_process(self, caplog, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        dset.bin_data_wrap(metadata_source="SpecFile")
+        caplog.clear()
+
+        with caplog.at_level("INFO"):
+            dset.bin_data_wrap(metadata_source="SpecFile")  # nothing new queued
+
+        assert "processed" not in caplog.text
+
+
+class TestSupportsCalibration:
+    def test_rxes_dataset_does_not_support_calibration(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        assert dset.supports_calibration() is False
+
+
+class TestSupportsRxesMap:
+    def test_rxes_dataset_supports_rxes_map(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=1)
+        assert dset.supports_rxes_map() is True
+
+
+class TestEnergyResolution:
+    def test_bin_result_includes_energy_resolution(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_emission=5, n_incident=2, n_points=1)
+        result = dset.bin_data_wrap(metadata_source="SpecFile")
+
+        expected = round(float(dset.emission_axis[1] - dset.emission_axis[0]) * 1e6, 3)
+        assert result["energy_resolution"] == expected
+
+    def test_bin_result_includes_raster_emission_points(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_emission=5, n_incident=2, n_points=1)
+        result = dset.bin_data_wrap(metadata_source="SpecFile")
+
+        assert result["emission_points"] == dset.scan_info["emission_points"] == 5
+
+
+class TestAccumulatorReset:
+    def test_reset_builds_axes_and_zeroed_arrays(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_emission=3, n_incident=2, n_points=0)
+        merged = dset._merge_binning_kwargs(
+            "SpecFile", {}
+        )
+        dset._reset_accumulator(merged)
+
+        assert dset.incident_axis.shape == (2,)
+        np.testing.assert_allclose(dset.incident_axis[0], 12.650)
+        np.testing.assert_allclose(dset.incident_axis[-1], 12.660)
+        assert dset.intensity.shape[1] == 2
+        assert dset.sample.shape == dset.intensity.shape
+        assert np.all(dset.sample == 0)
+        assert np.all(dset.intensity == 0)
+        assert dset.emission_axis.min() <= 11.190
+        assert dset.emission_axis.max() >= 11.200
+
+
+class TestIsComplete:
+    def test_false_while_grid_partially_filled(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=2)
+        assert dset.is_complete() is False
+
+    def test_true_once_full_grid_has_arrived(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=4)
+        assert dset.is_complete() is True
+
+
+class TestIncrementalAccumulation:
+    def test_raises_on_empty_scandata(self, tmp_path):
+        import pytest
+
+        dset, _ = _make_dataset(tmp_path, n_points=0)
+        with pytest.raises(ValueError, match="no scandata rows"):
+            dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+    def test_partial_scan_only_touches_arrived_columns(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=2)
+
+        result = dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        assert result["kind"] == "rxes_map"
+        assert result["intensity_norm"].shape[1] == 2
+        assert dset._n_processed == 2
+        # points 0,1 share the same emission row (i=0) -> identical, positive
+        # coverage in both incident columns; no single bin sees more than
+        # the one frame contributed to that column.
+        col_sums = dset.sample.sum(axis=0)
+        assert col_sums[0] > 0
+        assert col_sums[0] == col_sums[1]
+        assert dset.sample.max() <= 1
+
+    def test_second_call_only_processes_newly_arrived_frames(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        assert dset.unloaded_filenames == []
+        first_call_sum = dset.sample.sum(axis=0).copy()
+
+        beamline.add_rxes_point(1, 2)
+        beamline.add_rxes_point(1, 3)
+        dset.update_scan_info(_scan_pack(beamline.spec, 1))
+        assert len(dset.unloaded_filenames) == 2
+
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        assert dset._n_processed == 4
+        second_call_sum = dset.sample.sum(axis=0)
+        # the new emission row's frame added real coverage on top of the
+        # first call's, symmetrically across both incident columns, and no
+        # bin was ever touched by more than one of the two per-column frames
+        # (which would indicate a stale frame got reprocessed).
+        assert second_call_sum[0] > first_call_sum[0]
+        assert second_call_sum[0] == second_call_sum[1]
+        assert dset.sample.max() <= 1
+
+
+class TestFramePositionFromFilename:
+    def test_position_derived_from_filename_not_processing_order(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=4)
+        # Pre-warm the accumulator (as the first bin_data_wrap call normally
+        # would) so the manual unloaded_filenames override below survives --
+        # bin_data_wrap's own reset-on-first-call would otherwise clobber it
+        # back to the full file list.
+        merged = dset._merge_binning_kwargs("SpecFile", {})
+        dset._reset_accumulator(merged)
+        # the staleness key also folds in point_offset (see bin_data_wrap);
+        # omitting it would look stale and trigger the very reset we avoid.
+        point_offset = tiff_point_index(dset.scan_info["filenames"][0])
+        dset._map_key = dset._calibration_key(merged) + (point_offset,)
+        dset._last_point_offset = point_offset
+
+        # Only queue points 2,3 (emission row i=1, anchored near the HIGH
+        # end of the emission axis at merixE=11.200) for processing --
+        # simulating an out-of-order arrival (e.g. NFS lag) where these
+        # land before points 0,1. A counter that numbers whatever it's
+        # given starting from 0 would wrongly anchor these on i=0's merixE
+        # (11.190, the LOW end) instead of their true i=1 value.
+        dset.unloaded_filenames = [
+            f for f in dset.scan_info["filenames"] if tiff_point_index(f) in (2, 3)
+        ]
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        touched_bins = np.where(dset.sample[:, 0] > 0)[0]
+        assert len(touched_bins) > 0
+        touched_energies = dset.emission_axis[touched_bins]
+        # i=0's and i=1's windows are far apart and disjoint (see
+        # TestRecalibration's docstring reasoning) -- only i=1's frames
+        # should ever appear here.
+        assert touched_energies.min() > 11.195
+
+
+class TestTiffAheadOfScandata:
+    def test_frame_beyond_scandata_rows_is_requeued_not_crashed(self, tmp_path):
+        import os
+
+        import tifffile
+
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=1)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)  # pre-warm; processes point 0
+        assert dset._n_processed == 1
+
+        # Simulate the detector outrunning SPEC's row flush: a TIFF for
+        # point 1 lands on disk, but scan_info["scandata"] still only has
+        # 1 row (as refresh_tiff_filenames()'s NFS-lag catch-up can produce).
+        fn = os.path.join(beamline.workdir, "fake.spec_scan1_point0001.tif")
+        tifffile.imwrite(fn, np.zeros((256, 256), dtype=np.uint16))
+        dset.scan_info["filenames"] = dset.scan_info["filenames"] + [fn]
+        dset.scan_info["tiff_points"] = len(dset.scan_info["filenames"])
+        dset.unloaded_filenames = [fn]
+
+        dset.bin_data_wrap(**SPECFILE_KWARGS)  # must not raise IndexError
+
+        assert dset.unloaded_filenames == [fn]  # re-queued for the next poll, not dropped
+
+
+class TestCalibrationKeyTolerance:
+    def test_tiny_float_jitter_does_not_trigger_a_replay(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        assert dset._n_processed == 2
+
+        # Simulates a PV readback returning a value that differs only in
+        # the last few significant digits from a previous read -- should
+        # not be treated as a real calibration change.
+        kwargs = dict(dset.scan_info["metadata"])
+        kwargs["DeltaD"] = kwargs["DeltaD"] + 1e-10
+        dset.bin_data_wrap(metadata_source="USER", **kwargs)
+
+        assert dset._n_processed == 2  # no replay: nothing was re-queued or reprocessed
+
+    def test_meaningful_change_still_triggers_reset(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        assert dset._n_processed == 2
+
+        kwargs = dict(dset.scan_info["metadata"])
+        kwargs["DeltaD"] = kwargs["DeltaD"] * 2
+        dset.bin_data_wrap(metadata_source="USER", **kwargs)
+
+        assert dset._n_processed == 2  # reset-and-replayed the 2 known files, not skipped
+
+
+class TestRecalibration:
+    def test_changing_deltad_resets_and_replays_without_double_counting(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=4)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        assert dset._n_processed == 4
+
+        kwargs = dict(dset.scan_info["metadata"])
+        kwargs["DeltaD"] = kwargs["DeltaD"] * 2
+        dset.bin_data_wrap(metadata_source="USER", **kwargs)
+
+        assert dset._n_processed == 4
+        # each incident column only ever receives 2 frames (i=0 and i=1);
+        # if the reset-and-replay had failed to reset (double-accumulating
+        # onto the pre-recalibration arrays), some bin would see more than
+        # one of the two frames' disjoint windows.
+        assert dset.sample.max() <= 1
+        col_sums = dset.sample.sum(axis=0)
+        assert col_sums[0] > 0
+        assert col_sums[0] == col_sums[1]
+
+
+class TestOutOfRangeFrame:
+    def test_extra_frame_beyond_grid_size_is_skipped_not_crashed(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=4)
+        beamline.add_rxes_point(1, 4)  # 5th point exceeds the declared 2x2 grid
+        dset.update_scan_info(_scan_pack(beamline.spec, 1))
+
+        result = dset.bin_data_wrap(**SPECFILE_KWARGS)  # must not raise
+
+        assert result["kind"] == "rxes_map"
+        assert dset._n_processed == 5
+
+
+class TestGetDataForDisplay:
+    def test_returns_last_frame_by_default(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=2, n_incident=2, n_points=3)
+
+        result = dset.get_data_for_display()
+
+        assert result is not None
+        assert result["frame_index"] == 2
+        # grid size (2x2), not the 3 arrived files: frame_index is a
+        # grid-absolute position, so the slider must span the whole grid
+        assert result["num_frames"] == 4
+        assert result["data"].shape == (256, 256)
+
+    def test_returns_none_when_no_files_yet(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=0)
+        assert dset.get_data_for_display() is None
+
+
+class TestReleaseData:
+    def test_release_data_is_a_harmless_no_op(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        dset.release_data()  # must not raise or clear the accumulator
+        assert dset.intensity is not None
+
+
+class TestSaveToFile:
+    def test_second_save_without_force_is_a_no_op(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+        first_write = out.read_text()
+        dset.save_to_file(str(out))  # already saved -- no-op without force
+
+        assert out.read_text() == first_write
+
+    def test_header_is_a_mesh_scan_with_incident_first_emission_second(self, tmp_path):
+        """Incident must be listed first (fast/inner loop) and emission
+        second (slow/outer loop) to match how a genuine SPEC ``mesh`` scan
+        orders its motors -- PyMca's mesh-to-image tools assume the
+        first-listed motor varies fastest."""
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+
+        header = next(line for line in out.read_text().splitlines() if line.startswith("#S"))
+        tokens = header.split()
+        incident_axis, emission_axis = dset.incident_axis, dset.emission_axis
+        assert tokens[1:3] == [str(dset.scan_index), "mesh"]
+        assert tokens[3] == "IncidentEnergy_keV"
+        assert tokens[7] == "EmissionEnergy_keV"
+        assert float(tokens[4]) == pytest.approx(incident_axis[0])
+        assert float(tokens[5]) == pytest.approx(incident_axis[-1])
+        assert int(tokens[6]) == len(incident_axis) - 1
+        assert float(tokens[8]) == pytest.approx(emission_axis[0])
+        assert float(tokens[9]) == pytest.approx(emission_axis[-1])
+        assert int(tokens[10]) == len(emission_axis) - 1
+
+    def test_columns_are_emission_incident_then_results_with_incident_fastest_row_order(
+        self, tmp_path
+    ):
+        """The two axis columns come first, Emission before Incident --
+        deliberately the reverse of the #S header's motor order (Incident,
+        Emission): PyMca's '2D On' counter view orients itself from
+        whichever counter is checked first as X, and only reshapes correctly
+        if that one is the slow/outer axis (Emission here) -- see
+        save_to_file's docstring. The result columns follow."""
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+        lines = out.read_text().splitlines()
+
+        # FakeBeamline's rxesamesh scans record i0, i2 and mmepin1 only
+        expected_labels = [
+            "EmissionEnergy_keV", "IncidentEnergy_keV",
+            "Intensity_norm", "Intensity_norm_err", "Intensity_raw", "A",
+            "i2", "i0", "mmepin1",
+        ]
+        assert f"#N {len(expected_labels)}" in lines
+        label_line = next(line for line in lines if line.startswith("#L"))
+        assert label_line.split() == ["#L"] + expected_labels
+
+        incident_axis, emission_axis = dset.incident_axis, dset.emission_axis
+        n_incident, n_emission = len(incident_axis), len(emission_axis)
+        data_lines = [line for line in lines if line and not line.startswith("#")]
+        assert len(data_lines) == n_incident * n_emission
+
+        data = np.array([[float(tok) for tok in line.split()] for line in data_lines])
+        res = dset.bin_result
+        np.testing.assert_allclose(data[:, 0], np.repeat(emission_axis, n_incident))
+        np.testing.assert_allclose(data[:, 1], np.tile(incident_axis, n_emission))
+        np.testing.assert_allclose(data[:, 2], res["intensity_norm"].flatten())
+        np.testing.assert_allclose(data[:, 3], 0.0)  # Intensity_norm_err placeholder
+        np.testing.assert_allclose(data[:, 4], res["intensity"].flatten())
+        np.testing.assert_allclose(data[:, 5], res["sample"].flatten())
+        for column, key in zip(data[:, 6:].T, ("i2", "i0", "mmepin1")):
+            np.testing.assert_allclose(column, res[key].flatten())
+
+    def test_result_columns_match_the_1d_scan_save(self, tmp_path):
+        """After its energy axes, an RXES block carries the same result
+        columns, in the same order, as an EnergyScan/SnapshotScan block --
+        minus any monitor counter the SPEC scan did not record."""
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+
+        scan = SpecReader(str(out))[0]
+        assert scan.labels[:2] == ["EmissionEnergy_keV", "IncidentEnergy_keV"]
+        assert scan.labels[2:] == [
+            label for key, label in RESULT_COLUMNS.items() if key in dset.bin_result
+        ]
+        assert "mmepin2" not in dset.bin_result  # not recorded by this scan -> skipped
+        assert "mmepin2" not in scan.labels
+
+    def test_header_describes_every_saved_column(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+
+        header = [line for line in out.read_text().splitlines() if line.startswith("#")]
+        start = header.index("#C Columns:")
+        end = header.index("#N 9")
+        assert header[start + 1 : end] == [  # noqa: E203
+            "#C   EmissionEnergy_keV: Emission bin energy in keV",
+            "#C   IncidentEnergy_keV: Incident energy in keV (commanded grid)",
+            *(f"#C   {label}: {text}" for label, text in RESULT_COLUMN_DESCRIPTIONS.items()),
+            f"#C   i2, i0, mmepin1: {MONITOR_DESCRIPTION}",
+        ]
+
+
+class TestMonitorAccumulation:
+    def test_each_cell_sums_the_monitor_over_its_contributing_frames(self, tmp_path):
+        # FakeBeamline writes the same monitor readings on every row
+        # (i0=1, i2=100, mmepin1=10), so a cell that N frames contributed
+        # to must hold N times the reading.
+        dset, _ = _make_dataset(tmp_path, n_emission=3, n_incident=2)
+
+        res = dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        assert res["sample"].max() >= 1
+        for key, reading in (("i0", 1.0), ("i2", 100.0), ("mmepin1", 10.0)):
+            assert res[key].shape == res["sample"].shape
+            np.testing.assert_allclose(res[key], reading * res["sample"])
+
+    def test_monitor_sums_are_not_double_counted_across_incremental_calls(self, tmp_path):
+        dset, beamline = _make_dataset(tmp_path, n_emission=3, n_incident=2, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        for pt in range(2, 6):
+            beamline.add_rxes_point(1, pt)
+        dset.update_scan_info(_scan_pack(beamline.spec, 1))
+
+        incremental = dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        (tmp_path / "one_shot").mkdir()
+        one_shot, _ = _make_dataset(tmp_path / "one_shot", n_emission=3, n_incident=2)
+        expected = one_shot.bin_data_wrap(**SPECFILE_KWARGS)
+        for key in ("sample", "i0", "i2", "mmepin1"):
+            np.testing.assert_allclose(incremental[key], expected[key])
+
+    def test_result_carries_the_1d_result_names(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+
+        res = dset.bin_data_wrap(**SPECFILE_KWARGS)
+
+        np.testing.assert_array_equal(res["intensity_raw"], res["intensity"])
+        np.testing.assert_array_equal(res["intensity_norm_err"], np.zeros_like(res["intensity_norm"]))
+
+
+class TestSaveToFilePdf:
+    def _pdf_path(self, tmp_path, dset):
+        spec_stem = os.path.splitext(os.path.basename(dset.spec_fname))[0]
+        return tmp_path / f"{spec_stem}_S{dset.scan_index}_RXES.pdf"
+
+    def test_pdf_created_next_to_spec_file_with_expected_name_and_page_size(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_emission=3, n_incident=2, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        dset.save_to_file(str(out))
+
+        pdf_path = self._pdf_path(tmp_path, dset)
+        assert pdf_path.exists()
+
+        raw = pdf_path.read_bytes()
+        assert raw.startswith(b"%PDF")
+        # figsize=(8, 6) inches -> 576 x 432 points (72 points/inch), independent of dpi
+        assert b"/MediaBox [ 0 0 576 432 ]" in raw
+
+    def test_pdf_not_rewritten_by_a_second_save_without_force(self, tmp_path):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+        pdf_path = self._pdf_path(tmp_path, dset)
+
+        dset.save_to_file(str(out))
+        first_mtime = pdf_path.stat().st_mtime_ns
+        dset.save_to_file(str(out))  # already saved -- no-op without force
+
+        assert pdf_path.stat().st_mtime_ns == first_mtime
+
+    def test_pdf_has_incident_x_emission_y_labels_and_title_from_the_scan_command(
+        self, tmp_path, monkeypatch
+    ):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        import matplotlib.pyplot as plt
+
+        original_close = plt.close
+        monkeypatch.setattr(plt, "close", lambda *a, **k: None)  # keep the figure alive to inspect
+
+        dset.save_to_file(str(out))
+
+        fig = plt.gcf()
+        try:
+            ax = fig.axes[0]
+            assert ax.get_xlabel() == "Incident Energy (keV)"
+            assert ax.get_ylabel() == "Emission Energy (keV)"
+            expected_command = " ".join(dset.scan_info["command"].split()[1:])
+            assert ax.get_title() == f"Scan {dset.scan_index}: {expected_command}"
+            assert fig.axes[1].get_ylabel() == "Intensity (norm.)"  # colorbar axis
+        finally:
+            original_close(fig)
+
+    def test_pdf_defaults_to_viridis_colormap(self, tmp_path, monkeypatch):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        import matplotlib.pyplot as plt
+
+        original_close = plt.close
+        monkeypatch.setattr(plt, "close", lambda *a, **k: None)
+
+        dset.save_to_file(str(out))
+
+        fig = plt.gcf()
+        try:
+            image = fig.axes[0].get_images()[0]
+            assert image.get_cmap().name == "viridis"
+        finally:
+            original_close(fig)
+
+    def test_pdf_uses_the_requested_colormap(self, tmp_path, monkeypatch):
+        dset, _ = _make_dataset(tmp_path, n_points=2)
+        dset.bin_data_wrap(**SPECFILE_KWARGS)
+        out = tmp_path / "out.spec"
+
+        import matplotlib.pyplot as plt
+
+        original_close = plt.close
+        monkeypatch.setattr(plt, "close", lambda *a, **k: None)
+
+        dset.save_to_file(str(out), cmap="turbo")
+
+        fig = plt.gcf()
+        try:
+            image = fig.axes[0].get_images()[0]
+            assert image.get_cmap().name == "turbo"
+        finally:
+            original_close(fig)
