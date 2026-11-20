@@ -573,10 +573,16 @@ def _compute_energy_axis(
         if NEnergyBins >= 1:
             delta_energy_keV = (e_max - e_min) / NEnergyBins
             if delta_energy_keV < delta_energy_keV_native:
+                # say what actually happens below: a forced bin count is kept
+                outcome = (
+                    "keeping it because Force NEnergyBins is on (frames are oversampled by interpolation)"
+                    if force_NEnergyBins
+                    else "falling back to native spacing"
+                )
                 logger.warning(
                     f"Requested NEnergyBins={NEnergyBins} leads to delta_energy_keV={delta_energy_keV * 1e6:.3f} meV, "
                     f"which is smaller than the native pixel spacing of {delta_energy_keV_native * 1e6:.3f} meV; "
-                    "falling back to native spacing"
+                    f"{outcome}"
                 )
             else:
                 fallback_flag = False
