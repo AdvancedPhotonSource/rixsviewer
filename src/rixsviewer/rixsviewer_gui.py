@@ -1,6 +1,7 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
 import argparse
+import importlib
 import logging
 import os
 import sys
@@ -39,6 +40,20 @@ logging.basicConfig(
 
 
 logger = logging.getLogger(__name__)
+
+
+def _set_plot_export_folder(folder):
+    """Make the plots' right-click "Export..." dialog open in ``folder``.
+
+    That dialog is pyqtgraph's, not ours: it opens wherever the previous
+    pyqtgraph export went and, before the first one, in the directory
+    RixsViewer was launched from. Seeding pyqtgraph's memory keeps it in line
+    with the Export buttons, which open next to the SPEC file.
+    """
+    # ``pyqtgraph.exporters.Exporter`` as an attribute is the class, which
+    # shadows the module of the same name that holds this variable.
+    exporter_module = importlib.import_module("pyqtgraph.exporters.Exporter")
+    exporter_module.LastExportDirectory = os.path.abspath(folder)
 
 
 class WorkerSignals(QObject):
@@ -945,6 +960,7 @@ class RixsViewerGUI(QMainWindow):
             return
 
         save_settings(self.spec_filename, self.tiff_folder)
+        _set_plot_export_folder(p.parent)
 
         # Connect the model to the tableView_scan
         self.ui.tableView_scan.setModel(scan_model)
