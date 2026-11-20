@@ -38,13 +38,13 @@ classifiers = [
 
 dependencies = [
     "PySide6>=6.0.0",
-    "silx>=1.0.0",
     "numpy>=1.20.0",
     "scipy>=1.0.0",
     "pyqtgraph",
     "tifffile",
     "pandas",
     "matplotlib",
+    "psutil",
 ]
 
 [project.optional-dependencies]

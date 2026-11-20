@@ -1,15 +1,16 @@
 # Copyright © UChicago Argonne LLC
 # See LICENSE file for details
 import argparse
+import importlib
 import logging
 import os
 import sys
-import traceback
 from pathlib import Path
 
+import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.parametertree import Parameter
-from PySide6.QtCore import QTimer, QRunnable, Slot, QThreadPool, QObject, Signal
+from PySide6.QtCore import QByteArray, QTimer, QRunnable, Slot, QThreadPool, QObject, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,10 +20,19 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from .model import RixsBinningModel, RixsSpecTable, load_settings, save_settings
+from .model import (
+    RixsBinningModel,
+    RixsSpecTable,
+    load_settings,
+    save_settings,
+    save_splitter_state,
+    save_window_geometry,
+)
 from .view import RixsView
 from .view.ui import Ui_MainWindow
 from . import __version__
+from .log_setup import setup_file_logging
+from .memory_monitor import start_memory_logging
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -30,6 +40,20 @@ logging.basicConfig(
 
 
 logger = logging.getLogger(__name__)
+
+
+def _set_plot_export_folder(folder):
+    """Make the plots' right-click "Export..." dialog open in ``folder``.
+
+    That dialog is pyqtgraph's, not ours: it opens wherever the previous
+    pyqtgraph export went and, before the first one, in the directory
+    RixsViewer was launched from. Seeding pyqtgraph's memory keeps it in line
+    with the Export buttons, which open next to the SPEC file.
+    """
+    # ``pyqtgraph.exporters.Exporter`` as an attribute is the class, which
+    # shadows the module of the same name that holds this variable.
+    exporter_module = importlib.import_module("pyqtgraph.exporters.Exporter")
+    exporter_module.LastExportDirectory = os.path.abspath(folder)
 
 
 class WorkerSignals(QObject):
@@ -52,12 +76,38 @@ class Worker(QRunnable):
         try:
             result = self.fn(*self.args, **self.kwargs)
         except Exception as e:
-            traceback.print_exc()
+            # logged (not just printed) so the traceback reaches the log file too
+            logger.exception("%s failed in a worker thread", getattr(self.fn, "__qualname__", self.fn))
             self.signals.error.emit(str(e))
         else:
             self.signals.result.emit(result)
         finally:
             self.signals.finished.emit()
+
+
+class _LogBridge(QObject):
+    message = Signal(str)
+
+
+class StatusBarLogHandler(logging.Handler):
+    """Forward log records to the status bar via a Qt signal.
+
+    Records may come from worker threads; the signal is queued onto the GUI
+    thread, so the status bar is only ever touched from there.
+    """
+
+    def __init__(self, level=logging.WARNING):
+        super().__init__(level)
+        self.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+        self.bridge = _LogBridge()
+
+    def emit(self, record):
+        try:
+            # first line only: a record logged with a traceback formats to
+            # many lines, which the single-line status bar cannot show
+            self.bridge.message.emit(self.format(record).splitlines()[0])
+        except Exception:
+            self.handleError(record)
 
 
 class RixsViewerGUI(QMainWindow):
@@ -68,7 +118,12 @@ class RixsViewerGUI(QMainWindow):
     and coordinates between the model and view.
     """
 
-    def __init__(self, spec_filename=None, tiff_folder=None, heartbeat_s=1.0, force_reload_s=10.0):
+    # Top-level layout splitters whose sizes are persisted across restarts.
+    _SPLITTER_NAMES = ("splitter", "splitter_2", "splitter_3", "splitter_4", "splitter_rxesmap")
+
+    def __init__(
+        self, spec_filename=None, tiff_folder=None, heartbeat_s=1.0, force_reload_s=10.0, enable_tooltips=True
+    ):
         """
         Initialize the RixsViewerGUI.
 
@@ -78,6 +133,8 @@ class RixsViewerGUI(QMainWindow):
             Path to the initial SPEC file to load.
         tiff_folder : str, optional
             Path to the folder containing TIFF images.
+        enable_tooltips : bool, optional
+            Whether to set up widget tooltips (default: True).
         """
         super().__init__()
 
@@ -85,6 +142,9 @@ class RixsViewerGUI(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.setWindowTitle(f"RixsViewer v{__version__}")
+        saved_settings = load_settings()
+        self._restore_splitter_state(saved_settings)
+        self._restore_window_geometry(saved_settings)
 
         self.scan_model = None
         self.current_rixs_dset = None
@@ -108,9 +168,23 @@ class RixsViewerGUI(QMainWindow):
         self.view = RixsView(self.ui)
         self.ui.pushButton_process.clicked.connect(self.process_binning)
         self.ui.pushButton_save.clicked.connect(self.save_bin_results)
+        self.ui.pushButton_rxes_save.clicked.connect(self.save_bin_results)
         self.ui.pushButton_fit_pixel_size.clicked.connect(self.calibrate_parameters)
         self.ui.comboBox_metasource.currentIndexChanged.connect(self.update_meta_source)
         self.ui.horizontalSlider_frame_index.valueChanged.connect(self.update_image)
+        self.ui.comboBox_rxes_plottarget.currentIndexChanged.connect(
+            self.on_rxes_plottarget_changed
+        )
+        self.ui.checkBox_show_rixsprofile.toggled.connect(self.on_show_rixsprofile_toggled)
+        self.ui.comboBox_rxes_cmap.currentIndexChanged.connect(self.on_rxes_cmap_changed)
+        self.ui.spinBox_force_rxes_binning_points.editingFinished.connect(
+            self.on_rxes_force_nenergybins_changed
+        )
+        self.ui.checkBox_overwrite_rxes_binning_points.toggled.connect(
+            self.on_rxes_force_nenergybins_changed
+        )
+        self.ui.checkBox_show_crosshair.toggled.connect(self.on_show_crosshair_toggled)
+        self.view.on_rxes_map_clicked = self._on_rxes_map_frame_clicked
 
         self.timer = QTimer(self)
         self.timer.setInterval(int(heartbeat_s * 1000))
@@ -122,11 +196,24 @@ class RixsViewerGUI(QMainWindow):
         self._binning_dset = None
         self._pending_evict = None
         self._updating_params = False
+        self._catching_up = False
+        self._backfill_queue = []
+        self._backfill_index = 0
+
+        # Mirror WARNING+ records from the whole package onto the status bar
+        self._statusbar_log_handler = StatusBarLogHandler()
+        self._statusbar_log_handler.bridge.message.connect(
+            lambda msg: self.statusBar().showMessage(msg, 10000)
+        )
+        logging.getLogger("rixsviewer").addHandler(self._statusbar_log_handler)
+        handler = self._statusbar_log_handler
+        self.destroyed.connect(lambda: logging.getLogger("rixsviewer").removeHandler(handler))
 
         # Initialize the RixsBinningModel and set up parameter tree
         self.setup_parameter_tree()
         self.setup_scan_table()
-        self._setup_tooltips()
+        if enable_tooltips:
+            self._setup_tooltips()
 
     def _setup_tooltips(self):
         ui = self.ui
@@ -140,6 +227,14 @@ class RixsViewerGUI(QMainWindow):
             "Poll the SPEC file every second for new scans and process them automatically.\n"
             "Disables manual calibration."
         )
+        ui.tableView_scan.setToolTip(
+            "All scans found in the SPEC file. Select a row to load it;\n"
+            "in auto-update mode the newest scan is always shown."
+        )
+        # Single Scan panel
+        ui.tableView_image.setToolTip(
+            "Per-point metadata (energy, monitors, frame index) for the scan selected above."
+        )
         # 2D image display
         ui.doubleSpinBox_percentile_cutoff.setToolTip(
             "Percentile used to clip the colour scale (50–100).\n"
@@ -152,6 +247,10 @@ class RixsViewerGUI(QMainWindow):
             "  SpecFile — read from the scan header\n"
             "  PV       — live EPICS readback\n"
             "  USER     — manual entry in the parameter tree"
+        )
+        ui.widget_ptree.setToolTip(
+            "Rowland-circle binning parameters for the current scan.\n"
+            "Editable only when the metadata source above is set to USER."
         )
         ui.pushButton_3.setToolTip("Load binning parameters from a saved file")
         ui.pushButton_4.setToolTip("Save current binning parameters to a file")
@@ -169,7 +268,42 @@ class RixsViewerGUI(QMainWindow):
         )
         ui.pushButton_process.setToolTip("Run the Rowland-circle binning pipeline on the current scan")
         ui.progressBar_process.setToolTip("Binning progress (%)")
+        ui.label_energy_interval.setToolTip(
+            "Computed emission-energy bin width from the last binning run\n"
+            "(native pixel spacing, unless overridden by Force NEnergyBins)."
+        )
+        # RXES Map tab
+        ui.comboBox_rxes_plottarget.setToolTip(
+            "Array to display for the current RXES map:\n"
+            "  intensity_norm — coverage-averaged intensity\n"
+            "  intensity      — raw accumulated intensity\n"
+            "  sample         — coverage count (frames per cell)"
+        )
+        ui.comboBox_rxes_cmap.setToolTip("Colormap used for the RXES map's colorbar")
+        ui.checkBox_show_rixsprofile.setToolTip(
+            "Show a 1D emission-energy profile at a fixed incident energy.\n"
+            "Click anywhere on the map to pick the incident energy; defaults to the median."
+        )
+        ui.checkBox_overwrite_rxes_binning_points.setToolTip(
+            "Override the automatic emission-bin spacing for the RXES map with a fixed bin count.\n"
+            "Defaults to this scan's own merixE point count; unchecking falls back to native pixel spacing."
+        )
+        ui.spinBox_force_rxes_binning_points.setToolTip(
+            "Number of emission bins for the RXES map when the override checkbox is enabled"
+        )
+        ui.checkBox_show_crosshair.setToolTip(
+            "Show a dashed crosshair on the RXES map marking the last-clicked point,\n"
+            "snapped to the nearest actually-scanned (incident, emission) grid point.\n"
+            "Clicking also shows that frame in 2D Scattering."
+        )
         ui.pushButton_save.setToolTip("Export the binned spectrum to a SPEC-format file")
+        ui.pushButton_rxes_save.setToolTip(
+            "Export the RXES map to a SPEC-format file, importable into PyMca as a 2D image"
+        )
+        ui.label_rxes_energy_interval.setToolTip(
+            "Computed emission-energy bin width for this map\n"
+            "(native pixel spacing, unless overridden by Force NEnergyBins)."
+        )
         # Calibration tab
         ui.comboBox_fit_target.setToolTip(
             "Parameter to optimise:\n"
@@ -187,18 +321,104 @@ class RixsViewerGUI(QMainWindow):
             "by minimising the elastic peak FWHM"
         )
         ui.progressBar_calibrate.setToolTip("Calibration progress (%)")
+        # Tab headers
+        ui.tabWidget.setTabToolTip(
+            ui.tabWidget.indexOf(ui.tab_2), "1D energy-binning workspace for EnergyScan/SnapshotScan data."
+        )
+        ui.tabWidget.setTabToolTip(
+            ui.tabWidget.indexOf(ui.tab_rxesmap),
+            "2D incident x emission energy map for RXES scans.\n"
+            "Disabled for scan types that don't produce a 2D map.",
+        )
+        ui.tabWidget.setTabToolTip(
+            ui.tabWidget.indexOf(ui.tab),
+            "Pixel-size/tilt-angle calibration via line search.\n"
+            "Disabled for scans that don't support calibration.",
+        )
 
     def start_stop_timer(self):
         """Auto-update the scan table with new scans from the spec file"""
         if self.ui.checkBox_autoupdate.isChecked():
             self.ui.pushButton_fit_pixel_size.setDisabled(True)
             self.ui.pushButton_fit_pixel_size.setChecked(False)
-            logger.info("Auto-updating scan table from spec file...")
-            self.timer.start()
+
+            if self.scan_model is None:
+                logger.info("Auto-updating scan table from spec file...")
+                self.timer.start()
+                return
+
+            # get_unprocessed_scans() opens and parses the whole results SPEC
+            # file, which can be slow after a long beamtime session -- run it
+            # off the GUI thread like every other long operation here.
+            def on_result(backfill):
+                if not self.ui.checkBox_autoupdate.isChecked():
+                    return  # toggled off again while this was running
+                if backfill:
+                    logger.info(
+                        "Auto-update enabled: catching up on %d unprocessed scan(s).",
+                        len(backfill),
+                    )
+                    self._catching_up = True
+                    self._backfill_queue = backfill
+                    self._backfill_index = 0
+                    self._advance_backfill_queue()
+                else:
+                    logger.info("Auto-updating scan table from spec file...")
+                    self.timer.start()
+
+            def on_error(err_str):
+                logger.error("Failed to scan for unprocessed scans: %s", err_str)
+                if self.ui.checkBox_autoupdate.isChecked():
+                    self.timer.start()
+
+            worker = Worker(self.scan_model.get_unprocessed_scans)
+            self.backfill_scan_worker = worker  # Keep reference to prevent GC of signals
+            worker.signals.result.connect(on_result)
+            worker.signals.error.connect(on_error)
+            self.threadpool.start(worker)
         else:
             self.ui.pushButton_fit_pixel_size.setEnabled(True)
             logger.info("Auto-update disabled.")
             self.timer.stop()
+            self._catching_up = False
+            self._backfill_queue = []
+            self._backfill_index = 0
+
+    def _advance_backfill_queue(self):
+        """
+        Process the next scan in :attr:`_backfill_queue`, or start live polling.
+
+        Called once to kick off catch-up processing, then again from
+        :meth:`process_binning`'s completion handler after each scan finishes,
+        until the queue is drained. If auto-update is unchecked mid-catch-up,
+        the queue is abandoned without starting the timer.
+        """
+        if self._backfill_index >= len(self._backfill_queue) or not self.ui.checkBox_autoupdate.isChecked():
+            caught_up = self._backfill_index > 0
+            self._catching_up = False
+            self._backfill_queue = []
+            self._backfill_index = 0
+            if self.ui.checkBox_autoupdate.isChecked():
+                if caught_up:
+                    self.statusBar().showMessage("Catch-up complete.", 5000)
+                self.timer.start()
+            return
+
+        dset = self._backfill_queue[self._backfill_index]
+        self._backfill_index += 1
+        self.statusBar().showMessage(
+            f"Catching up on missed scans: scan {dset.scan_index} "
+            f"({self._backfill_index}/{len(self._backfill_queue)})"
+        )
+
+        if self.current_rixs_dset is not None and self.current_rixs_dset is not dset:
+            self._evict_scan_data(self.current_rixs_dset)
+        self._set_current_rixs_dset(dset)
+        self.ui.tableView_image.setModel(dset.get_table_model())
+        header = self.ui.tableView_image.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        self.update_image(frame_index=-1)
+        self.process_binning()
 
     def update_meta_source(self):
         """Update the binning kwargs source based on the combo box selection"""
@@ -224,10 +444,10 @@ class RixsViewerGUI(QMainWindow):
 
         Parameters
         ----------
-        dset : RixsScanTiffDataset or None
+        dset : RixsEnergyScanDataset, RixsSnapshotScanDataset, RixsRxesScanDataset, or None
             The dataset to release. ``None`` is a no-op.
         """
-        if dset is None or dset._data is None or dset.scan_info is None:
+        if dset is None or not dset.has_loaded_frames() or dset.scan_info is None:
             return
         if self._binning_active and dset is self._binning_dset:
             # a background worker is still reading/writing this dataset's
@@ -252,7 +472,7 @@ class RixsViewerGUI(QMainWindow):
                 # auto-update never fires on_selection_changed; evict here or
                 # every scan's stack stays resident for the whole session (OOM)
                 self._evict_scan_data(self.current_rixs_dset)
-                self.current_rixs_dset = new_dset
+                self._set_current_rixs_dset(new_dset)
 
             if has_updates:
                 self.process_binning()
@@ -373,7 +593,7 @@ class RixsViewerGUI(QMainWindow):
         """
         if self.current_rixs_dset is None:
             return
-        if self.current_rixs_dset.scan_info["scan_type"] != "EnergyScan":
+        if not self.current_rixs_dset.supports_calibration():
             QMessageBox.warning(
                 self,
                 "Warning",
@@ -474,12 +694,37 @@ class RixsViewerGUI(QMainWindow):
         fname = dialog.selectedFiles()[0]
 
         try:
-            self.current_rixs_dset.save_to_file(fname, force=True)
+            if self.current_rixs_dset.supports_rxes_map():
+                self.current_rixs_dset.save_to_file(
+                    fname, force=True, cmap=self.ui.comboBox_rxes_cmap.currentText()
+                )
+            else:
+                self.current_rixs_dset.save_to_file(fname, force=True)
         except Exception as e:
             QMessageBox.critical(self, "Save failed", f"Could not save file:\n{e}")
             return
 
         self.statusBar().showMessage(f"Results saved to: {fname}", 5000)
+
+    def _resolve_nenergybins_override(self):
+        """Return the ``{NEnergyBins, force_NEnergyBins}`` binning kwargs
+        from whichever "Force NEnergyBins" checkbox/spinbox pair applies to
+        the current scan -- the RXES Map tab's pair for scans that produce a
+        2D map, the Process tab's pair for everything else. The two scan
+        kinds need very different default bin counts (a scan's own merixE
+        point count vs. an arbitrary 1D default), so they get separate
+        controls rather than sharing one.
+        """
+        if self.current_rixs_dset.supports_rxes_map():
+            checkbox = self.ui.checkBox_overwrite_rxes_binning_points
+            spinbox = self.ui.spinBox_force_rxes_binning_points
+        else:
+            checkbox = self.ui.checkBox_overwrite_binning_points
+            spinbox = self.ui.spinBox_force_binning_points
+
+        if checkbox.isChecked():
+            return {"NEnergyBins": spinbox.value(), "force_NEnergyBins": True}
+        return {"force_NEnergyBins": False}
 
     def process_binning(self):
         """
@@ -500,20 +745,19 @@ class RixsViewerGUI(QMainWindow):
         plot_target = self.ui.comboBox_plottarget.currentText()
 
         binning_kwargs = self._get_binning_kwargs(meta_source)
-
-        if self.ui.checkBox_overwrite_binning_points.isChecked():
-            binning_kwargs["NEnergyBins"] = self.ui.spinBox_force_binning_points.value()
-            binning_kwargs["force_NEnergyBins"] = True
-        else:
-            binning_kwargs["force_NEnergyBins"] = False
+        binning_kwargs.update(self._resolve_nenergybins_override())
 
         if len(self.current_rixs_dset.unloaded_filenames) == 0:
             if self.ui.checkBox_autoupdate.isChecked():
-                if self.current_rixs_dset._data is None:
+                if not self.current_rixs_dset.has_loaded_frames():
                     return  # nothing loaded yet, nothing to re-bin
 
         self._binning_active = True
         self._binning_dset = self.current_rixs_dset
+        # None for EnergyScan/SnapshotScan (which always fully drain
+        # unloaded_filenames in one call), so "made progress" below is
+        # trivially true for them -- see processed_frame_count().
+        n_processed_before = self._binning_dset.processed_frame_count()
         self.ui.pushButton_process.setEnabled(False)
 
         def worker_fn():
@@ -525,11 +769,7 @@ class RixsViewerGUI(QMainWindow):
             )
 
         def on_result(result):
-            self.view.plot_binned_data(
-                result, show_rawdata, plot_target=plot_target, hdl_target="plot"
-            )
-            if result.get("warning"):
-                self.statusBar().showMessage(f"Warning: {result['warning']}", 5000)
+            self._route_binning_result(result, show_rawdata, plot_target)
 
         def on_error(err_str):
             if err_str.startswith("No frames") or "no scandata rows" in err_str:
@@ -550,17 +790,29 @@ class RixsViewerGUI(QMainWindow):
                 and self.current_rixs_dset is not None
             ):
                 self.update_image(frame_index=-1)
-                si = self.current_rixs_dset.scan_info
                 if (
-                    si
-                    and si["tiff_points"] > 0
-                    and si["tiff_points"] == si["spec_points"]
-                    and len(si["scandata"]) == si["spec_points"]
+                    self.current_rixs_dset.is_complete()
                     and self.current_rixs_dset.bin_result is not None
                 ):
                     self.current_rixs_dset.save_to_file(self.save_filename)
                 if self.current_rixs_dset.unloaded_filenames:
-                    self.process_binning()
+                    n_processed_after = self.current_rixs_dset.processed_frame_count()
+                    made_progress = (
+                        n_processed_before is None
+                        or n_processed_after is None
+                        or n_processed_after > n_processed_before
+                    )
+                    if made_progress:
+                        self.process_binning()
+                        return
+                    # else: an RXES scan re-queued every pending frame without
+                    # processing any of it (SPEC scandata hasn't caught up
+                    # with the TIFF writer yet) -- retriggering immediately
+                    # would spin a tight, CPU/I/O-burning loop. Let the next
+                    # 1s timer tick retry once update_spec_record() refreshes
+                    # scandata instead.
+            if self._catching_up:
+                self._advance_backfill_queue()
 
         worker = Worker(worker_fn)
         self.binning_worker = worker  # Keep reference to prevent GC of signals
@@ -573,6 +825,75 @@ class RixsViewerGUI(QMainWindow):
         worker.signals.error.connect(on_error)
         worker.signals.finished.connect(on_finished)
         self.threadpool.start(worker)
+
+    def on_rxes_plottarget_changed(self):
+        """Replot the RXES map from its already-computed cached result.
+
+        intensity/intensity_norm/sample are all produced by the same
+        ``bin_data_wrap`` call, so switching between them is a free replot
+        -- no need to re-run the reduction pipeline.
+        """
+        dset = self.current_rixs_dset
+        bin_result = getattr(dset, "bin_result", None) if dset is not None else None
+        if bin_result is None or bin_result.get("kind") != "rxes_map":
+            return
+        self.view.plot_rxes_map(
+            bin_result, plot_target=self.ui.comboBox_rxes_plottarget.currentText()
+        )
+
+    def on_show_rixsprofile_toggled(self, checked):
+        self.view.set_rxes_profile_visible(checked)
+
+    def on_rxes_cmap_changed(self):
+        self.view.set_rxes_colormap(self.ui.comboBox_rxes_cmap.currentText())
+
+    def on_rxes_force_nenergybins_changed(self, *_):
+        """Re-bin immediately on Enter/focus-loss in the spinbox, or on
+        toggling the checkbox -- NEnergyBins is a calibration key, so
+        bin_data_wrap() replays the whole scan under the new bin count
+        rather than requiring a separate trip to the Process tab's Apply.
+        """
+        if self.current_rixs_dset is not None and self.current_rixs_dset.supports_rxes_map():
+            self.process_binning()
+
+    def on_show_crosshair_toggled(self, checked):
+        self.view.set_rxes_crosshair_visible(checked)
+
+    def _on_rxes_map_frame_clicked(self, frame_position):
+        """Show the frame nearest a click on the RXES map in "2D Scattering".
+
+        Routed through the frame slider (rather than calling update_image
+        directly) so its range-based clamping and the slider's own position
+        both stay correct for free.
+        """
+        self.ui.horizontalSlider_frame_index.setValue(frame_position)
+
+    def _route_binning_result(self, result, show_rawdata, plot_target):
+        """
+        Route a ``bin_data_wrap()`` result to the right presentation.
+
+        A 2D RXES map (``result["kind"] == "rxes_map"``) is rendered on the
+        "RXES Map" tab; *plot_target* (from the 1D-plot combo box) doesn't
+        apply there, so ``comboBox_rxes_plottarget`` is consulted instead.
+        A 1D spectrum result is plotted as before.
+        """
+        if result.get("kind") == "rxes_map":
+            self.view.plot_rxes_map(
+                result, plot_target=self.ui.comboBox_rxes_plottarget.currentText()
+            )
+            self.ui.tabWidget.setCurrentWidget(self.ui.tab_rxesmap)
+            filled = int(np.sum(result["sample"] > 0))
+            total = result["sample"].size
+            self.statusBar().showMessage(
+                f"RXES map updated: {filled}/{total} cells filled", 3000
+            )
+            return
+
+        self.view.plot_binned_data(
+            result, show_rawdata, plot_target=plot_target, hdl_target="plot"
+        )
+        if result.get("warning"):
+            self.statusBar().showMessage(f"Warning: {result['warning']}", 5000)
 
     # plot_binned_data is handled by RixsView
 
@@ -619,6 +940,10 @@ class RixsViewerGUI(QMainWindow):
             logger.error(f"Check the spec file: {self.spec_filename}")
             return
 
+        p = Path(self.spec_filename)
+        self.save_filename = p.with_name(f"{p.stem}_bindata_rixsviewer.spec")
+        logger.info(f"saving binned results to {self.save_filename}")
+
         logger.info(f"Loading spec and tiff: {self.spec_filename}, {self.tiff_folder}")
         try:
             scan_model = RixsSpecTable(
@@ -626,8 +951,7 @@ class RixsViewerGUI(QMainWindow):
                 force_reload_s=self.force_reload_s,
             )
         except Exception as e:
-            traceback.print_exc()
-            logger.error(f"Error loading SPEC file: {e}")
+            logger.exception(f"Error loading SPEC file: {e}")
             QMessageBox.critical(
                 self,
                 "Error",
@@ -635,11 +959,8 @@ class RixsViewerGUI(QMainWindow):
             )
             return
 
-        p = Path(self.spec_filename)
-        self.save_filename = p.with_name(f"{p.stem}_bindata_rixsviewer.spec")
-        logger.info(f"saving binned results to {self.save_filename}")
-
         save_settings(self.spec_filename, self.tiff_folder)
+        _set_plot_export_folder(p.parent)
 
         # Connect the model to the tableView_scan
         self.ui.tableView_scan.setModel(scan_model)
@@ -655,6 +976,58 @@ class RixsViewerGUI(QMainWindow):
         )
         self.scan_model = scan_model
         return
+
+    def _set_current_rixs_dset(self, dset):
+        """Set ``current_rixs_dset`` and keep the RXES Map tab in sync with it.
+
+        Centralizes the tab sync so every place that changes the current
+        dataset (manual row click, auto-update, backfill catch-up) gets it
+        for free rather than needing to remember to call it separately.
+        """
+        self.current_rixs_dset = dset
+        self._sync_rxes_map_tab(dset)
+        self._sync_calibration_tab(dset)
+
+    def _sync_calibration_tab(self, dset):
+        """Enable the Calibration tab only for scans that support it.
+
+        Mirrors :meth:`_sync_rxes_map_tab` so the tab's own tooltip claim
+        ("Disabled for scans that don't support calibration") is actually
+        true, instead of relying solely on the warning dialog in
+        :meth:`calibrate_parameters`.
+        """
+        supports_calibration = dset is not None and dset.supports_calibration()
+        idx = self.ui.tabWidget.indexOf(self.ui.tab)
+        was_current = self.ui.tabWidget.currentWidget() is self.ui.tab
+        self.ui.tabWidget.setTabEnabled(idx, supports_calibration)
+        if not supports_calibration and was_current:
+            self.ui.tabWidget.setCurrentWidget(self.ui.tab_2)
+
+    def _sync_rxes_map_tab(self, dset):
+        """Enable the RXES Map tab only for scans that produce a 2D map.
+
+        Otherwise clear any map left over from a previously-selected RXES
+        scan and, if that tab was the active one, switch back to Process --
+        without this a stale RXES map kept showing after selecting a plain
+        EnergyScan/SnapshotScan.
+        """
+        is_rxes = dset is not None and dset.supports_rxes_map()
+        idx = self.ui.tabWidget.indexOf(self.ui.tab_rxesmap)
+        # Capture this before disabling: Qt auto-switches away from a tab
+        # that's current the moment it's disabled, so checking afterwards
+        # would always see some other (arbitrary) tab as current.
+        was_current = self.ui.tabWidget.currentWidget() is self.ui.tab_rxesmap
+        self.ui.tabWidget.setTabEnabled(idx, is_rxes)
+        if is_rxes:
+            # Default the RXES-specific bin-count override to this scan's
+            # own merixE point count -- a sensible starting point distinct
+            # per scan, without clobbering a value the user already tweaked
+            # for this same scan (this only runs on an actual scan switch).
+            self.ui.spinBox_force_rxes_binning_points.setValue(dset.scan_info["emission_points"])
+        else:
+            self.view.clear_rxes_map()
+            if was_current:
+                self.ui.tabWidget.setCurrentWidget(self.ui.tab_2)
 
     def on_selection_changed(self, selected, deselected):
         """
@@ -675,7 +1048,7 @@ class RixsViewerGUI(QMainWindow):
         if self.current_rixs_dset is not None and self.current_rixs_dset is not dset:
             self._evict_scan_data(self.current_rixs_dset)
 
-        self.current_rixs_dset = dset
+        self._set_current_rixs_dset(dset)
         self.ui.tableView_image.setModel(self.current_rixs_dset.get_table_model())
         header = self.ui.tableView_image.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
@@ -700,6 +1073,12 @@ class RixsViewerGUI(QMainWindow):
         percentile_cutoff = self.ui.doubleSpinBox_percentile_cutoff.value()
 
         binning_kwargs = self.binning_model.get_kwargs()
+        meta_source = self.ui.comboBox_metasource.currentText()
+        if meta_source == "SpecFile":
+            # The tree still holds the previously displayed scan's values
+            # until _put_params below runs, so a just-selected scan would be
+            # sheared with the old scan's TiltAngle -- use its own metadata.
+            binning_kwargs.update(self.current_rixs_dset.scan_info.get("metadata", {}))
 
         frame_info = self.current_rixs_dset.get_data_for_display(
             frame_index=frame_index,
@@ -707,12 +1086,18 @@ class RixsViewerGUI(QMainWindow):
             **binning_kwargs,
         )
 
-        # Scan may be empty (no TIFF frames or no scandata rows yet)
+        # Scan may be empty (no TIFF frames or no scandata rows yet), or --
+        # for an RXES map click/jump to a specific grid position -- that
+        # position simply hasn't arrived yet.
         if frame_info is None:
             logger.debug(
                 "update_image: no data available for scan %s yet.",
                 self.current_rixs_dset.scan_index,
             )
+            if frame_index >= 0:
+                self.statusBar().showMessage(
+                    f"Frame {frame_index} is not available yet.", 3000
+                )
             return
 
         self.view.update_image(
@@ -731,7 +1116,6 @@ class RixsViewerGUI(QMainWindow):
         slider.setValue(frame_info["frame_index"])
         slider.blockSignals(False)
 
-        meta_source = self.ui.comboBox_metasource.currentText()
         if meta_source == "SpecFile":
             self._put_params(frame_info["frame_metadata"])
 
@@ -753,9 +1137,43 @@ class RixsViewerGUI(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.timer.stop()
+            self._detach_statusbar_log_handler()
+            self._save_splitter_state()
+            self._save_window_geometry()
             super().closeEvent(event)
         else:
             event.ignore()
+
+    def _detach_statusbar_log_handler(self):
+        """Stop forwarding log records to this window's status bar."""
+        logging.getLogger("rixsviewer").removeHandler(self._statusbar_log_handler)
+
+    def _save_splitter_state(self):
+        """Persist the layout splitters' sizes for restore on next launch."""
+        encoded = {
+            name: bytes(getattr(self.ui, name).saveState().toBase64()).decode("ascii")
+            for name in self._SPLITTER_NAMES
+        }
+        save_splitter_state(encoded)
+
+    def _restore_splitter_state(self, saved):
+        """Apply previously-persisted splitter sizes, if any."""
+        splitter_state = saved.get("splitter_state") or {}
+        for name in self._SPLITTER_NAMES:
+            encoded = splitter_state.get(name)
+            if encoded:
+                getattr(self.ui, name).restoreState(QByteArray.fromBase64(encoded.encode("ascii")))
+
+    def _save_window_geometry(self):
+        """Persist the main window's size/position for restore on next launch."""
+        encoded = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        save_window_geometry(encoded)
+
+    def _restore_window_geometry(self, saved):
+        """Apply the previously-persisted window geometry, if any."""
+        encoded = saved.get("window_geometry")
+        if encoded:
+            self.restoreGeometry(QByteArray.fromBase64(encoded.encode("ascii")))
 
 
 def main():
@@ -789,6 +1207,11 @@ def main():
              " to bypass NFS attribute caching (default: 10.0)",
     )
     parser.add_argument(
+        "--no-tooltip",
+        action="store_true",
+        help="Disable widget tooltips",
+    )
+    parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
 
@@ -797,6 +1220,11 @@ def main():
     unrecognized_opts = [a for a in qt_args if a.startswith("-")]
     if unrecognized_opts:
         parser.error(f"unrecognized arguments: {' '.join(unrecognized_opts)}")
+
+    # Record this run -- and any crash traceback -- under $HOME/.rixsviewer/logs.
+    # Done here rather than at import time so that merely importing the package
+    # (tests, scripts) never creates log files.
+    setup_file_logging()
 
     # Fall back to the last-used spec file / TIFF folder for any field not
     # given on the command line.
@@ -836,10 +1264,18 @@ def main():
         tiff_folder=args.tiff_folder,
         heartbeat_s=args.heartbeat,
         force_reload_s=args.force_reload,
+        enable_tooltips=not args.no_tooltip,
     )
     gui.show()
 
-    sys.exit(app.exec())
+    # RAM usage of the app and the system, logged now and every 2 minutes
+    start_memory_logging(parent=app)
+
+    exit_code = app.exec()
+    # A log file that does not end with this line belongs to a run that crashed
+    # or was killed.
+    logger.info("RixsViewer exited normally (code %s)", exit_code)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

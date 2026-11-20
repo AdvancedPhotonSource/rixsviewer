@@ -69,7 +69,7 @@ You may save the processed, 1D binned spectra to disk for external analysis.
 - **Save**: Click the **Save** button in the lower-left corner.
 - **File Location**: By default, the result is written alongside the original SPEC file, named ``<original_spec_filename>_bindata_rixsviewer.spec``.
 - **Format**: The file uses the standard SPEC format. Each saved spectrum is a new scan with standard headers (e.g., ``#S``, ``#L``). 
-- **Columns**: The saved data generally includes ``Energy``, ``Intensity`` (normalized), ``Error``, ``Signal``, and ``Norm`` (total counts).
+- **Columns**: A 1D spectrum (EnergyScan/SnapshotScan) is saved as ``Energy_keV`` followed by ``Intensity_norm``, ``Intensity_norm_err``, ``Intensity_raw``, ``A`` (number of contributing frames) and the monitor counters ``i2``, ``i0``, ``mmepin1``, ``mmepin2``. An RXES map is saved one row per map cell, with ``EmissionEnergy_keV`` and ``IncidentEnergy_keV`` in place of ``Energy_keV``, followed by the same columns (a monitor counter the scan did not record is left out). The header of every saved scan explains each column in ``#C`` comment lines.
 
 6. GUI Navigation (Scans and Frames)
 ====================================
@@ -79,3 +79,13 @@ The user interface is broken up into several interactable views.
 - **Select Dataset**: The top pane contains a scan table displaying the Scan Number, Type, SPEC Points, and TIFF Points. Click any row to load and display that specific scan.
 - **Select Frames**: Once a scan dataset is loaded, a 2D view of the detector is displayed on the right. Below this view is a horizontal slider. Use this slider to scroll through the individual detector frames (TIFF images) contained within the scan.
 - By default, selecting a new dataset resets the frame view to the middle frame of the scan.
+
+7. Log Files and Crash Reports
+==============================
+
+Every launch of ``rixsviewer`` writes its own log file to ``$HOME/.rixsviewer/logs/`` (next to ``settings.json``), named ``rixsviewer_<date>_<time>_<host>_<pid>.log``. The path is printed at startup; the 20 most recent files are kept.
+
+- **Contents**: Everything shown in the terminal, plus tracebacks of uncaught errors, Qt's own warnings, and -- if the application crashes outright (e.g. a segmentation fault) -- the Python traceback of every thread at the moment of the crash.
+- **Reporting a crash**: Send the newest file in that folder. A run that ended cleanly finishes with the line ``RixsViewer exited normally``; a file without it belongs to a run that crashed or was killed.
+- **Memory usage**: At startup and then every 2 minutes, a ``Memory:`` line records the RAM held by the viewer itself (current and peak since startup) and by the whole machine (used, available, swap).
+- **No traceback at the end?** If the file simply stops, the process was most likely killed from outside -- typically by the operating system when memory ran out while loading large TIFF stacks. Check the last ``Memory:`` lines: a large ``app`` figure, or little ``available`` memory on the system, points to exactly that.

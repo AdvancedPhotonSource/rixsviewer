@@ -10,7 +10,7 @@ import numpy as np
 import tifffile
 from PySide6.QtCore import QAbstractTableModel, Qt
 
-from .spec_parsers import parse_single_scan
+from .spec_parsers import parse_single_scan, tiff_point_index
 from .utils import (
     bin_rixs_data,
     percentile_clip,
@@ -23,65 +23,46 @@ from .. import __version__
 
 logger = logging.getLogger(__name__)
 
+# Saved-file column layout, shared by every scan type so the files stay
+# consistent: each scan type writes its own energy axis column(s) first, each
+# labelled ``<Name>_keV``, followed by the result columns below.
 
-class RixsScanTiffDataset:
+#: label of the single energy column of a 1D (EnergyScan/SnapshotScan) spectrum
+ENERGY_LABEL = "Energy_keV"
+
+#: per-frame SPEC monitor counters carried into the saved result
+MONITOR_KEYS = ("i2", "i0", "mmepin1", "mmepin2")
+
+#: ``bin_result`` key -> ``#L`` label of the result columns, in saved order
+RESULT_COLUMNS = {
+    "intensity_norm": "Intensity_norm",
+    "intensity_norm_err": "Intensity_norm_err",
+    "intensity_raw": "Intensity_raw",
+    "sample": "A",
+    **{key: key for key in MONITOR_KEYS},
+}
+
+# What each result column means, written as ``#C`` lines into every saved scan
+# block so the file documents itself. Avoid "=" in the text: the parameter
+# comments in the same header are ``#C key = value`` lines.
+RESULT_COLUMN_DESCRIPTIONS = {
+    "Intensity_norm": "Summed counts divided by A (mean counts per contributing frame)",
+    "Intensity_norm_err": "Placeholder, currently all zeros",
+    "Intensity_raw": "Summed counts over all frames covering this bin",
+    "A": "Number of frames that contributed to this bin",
+}
+MONITOR_DESCRIPTION = "Each monitor counter summed over the frames that contributed to this bin"
+
+
+class TiffScanDatasetMixin:
+    """Shared scan-metadata/filename-tracking behavior for scan-dataset
+    classes that read TIFF files named ``<basename>_scan<N>_point<k>.tif``.
+
+    Host classes must set, in their own ``__init__``: ``scan_index``,
+    ``spec_fname``, ``tif_folder``, ``scan_info`` (``None`` initially),
+    ``unloaded_filenames`` (``[]`` initially), ``_saved`` (``False``
+    initially), ``_model`` (``None`` initially).
     """
-    Container for scan metadata and lazily-loaded TIFF image data.
-
-    Holds the parsed scan information and provides methods for loading
-    the associated TIFF stack, displaying it, and computing the binned
-    RIXS spectrum.
-
-    Parameters
-    ----------
-    row_position : int
-        Zero-based row index of this scan in the parent
-        :class:`RixsSpecTable` model.
-    spec_fname : str
-        Path to the SPEC data file.
-    tif_folder : str
-        Directory containing the TIFF image files.
-    """
-
-    def __init__(self, row_position, spec_fname, tif_folder, scan_index):
-        """
-        Initialise dataset with file paths; no images are loaded yet.
-
-        Parameters
-        ----------
-        row_position : int
-            Row index in the parent table model.
-        spec_fname : str
-            Path to the SPEC data file.
-        tif_folder : str
-            Directory containing the TIFF image files.
-        scan_index : int
-            Scan index in the SPEC file.
-        """
-        self.row_position = row_position
-        self.scan_index = scan_index
-        self.spec_fname = spec_fname
-        self.tif_folder = tif_folder
-        self._model = None
-        self._buffer = None
-        self._n_filled = 0
-        self._data = None
-        self.unloaded_filenames = []
-        self.scan_info = None
-        self.bin_result = None
-        self.bin_kwargs = None
-        self._saved = False
-        self.file_save_keys = {
-            "energy_axis": "Energy",
-            "intensity_norm": "Intensity_norm",
-            "intensity_norm_err": "Intensity_norm_err",
-            "intensity_raw": "Intensity_raw",
-            "sample": "A",
-            "i2": "i2",
-            "i0": "i0",
-            "mmepin1": "mmepin1",
-            "mmepin2": "mmepin2",
-        }
 
     def update_scan_info(self, scan_pack):
         """
@@ -89,12 +70,12 @@ class RixsScanTiffDataset:
 
         If the TIFF point count has changed since the last update,
         :attr:`unloaded_filenames` is populated with the filenames not
-        yet present in the cached data so that :meth:`read_tiff_data` can
+        yet present in the cached data so that a subsequent read can
         load only the new frames.
 
         Parameters
         ----------
-        scan_pack : silx.io.specfile.Scan
+        scan_pack : rixsviewer.model.spec_reader.SpecScan
             Current state of the scan from the SPEC file.
         """
         scan_info = parse_single_scan(
@@ -132,7 +113,8 @@ class RixsScanTiffDataset:
             return False
         basename = Path(self.spec_fname).name
         filenames = sorted(
-            str(p) for p in Path(self.tif_folder).glob(f"{basename}_scan{self.scan_index}_point*.tif")
+            (str(p) for p in Path(self.tif_folder).glob(f"{basename}_scan{self.scan_index}_point*.tif")),
+            key=tiff_point_index,
         )
         new_files = [fn for fn in filenames if fn not in self.scan_info["filenames"]]
         if not new_files:
@@ -176,6 +158,17 @@ class RixsScanTiffDataset:
         }[col]
         return self.scan_info[key]
 
+    def is_complete(self):
+        """Whether every expected SPEC row and TIFF frame has arrived for this scan."""
+        si = self.scan_info
+        if si is None:
+            return False
+        return (
+            si["tiff_points"] > 0
+            and si["tiff_points"] == si["spec_points"]
+            and len(si["scandata"]) == si["spec_points"]
+        )
+
     def apply_tilt_angle(self, data, tilt_angle=0, tilt_order=1):
         Ylow, Yhigh = (
             self.scan_info["metadata"]["Ylow"],
@@ -189,6 +182,132 @@ class RixsScanTiffDataset:
             return apply_subpixel_shear_3d(
                 data[np.newaxis, :, :], Ylow, Yhigh, tilt_angle, tilt_order
             )
+
+    def get_table_model(self):
+        """
+        Return (or lazily create) the :class:`RixsScanImageTable` for this scan.
+
+        Returns
+        -------
+        RixsScanImageTable
+            Qt table model listing the TIFF filenames for this scan.
+        """
+        if self._model is None:
+            self._model = RixsScanImageTable(self.scan_info["filenames"])
+        else:
+            self._model.update_fnames(self.scan_info["filenames"])
+        return self._model
+
+    def _write_spec_block(self, fname, command, axes, result, extra_comments=()):
+        """Append one reduced-scan block to the SPEC-format file *fname*.
+
+        The single writer behind every scan type's ``save_to_file``, so the
+        header layout, column names and number format cannot drift apart.
+
+        Parameters
+        ----------
+        fname : str
+            File to append to.
+        command : str
+            Text following the scan number on the ``#S`` line.
+        axes : dict
+            ``#L`` label -> ``(values, description)`` for the scan type's own
+            energy axis column(s), written first, in this order.
+        result : dict
+            The scan's ``bin_result``. Every :data:`RESULT_COLUMNS` key it
+            holds is written (flattened) after the axes; keys it lacks --
+            e.g. a monitor counter the SPEC scan did not record -- are
+            skipped.
+        extra_comments : iterable of str, optional
+            Additional ``#C`` lines, written after the instrument parameters.
+        """
+        columns = {label: values for label, (values, _) in axes.items()}
+        descriptions = {label: text for label, (_, text) in axes.items()}
+        monitor_labels = []
+        for key, label in RESULT_COLUMNS.items():
+            if key not in result:
+                continue
+            columns[label] = np.ravel(result[key])
+            if key in MONITOR_KEYS:
+                monitor_labels.append(label)
+            else:
+                descriptions[label] = RESULT_COLUMN_DESCRIPTIONS[label]
+        if monitor_labels:
+            descriptions[", ".join(monitor_labels)] = MONITOR_DESCRIPTION
+
+        with open(fname, "a") as f:
+            f.write(f"\n#S {self.scan_index} {command}\n")
+            f.write(f"#D {np.datetime64('now')}\n")
+            f.write(f"#C RixsViewerVersion = {__version__}\n")
+            for key, value in self.scan_info["metadata"].items():
+                unit = unit_map.get(key, "")
+                f.write(f"#C {key} = {value}{unit}\n")
+            for comment in extra_comments:
+                f.write(f"#C {comment}\n")
+            f.write("#C Columns:\n")
+            for label, text in descriptions.items():
+                f.write(f"#C   {label}: {text}\n")
+            f.write(f"#N {len(columns)}\n")
+            f.write("#L  " + "  ".join(columns) + "\n")
+            np.savetxt(f, np.column_stack(list(columns.values())), fmt="%.18e")
+            f.write("\n")
+
+
+class BufferedTiffScanDatasetMixin(TiffScanDatasetMixin):
+    """
+    Shared behavior for scan-dataset classes that keep the entire raw TIFF
+    stack resident in memory, as opposed to
+    :class:`~.rxes_dataset.RixsRxesScanDataset`, which discards each frame
+    after reducing it. Used by :class:`RixsEnergyScanDataset` and
+    :class:`RixsSnapshotScanDataset`.
+
+    Parameters
+    ----------
+    row_position : int
+        Zero-based row index of this scan in the parent
+        :class:`RixsSpecTable` model.
+    spec_fname : str
+        Path to the SPEC data file.
+    tif_folder : str
+        Directory containing the TIFF image files.
+    """
+
+    def __init__(self, row_position, spec_fname, tif_folder, scan_index):
+        """
+        Initialise dataset with file paths; no images are loaded yet.
+
+        Parameters
+        ----------
+        row_position : int
+            Row index in the parent table model.
+        spec_fname : str
+            Path to the SPEC data file.
+        tif_folder : str
+            Directory containing the TIFF image files.
+        scan_index : int
+            Scan index in the SPEC file.
+        """
+        self.row_position = row_position
+        self.scan_index = scan_index
+        self.spec_fname = spec_fname
+        self.tif_folder = tif_folder
+        self._model = None
+        self._buffer = None
+        self._n_filled = 0
+        self._data = None
+        self.unloaded_filenames = []
+        self.scan_info = None
+        self.bin_result = None
+        self.bin_kwargs = None
+        self._saved = False
+
+    def supports_calibration(self):
+        """Whether pixel-size/tilt calibration is meaningful for this scan type."""
+        return False
+
+    def supports_rxes_map(self):
+        """Whether bin_data_wrap() on this scan produces a 2D RXES map."""
+        return False
 
     def get_data_for_display(
         self, frame_index=-1, percentile_cutoff=99.0, TiltAngle=0, **kwargs
@@ -257,13 +376,6 @@ class RixsScanTiffDataset:
             "scan_index": self.scan_index,
             "frame_index": frame_index,
         }
-
-    # def calibrate_parameters(self, method="AlignCenter", meta_source="SpecFile", **kwargs):
-    #     assert method in ("AlignCenter", "OptmizeFWHM"), "unsupported method"
-    #     if method == "AlignCenter":
-    #         return self.bin_data_wrap(metadata_source, fit_pixel_size=True, **kwargs)
-    #     elif method == "OptimizeFWHM":
-    #         return
 
     def _prepare_inputs(self, metadata_source, kwargs):
         """
@@ -365,20 +477,110 @@ class RixsScanTiffDataset:
             fname = "./test_rixsviewer_saving.spec"
 
         res = self.bin_result
+        self._write_spec_block(
+            fname,
+            self.scan_info["scan_type"],
+            {ENERGY_LABEL: (res["energy_axis"], "Bin energy in keV")},
+            res,
+        )
 
-        with open(fname, "a") as f:
-            f.write(f"\n#S {self.scan_index} {self.scan_info['scan_type']}\n")
-            f.write(f"#D {np.datetime64('now')}\n")
-            f.write(f"#C RixsViewerVersion = {__version__}\n")
-            for key, value in self.scan_info["metadata"].items():
-                unit = unit_map.get(key, "")
-                f.write(f"#C {key} = {value}{unit}\n")
-            f.write(f"#N {len(self.file_save_keys)}\n")
-            header = "#L  " + "  ".join(list(self.file_save_keys.values()))
-            f.write(header + "\n")
-            data = np.column_stack([res[key] for key in self.file_save_keys.keys()])
-            np.savetxt(f, data, fmt="%.18e")
-            f.write("\n")
+    def read_tiff_data(self):
+        """
+        Load any pending TIFF files and return the complete image stack.
+
+        Only the filenames in :attr:`unloaded_filenames` are read from
+        disk.  New frames are appended in place into a preallocated
+        buffer so incremental loads during a live scan never reallocate
+        the whole stack; :attr:`_data` is a view into that buffer.
+
+        Bad pixels listed in :mod:`bad_pixels` are zeroed out after loading.
+
+        Returns
+        -------
+        numpy.ndarray
+            3-D array of shape ``(n_frames, height, width)`` with dtype
+            ``float32``, or ``None`` if no files have been loaded yet.
+        """
+        if len(self.unloaded_filenames) > 0:
+            n_files = len(self.unloaded_filenames)
+            t0 = time.perf_counter()
+
+            def _read_frame(fname):
+                return tifffile.imread(fname).astype(np.float32)
+
+            with ThreadPoolExecutor(max_workers=min(n_files, max(1, (cpu_count() or 2) // 2))) as ex:
+                frames = list(ex.map(_read_frame, self.unloaded_filenames))
+            chunk = fix_bad_pixels(np.stack(frames))
+
+            if self._buffer is None:
+                height, width = chunk.shape[1], chunk.shape[2]
+                capacity = n_files
+                if self.scan_info is not None:
+                    capacity = max(
+                        capacity,
+                        self.scan_info.get("spec_points", 0),
+                        self.scan_info.get("tiff_points", 0),
+                    )
+                self._buffer = np.empty((max(1, capacity), height, width), dtype=np.float32)
+                self._n_filled = 0
+
+            needed = self._n_filled + chunk.shape[0]
+            if needed > self._buffer.shape[0]:
+                # more frames than preallocated (e.g. snapshot scans or
+                # stray tiffs); regrow once and copy the filled portion
+                new_capacity = max(needed, 2 * self._buffer.shape[0])
+                grown = np.empty((new_capacity, *self._buffer.shape[1:]), dtype=np.float32)
+                grown[: self._n_filled] = self._buffer[: self._n_filled]
+                self._buffer = grown
+
+            self._buffer[self._n_filled : needed] = chunk  # noqa: E203
+            self._n_filled = needed
+            self._data = self._buffer[: self._n_filled]
+            self.unloaded_filenames = []
+            logger.info(f"Scan {self.scan_index}: Read {n_files} tiff file(s) in {time.perf_counter() - t0:.2f}s")
+        return self._data
+
+    def has_loaded_frames(self):
+        """Whether any TIFF data is currently resident in memory for this scan."""
+        return self._data is not None
+
+    def processed_frame_count(self):
+        """No meaningful progress counter here: a single :meth:`read_tiff_data`
+        call always fully drains :attr:`unloaded_filenames`, unlike
+        :class:`~.rxes_dataset.RixsRxesScanDataset`, which can re-queue
+        frames without processing them. ``None`` tells callers (e.g. the
+        GUI's re-trigger-on-progress check) that progress tracking doesn't
+        apply and any non-empty re-queue should be treated as progress.
+        """
+        return None
+
+    def release_data(self):
+        """
+        Release the loaded frame buffer so memory returns to ~zero.
+
+        The frames can be reloaded from disk on demand:
+        :attr:`unloaded_filenames` is restored so the next
+        :meth:`read_tiff_data` call rebuilds the stack.
+        """
+        if self._data is not None:
+            logger.debug(f"Scan {self.scan_index}: evicting {self._data.nbytes // (1024 * 1024)} MB from memory")
+        self._buffer = None
+        self._data = None
+        self._n_filled = 0
+        if self.scan_info is not None:
+            self.unloaded_filenames = list(self.scan_info["filenames"])
+
+
+class RixsEnergyScanDataset(BufferedTiffScanDatasetMixin):
+    """
+    Dataset container for ``EnergyScan`` scans (1D scan over ``merixE``).
+
+    Adds pixel-size/tilt-angle calibration on top of the shared buffered
+    scan-dataset behavior in :class:`BufferedTiffScanDatasetMixin`.
+    """
+
+    def supports_calibration(self):
+        return True
 
     def fit_pixel_size_wrap(
         self,
@@ -519,95 +721,18 @@ class RixsScanTiffDataset:
             "org_result": org_result,
         }
 
-    def __len__(self):
-        return len(self.fnames)
 
-    def get_table_model(self):
-        """
-        Return (or lazily create) the :class:`RixsScanImageTable` for this scan.
-
-        Returns
-        -------
-        RixsScanImageTable
-            Qt table model listing the TIFF filenames for this scan.
-        """
-        if self._model is None:
-            self._model = RixsScanImageTable(self.scan_info["filenames"])
-        else:
-            self._model.update_fnames(self.scan_info["filenames"])
-        return self._model
-
-    def read_tiff_data(self):
-        """
-        Load any pending TIFF files and return the complete image stack.
-
-        Only the filenames in :attr:`unloaded_filenames` are read from
-        disk.  New frames are appended in place into a preallocated
-        buffer so incremental loads during a live scan never reallocate
-        the whole stack; :attr:`_data` is a view into that buffer.
-
-        Bad pixels listed in :mod:`bad_pixels` are zeroed out after loading.
-
-        Returns
-        -------
-        numpy.ndarray
-            3-D array of shape ``(n_frames, height, width)`` with dtype
-            ``float32``, or ``None`` if no files have been loaded yet.
-        """
-        if len(self.unloaded_filenames) > 0:
-            n_files = len(self.unloaded_filenames)
-            t0 = time.perf_counter()
-
-            def _read_frame(fname):
-                return tifffile.imread(fname).astype(np.float32)
-
-            with ThreadPoolExecutor(max_workers=min(n_files, (cpu_count() or 2) // 2)) as ex:
-                frames = list(ex.map(_read_frame, self.unloaded_filenames))
-            chunk = fix_bad_pixels(np.stack(frames))
-
-            if self._buffer is None:
-                height, width = chunk.shape[1], chunk.shape[2]
-                capacity = n_files
-                if self.scan_info is not None:
-                    capacity = max(
-                        capacity,
-                        self.scan_info.get("spec_points", 0),
-                        self.scan_info.get("tiff_points", 0),
-                    )
-                self._buffer = np.empty((max(1, capacity), height, width), dtype=np.float32)
-                self._n_filled = 0
-
-            needed = self._n_filled + chunk.shape[0]
-            if needed > self._buffer.shape[0]:
-                # more frames than preallocated (e.g. snapshot scans or
-                # stray tiffs); regrow once and copy the filled portion
-                new_capacity = max(needed, 2 * self._buffer.shape[0])
-                grown = np.empty((new_capacity, *self._buffer.shape[1:]), dtype=np.float32)
-                grown[: self._n_filled] = self._buffer[: self._n_filled]
-                self._buffer = grown
-
-            self._buffer[self._n_filled : needed] = chunk  # noqa: E203
-            self._n_filled = needed
-            self._data = self._buffer[: self._n_filled]
-            self.unloaded_filenames = []
-            logger.info(f"Scan {self.scan_index}: Read {n_files} tiff file(s) in {time.perf_counter() - t0:.2f}s")
-        return self._data
-
-    def release_data(self):
-        """
-        Release the loaded frame buffer so memory returns to ~zero.
-
-        The frames can be reloaded from disk on demand:
-        :attr:`unloaded_filenames` is restored so the next
-        :meth:`read_tiff_data` call rebuilds the stack.
-        """
-        if self._data is not None:
-            logger.debug(f"Scan {self.scan_index}: evicting {self._data.nbytes // (1024 * 1024)} MB from memory")
-        self._buffer = None
-        self._data = None
-        self._n_filled = 0
-        if self.scan_info is not None:
-            self.unloaded_filenames = list(self.scan_info["filenames"])
+class RixsSnapshotScanDataset(BufferedTiffScanDatasetMixin):
+    """
+    Dataset container for ``SnapshotScan`` scans (repeat exposures at a
+    fixed incident energy). Uses :class:`BufferedTiffScanDatasetMixin`
+    unchanged -- the ``SnapshotScan``-specific branches (native pixel
+    axis, summed display image) live in the shared ``utils.py`` reduction
+    pipeline, not in this class. Pixel-size calibration is not supported
+    (see :meth:`BufferedTiffScanDatasetMixin.supports_calibration`), so
+    unlike :class:`RixsEnergyScanDataset` this class has no
+    ``fit_pixel_size_wrap``/``linesearch_to_optimize_parameter`` methods.
+    """
 
 
 class RixsScanImageTable(QAbstractTableModel):
